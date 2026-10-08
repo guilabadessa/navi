@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import Client, ClientHost, ClientHostGroup, Event, ZbxHost, ZbxHostGroup
@@ -53,7 +54,13 @@ def upsert_problem(db: Session, d: dict, alert: bool = True) -> tuple[Event, boo
     gids = (h.group_ids if h else None) or []
     if ev is None:
         ev = Event(zbx_eventid=str(d["eventid"]), status="PROBLEM", started_at=d["started_at"])
-        db.add(ev)
+        try:
+            with db.begin_nested():  # savepoint: tolera corrida entre worker e sync manual
+                db.add(ev)
+                db.flush()
+        except IntegrityError:
+            ev = db.scalar(select(Event).where(Event.zbx_eventid == str(d["eventid"])))
+            created = False
     ev.hostid = d.get("hostid") or ev.hostid
     ev.host = (h.name if h else None) or d.get("host") or ev.host
     ev.ip = d.get("ip") or (h.ip if h else None) or ev.ip
