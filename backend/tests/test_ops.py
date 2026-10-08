@@ -98,3 +98,16 @@ def test_status_do_ativo_de_backup():
     assert asset_status(mk(online=False, offline_since=now - timedelta(hours=9)), c, now) == "offline"
     assert asset_status(mk(ignored=True, last_success_at=now - timedelta(days=9)), c, now) == "ignorado"
     assert asset_status(mk(), c, now) == "sem dados"
+
+
+def test_status_do_endpoint_ems():
+    from app.services.protection_service import ems_status
+    now = datetime.now(UTC)
+    mk = lambda **k: NS(**{"ignored": False, "online": True, "last_success_at": now, "meta": {}, **k})  # noqa: E731
+    assert ems_status(mk(), 7, now) == "online"
+    assert ems_status(mk(online=False, last_success_at=now - timedelta(days=2)), 7, now) == "offline"
+    assert ems_status(mk(online=False, last_success_at=now - timedelta(days=9)), 7, now) == "sem contato"
+    assert ems_status(mk(meta={"av_enabled": False}), 7, now) == "antivírus off"
+    assert ems_status(mk(meta={"av_enabled": True, "sig_ok": False}), 7, now) == "assinaturas"
+    assert ems_status(mk(meta={"quarantined": True}), 7, now) == "quarentena"
+    assert ems_status(mk(ignored=True), 7, now) == "ignorado"

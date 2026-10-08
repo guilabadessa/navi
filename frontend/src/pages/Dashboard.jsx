@@ -47,7 +47,7 @@ export default function Dashboard() {
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => nav('/eventos?days=1')}><Stat label="Problemas hoje" value={fmtNum(d.problems_today)} /></div>
       <div className="cardlink" onClick={() => evs()}><Stat label={`Últimos ${days} dias`} value={fmtNum(d.problems_30d)} /></div>
-      <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Problemas de backup" value={fmtNum(d.backup_active || 0)} tone={d.backup_active ? 'bad' : 'ok'} desc="Acronis · ver painel de backup" /></div>
+      <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backup e endpoints" value={fmtNum((d.backup_active || 0) + (d.endpoint_active || 0))} tone={(d.backup_active || 0) + (d.endpoint_active || 0) ? 'bad' : 'ok'} desc={`Acronis ${d.backup_active || 0} · EMS ${d.endpoint_active || 0}`} /></div>
       <Stat label="Alertas enviados (24h)" value={fmtNum(d.alerts_24h?.sent || 0)} tone={failed ? 'warn' : ''} desc={`${failed} falha(s) · ${d.alerts_24h?.skipped || 0} ignorado(s)`} />
     </div>
 

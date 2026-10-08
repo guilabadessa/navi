@@ -105,7 +105,7 @@ class CfgIn(BaseModel):
     offline_min: int = 240
     ems_host: str = ""
     ems_port: int = 443
-    ems_api_key: str | None = None
+    ems_offline_days: int = 7
     ems_user: str = ""
     ems_password: str | None = None
     ems_enabled: bool = False
@@ -116,7 +116,8 @@ def get_cfg(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
     c = P.cfg(db)
     return {"acronis_url": S.get(db, "acronis.url"), "acronis_client_id": S.get(db, "acronis.client_id"), "acronis_secret_set": bool(S.get(db, "acronis.secret")),
             "acronis_enabled": c["acronis_enabled"], "stale_h": c["stale_h"], "offline_min": c["offline_min"],
-            "ems_host": S.get(db, "ems.host"), "ems_port": int(S.get(db, "ems.port") or 443), "ems_key_set": bool(S.get(db, "ems.api_key")),
+            "ems_host": S.get(db, "ems.host"), "ems_port": int(S.get(db, "ems.port") or 443), "ems_offline_days": c["ems_offline_days"],
+            "ems_blocked": S.get(db, "ems.auth_blocked") == "1",
             "ems_enabled": S.get(db, "ems.enabled") == "1", "ems_user": S.get(db, "ems.user"), "ems_password_set": bool(S.get(db, "ems.password"))}
 
 
@@ -134,11 +135,11 @@ def put_cfg(body: CfgIn, request: Request, db: Session = Depends(get_db), me=Dep
     S.put(db, "protection.offline_min", str(body.offline_min), em)
     S.put(db, "ems.host", body.ems_host.strip(), em)
     S.put(db, "ems.port", str(body.ems_port), em)
-    if body.ems_api_key:
-        S.put(db, "ems.api_key", body.ems_api_key.strip(), em)
+    S.put(db, "protection.ems_offline_days", str(max(1, min(body.ems_offline_days, 365))), em)
     S.put(db, "ems.user", body.ems_user.strip(), em)
     if body.ems_password:
         S.put(db, "ems.password", body.ems_password, em)
+        S.put(db, "ems.auth_blocked", "0", em)  # credenciais novas: libera uma nova tentativa de login
     S.put(db, "ems.enabled", "1" if body.ems_enabled else "0", em)
     audit.log(db, request, "protection_config", detail={"acronis": body.acronis_enabled, "ems": body.ems_enabled})
     db.commit()
@@ -151,8 +152,15 @@ def test(source: str, db: Session = Depends(get_db), _=Depends(require("settings
         if source == "acronis":
             return {"ok": True, "detail": factory.acronis(db).test()}
         if source == "ems":
-            return {"ok": True, "detail": factory.ems(db).test()}
+            r = factory.ems(db).test()
+            S.put(db, "ems.auth_blocked", "0")
+            db.commit()
+            return {"ok": True, "detail": r}
     except Exception as e:  # noqa: BLE001
+        from ..services.ems_service import EmsAuthError
+        if isinstance(e, EmsAuthError):
+            S.put(db, "ems.auth_blocked", "1")  # nao insiste com senha recusada (evita bloquear o usuario no EMS)
+            db.commit()
         return {"ok": False, "detail": str(e)[:300]}
     raise HTTPException(404)
 
@@ -167,3 +175,48 @@ def sync_now(request: Request, db: Session = Depends(get_db), _=Depends(require(
     audit.log(db, request, "protection_sync", detail=res)
     db.commit()
     return res
+
+
+@router.post("/sync/ems")
+def sync_ems_now(request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
+    if S.get(db, "ems.auth_blocked") == "1":
+        raise HTTPException(409, "O EMS recusou o login anteriormente. Corrija usuário/senha em Configuração (e salve) para tentar de novo.")
+    try:
+        res = P.sync_ems(db, factory.ems(db))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Falha na sincronização: {str(e)[:300]}") from None
+    audit.log(db, request, "protection_sync_ems", detail=res)
+    db.commit()
+    return res
+
+
+@router.get("/ems")
+def ems_overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depends(require("monitoring.view"))):
+    now = datetime.now(timezone.utc)
+    days = P.cfg(db)["ems_offline_days"]
+    cn = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    tenants = list(db.scalars(select(ExtTenant).where(ExtTenant.source == P.EMS, ExtTenant.active.is_(True)).order_by(ExtTenant.name)))
+    tmap = {t.id: t for t in tenants}
+    assets = list(db.scalars(select(ExtAsset).where(ExtAsset.source == P.EMS, ExtAsset.active.is_(True)).order_by(ExtAsset.name)))
+    if client_id:
+        ids = {t.id for t in tenants if t.client_id == client_id}
+        assets = [a for a in assets if a.ext_tenant_id in ids]
+    rows = []
+    for a in assets:
+        t, m = tmap.get(a.ext_tenant_id), (a.meta or {})
+        rows.append({"id": a.id, "name": a.name, "site": t.name if t else None, "client_id": t.client_id if t else None, "client": cn.get(t.client_id) if t else None,
+                     "os": m.get("os"), "user": m.get("user"), "ip": m.get("ip"), "fct_version": m.get("fct_version"), "policy": a.policy_name,
+                     "online": a.online, "last_contact": a.last_success_at.isoformat() if a.last_success_at else None, "ignored": a.ignored,
+                     "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok"), "health_errors": m.get("health_errors", 0),
+                     "status": P.ems_status(a, days, now)})
+    counts: dict = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    stmt = select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM").order_by(Event.severity.desc(), Event.started_at)
+    if client_id:
+        stmt = stmt.where(Event.client_id == client_id)
+    return {"counts": counts, "total": len(rows), "online": sum(1 for r in rows if r["online"]), "assets": rows,
+            "alerts": [to_dict(e) | {"client_name": cn.get(e.client_id)} for e in db.scalars(stmt)],
+            "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": True,
+                         "assets": sum(1 for a in assets if a.ext_tenant_id == t.id)} for t in tenants],
+            "offline_days": days, "blocked": S.get(db, "ems.auth_blocked") == "1"}

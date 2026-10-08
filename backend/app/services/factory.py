@@ -27,5 +27,4 @@ def acronis(db: Session) -> AcronisService:
 
 
 def ems(db: Session) -> EmsService:
-    return EmsService(S.get(db, "ems.host"), int(S.get(db, "ems.port", "443") or 443), S.get(db, "ems.api_key"),
-                      S.get(db, "ems.user"), S.get(db, "ems.password"))
+    return EmsService(S.get(db, "ems.host"), int(S.get(db, "ems.port", "443") or 443), S.get(db, "ems.user"), S.get(db, "ems.password"))

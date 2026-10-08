@@ -58,6 +58,12 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
                                      for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name))]
     bk_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
                  for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.client_id == c.id))]
+    etids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == c.id, ExtTenant.source == "ems")))
+    ems_days = pc["ems_offline_days"]
+    from ..models import ExtAsset as _A
+    ep_assets = [] if not etids else [{"name": a.name, "user": (a.meta or {}).get("user"), "os": (a.meta or {}).get("os"), "status": P.ems_status(a, ems_days, now),
+                                       "last_contact": a.last_success_at.isoformat() if a.last_success_at else None}
+                                      for a in db.scalars(select(_A).where(_A.ext_tenant_id.in_(etids), _A.active.is_(True), _A.ignored.is_(False)).order_by(_A.name))]
     runs = db.scalars(select(ReportRun).where(ReportRun.client_id == c.id, ReportRun.file_path.is_not(None)).order_by(ReportRun.generated_at.desc()).limit(2))
     return {
         "client": {"name": c.trade_name, "sla_target": c.sla_target},
@@ -67,6 +73,7 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
         "active": [_ev(e) for e in evs if e.status == "PROBLEM"],
         "history": [_ev(e) for e in evs[:80]],
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
+        "endpoints": {"enabled": bool(etids), "assets": ep_assets},
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
         "reports": [{"id": r.id, "name": r.name, "period_start": r.period_start.isoformat() if r.period_start else None,
                      "period_end": r.period_end.isoformat() if r.period_end else None, "generated_at": r.generated_at.isoformat()} for r in runs]}

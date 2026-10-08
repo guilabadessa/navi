@@ -32,7 +32,7 @@ export default function Portal({ me, onLogout }) {
           <Stat label="Indisponibilidade total" value={fmtDur(s.downtime_s)} desc={`${s.hosts_affected} de ${s.hosts_total} host(s) afetado(s)`} />
           <Stat label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />
         </div>
-        <div className="tabs">{[['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', 'Hosts'], ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ['rel', 'Relatórios']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+        <div className="tabs">{[['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', 'Hosts'], ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {tab === 'geral' && <>
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
@@ -48,6 +48,9 @@ export default function Portal({ me, onLogout }) {
             { h: 'Situação', r: r => <Pill tone={r.status === 'ok' ? 'ok' : r.status === 'sem dados' ? 'mut' : r.status === 'offline' ? 'warn' : 'bad'}>{r.status === 'ok' ? 'protegido' : r.status}</Pill> },
             { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => ({ machine: 'Servidor', database: 'Banco de dados', mailbox: 'E-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }[r.type] || r.type) },
             { h: 'Último backup com sucesso', r: r => fmtDT(r.last_success_at) }]} /></Card></>}
+        {tab === 'eps' && d.endpoints && <Card title={`Estações protegidas (${d.endpoints.assets.length})`} pad={false}><Table rows={d.endpoints.assets} empty="Nenhuma estação." cols={[
+          { h: 'Situação', r: r => <Pill tone={r.status === 'online' ? 'ok' : r.status === 'offline' ? 'mut' : 'warn'}>{r.status}</Pill> }, { h: 'Estação', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
+          { h: 'Sistema', r: r => <span className="sub">{r.os}</span> }, { h: 'Último contato', r: r => fmtDT(r.last_contact) }]} /></Card>}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },
           { h: '', r: r => <button className="btn sm" onClick={() => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))}><Download />Baixar PDF</button> }]} /></Card>}

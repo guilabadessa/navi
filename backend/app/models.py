@@ -225,6 +225,7 @@ class ExtAsset(Base):
     ignored: Mapped[bool] = mapped_column(Boolean, default=False)  # nao alertar "sem backup" / "offline"
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    meta: Mapped[dict | None] = mapped_column(JSON)  # dados especificos da origem (ex.: antivirus, versao, usuario)
     __table_args__ = (UniqueConstraint("source", "ext_id"),)
 
 

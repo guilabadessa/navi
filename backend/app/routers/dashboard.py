@@ -69,6 +69,8 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
                 stale.append((j.label or j.name) + " (erro)")
         bk = [Event.kind == "backup", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
         backup_active = db.scalar(select(func.count()).select_from(Event).where(*bk)) or 0
+        ep = [Event.kind == "endpoint", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
+        endpoint_active = db.scalar(select(func.count()).select_from(Event).where(*ep)) or 0
         sent = dict(db.execute(select(Dispatch.status, func.count()).where(Dispatch.created_at >= d24).group_by(Dispatch.status)).all())
         shadow = settings_store.get(db, "alerts.shadow") == "1"
         cov = {}
@@ -89,7 +91,7 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "backup_active": backup_active, "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return _cached(f"dash{client_id}-{days}", 20, build)
 
 

@@ -38,7 +38,7 @@ def human_type(t: str | None) -> str:
 
 
 def cfg(db: Session) -> dict:
-    return {"stale_h": int(S.get(db, "protection.stale_h") or 72), "offline_min": int(S.get(db, "protection.offline_min") or 240),
+    return {"ems_offline_days": int(S.get(db, "protection.ems_offline_days") or 7), "stale_h": int(S.get(db, "protection.stale_h") or 72), "offline_min": int(S.get(db, "protection.offline_min") or 240),
             "acronis_enabled": (S.get(db, "protection.acronis_enabled") or "1") == "1"}
 
 
@@ -194,16 +194,16 @@ def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dic
     return out
 
 
-def reconcile(db: Session, desired: dict[str, dict]) -> dict:
+def reconcile(db: Session, desired: dict[str, dict], source: str = SRC, kind: str = "backup", origin: str = "Acronis") -> dict:
     now = datetime.now(timezone.utc)
     stats = {"new": 0, "resolved": 0, "open": 0}
-    open_evs = {e.zbx_eventid: e for e in db.scalars(select(Event).where(Event.kind == "backup", Event.source == SRC, Event.status == "PROBLEM"))}
+    open_evs = {e.zbx_eventid: e for e in db.scalars(select(Event).where(Event.kind == kind, Event.source == source, Event.status == "PROBLEM"))}
     for key, d in desired.items():
-        eid = f"{SRC}:{key}"
+        eid = f"{source}:{key}"
         ten: ExtTenant | None = d["tenant"]
         ev = open_evs.get(eid) or db.scalar(select(Event).where(Event.zbx_eventid == eid))
         if ev is None:
-            ev = Event(zbx_eventid=eid, status="PROBLEM", started_at=d["started_at"], kind="backup", source=SRC)
+            ev = Event(zbx_eventid=eid, status="PROBLEM", started_at=d["started_at"], kind=kind, source=source)
             db.add(ev)
             created = True
         else:
@@ -214,7 +214,7 @@ def reconcile(db: Session, desired: dict[str, dict]) -> dict:
         ev.item_name, ev.opdata, ev.severity = d.get("item_name"), d.get("opdata"), d["severity"]
         ev.group_ids, ev.group_names = ([ten.ext_id] if ten else []), ([ten.name] if ten else [])
         ev.client_id = ten.client_id if ten else None
-        ev.tags = [{"tag": "origem", "value": "Acronis"}, {"tag": "tipo", "value": d.get("type") or ""}]
+        ev.tags = [{"tag": "origem", "value": origin}, {"tag": "tipo", "value": d.get("type") or ""}]
         db.flush()
         stats["open"] += 1
         if created:
@@ -231,11 +231,11 @@ def reconcile(db: Session, desired: dict[str, dict]) -> dict:
 
 
 def relink(db: Session) -> int:
-    """Reaplica a associacao tenant -> cliente aos eventos de backup (apos mapear um tenant)."""
-    tmap = {t.ext_id: t.client_id for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC))}
+    """Reaplica a associacao tenant -> cliente aos eventos de backup/endpoint (apos mapear um tenant)."""
+    tmap = {(t.source, t.ext_id): t.client_id for t in db.scalars(select(ExtTenant))}
     n = 0
-    for ev in db.scalars(select(Event).where(Event.kind == "backup")):
-        cid = tmap.get((ev.group_ids or [None])[0])
+    for ev in db.scalars(select(Event).where(Event.kind.in_(("backup", "endpoint")))):
+        cid = tmap.get((ev.source, (ev.group_ids or [None])[0]))
         if cid != ev.client_id:
             ev.client_id, n = cid, n + 1
     db.commit()
@@ -252,3 +252,116 @@ def sync_acronis(db: Session, svc) -> dict:
     stats = reconcile(db, desired)
     relink(db)
     return {**stats, "assets": len(cache), "tenants": len(by_uuid)}
+
+
+
+# ======================= FortiClient EMS (endpoints) =======================
+EMS = "ems"
+
+
+def ems_status(a: ExtAsset, offline_days: int, now: datetime) -> str:
+    m = a.meta or {}
+    if a.ignored:
+        return "ignorado"
+    if m.get("quarantined"):
+        return "quarentena"
+    last = a.last_success_at  # ultimo contato com o EMS
+    if a.online is False and last and (now - last) > timedelta(days=offline_days):
+        return "sem contato"
+    if a.online and m.get("av_enabled") is False:
+        return "antivírus off"
+    if a.online and m.get("sig_ok") is False and m.get("av_enabled"):
+        return "assinaturas"
+    if (m.get("health_errors") or 0) > 0:
+        return "atenção"
+    return "online" if a.online else "offline"
+
+
+def sync_ems(db: Session, svc) -> dict:
+    if not svc.configured or S.get(db, "ems.enabled") != "1":
+        return {"skipped": True}
+    if S.get(db, "ems.auth_blocked") == "1":
+        return {"skipped": True, "blocked": True}
+    from ..models import HealthCheck
+    now = datetime.now(timezone.utc)
+    off_days = cfg(db)["ems_offline_days"]
+    try:
+        sites = svc.sites()
+        tenants = {t.ext_id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.source == EMS))}
+        for name in sites:
+            t = tenants.get(name) or ExtTenant(source=EMS, ext_id=name, name=name, kind="site")
+            t.name, t.active, t.synced_at = name, True, now
+            if t.id is None:
+                db.add(t)
+                tenants[name] = t
+        for k, t in tenants.items():
+            if k not in sites:
+                t.active = False
+        db.flush()
+        cache = {a.ext_id: a for a in db.scalars(select(ExtAsset).where(ExtAsset.source == EMS))}
+        seen = set()
+        for site in sites:
+            for e in svc.endpoints(site):
+                uid = str(e.get("uid") or f"{site}:{e.get('device_id')}")
+                a = cache.get(uid)
+                if a is None:
+                    a = ExtAsset(source=EMS, ext_id=uid, name=e.get("name") or uid, type="endpoint")
+                    db.add(a)
+                    cache[uid] = a
+                a.name, a.active, a.ext_tenant_id, a.last_seen_at = e.get("name") or e.get("host") or uid, True, tenants[site].id, now
+                a.policy_name = e.get("endpoint_policy_name")
+                online = bool(e.get("is_ems_online"))
+                if not online and a.online is not False:
+                    a.offline_since = now
+                if online:
+                    a.offline_since = None
+                a.online = online
+                a.last_success_at = _dt(e.get("last_seen")) or a.last_success_at
+                users = [u.get("machine_user_name") or u.get("auth_user_name") for u in (e.get("fct_users") or [])]
+                a.meta = {"av_enabled": e.get("av_enabled"), "sig_ok": e.get("client_av_sig_version_up_to_date"), "version_ok": e.get("client_version_up_to_date"),
+                          "quarantined": bool(e.get("is_quarantined")), "health_errors": e.get("health_error_count") or 0,
+                          "health_warnings": e.get("health_warning_count") or 0, "fct_version": e.get("fct_version"), "os": e.get("os_version"),
+                          "user": next((u for u in users if u), None), "ip": e.get("ip_addr"), "managed": bool(e.get("is_managed", True))}
+                seen.add(uid)
+        for uid, a in cache.items():
+            if uid not in seen:
+                a.active = False
+        db.flush()
+        desired: dict[str, dict] = {}
+        for a in cache.values():
+            if not a.active or a.ignored:
+                continue
+            ten = db.get(ExtTenant, a.ext_tenant_id)
+            m, base = a.meta or {}, {"host": a.name, "hostid": a.ext_id, "tenant": ten, "item_name": a.policy_name, "started_at": now}
+            if m.get("quarantined"):
+                desired[f"quarantine:{a.ext_id}"] = {**base, "triggerid": "Quarantined", "trigger_name": "Endpoint em quarentena", "severity": 4, "type": "Quarantined",
+                                                     "opdata": f"Usuário: {m.get('user') or '—'}"}
+            if a.online is False and a.last_success_at and (now - a.last_success_at) > timedelta(days=off_days):
+                d = (now - a.last_success_at).days
+                desired[f"offline:{a.ext_id}"] = {**base, "triggerid": "NoContact", "trigger_name": f"Endpoint sem contato com o EMS há {d} dias", "severity": 2, "type": "NoContact",
+                                                  "started_at": a.last_success_at + timedelta(days=off_days), "opdata": f"Último contato: {a.last_success_at.astimezone().strftime('%d/%m/%Y %H:%M')}"}
+            if a.online and m.get("av_enabled") is False:
+                desired[f"av_off:{a.ext_id}"] = {**base, "triggerid": "AvDisabled", "trigger_name": "Antivírus (FortiClient) desativado", "severity": 3, "type": "AvDisabled",
+                                                 "opdata": f"Usuário: {m.get('user') or '—'}"}
+            if a.online and m.get("av_enabled") and m.get("sig_ok") is False:
+                desired[f"sig:{a.ext_id}"] = {**base, "triggerid": "AvSignatures", "trigger_name": "Assinaturas do antivírus desatualizadas", "severity": 2, "type": "AvSignatures",
+                                              "opdata": f"FortiClient {m.get('fct_version') or ''}"}
+            if (m.get("health_errors") or 0) > 0:
+                desired[f"health:{a.ext_id}"] = {**base, "triggerid": "HealthError", "trigger_name": f"Erros de saúde no FortiClient ({m['health_errors']})", "severity": 2, "type": "HealthError"}
+        stats = reconcile(db, desired, source=EMS, kind="endpoint", origin="FortiClient EMS")
+        relink(db)
+        h = db.get(HealthCheck, "ems") or HealthCheck(name="ems")
+        h.ok, h.detail, h.checked_at = True, f"EMS · {len(seen)} endpoint(s) em {len(sites)} site(s)", now
+        db.merge(h)
+        db.commit()
+        return {**stats, "endpoints": len(seen), "sites": len(sites)}
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        from .ems_service import EmsAuthError
+        if isinstance(e, EmsAuthError):  # nao repete login que falhou (evita bloquear a conta no EMS)
+            S.put(db, "ems.auth_blocked", "1")
+        h = db.get(HealthCheck, "ems") or HealthCheck(name="ems")
+        h.ok, h.detail, h.checked_at = False, str(e)[:300], now
+        db.merge(h)
+        db.commit()
+        raise
