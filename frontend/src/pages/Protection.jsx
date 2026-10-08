@@ -50,10 +50,10 @@ function Tenants({ ov, clients, edit, reload }) {
 
 function Config() {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/protection/config'), []); const [x, setX] = useState(null); const [busy, setBusy] = useState('')
-  React.useEffect(() => { if (data && !x) setX({ ...data, acronis_secret: '', ems_api_key: '' }) }, [data]) // eslint-disable-line
+  React.useEffect(() => { if (data && !x) setX({ ...data, acronis_secret: '', ems_api_key: '', ems_password: '' }) }, [data]) // eslint-disable-line
   if (!x) return <Loading />
   const set = (k, v) => setX({ ...x, [k]: v })
-  const save = async () => { try { await put('/protection/config', { ...x, acronis_secret: x.acronis_secret || null, ems_api_key: x.ems_api_key || null, stale_h: +x.stale_h, offline_min: +x.offline_min, ems_port: +x.ems_port }); toast('Configuração salva'); setX(null); reload() } catch (e) { toast(e.message, true) } }
+  const save = async () => { try { await put('/protection/config', { ...x, acronis_secret: x.acronis_secret || null, ems_api_key: x.ems_api_key || null, ems_password: x.ems_password || null, stale_h: +x.stale_h, offline_min: +x.offline_min, ems_port: +x.ems_port }); toast('Configuração salva'); setX(null); reload() } catch (e) { toast(e.message, true) } }
   const test = async (s) => { setBusy(s); try { const r = await post('/protection/test/' + s); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } finally { setBusy('') } }
   const sync = async () => { setBusy('sync'); try { const r = await post('/protection/sync/acronis'); toast(`Sincronizado · ${r.assets} itens · ${r.new} novo(s) problema(s) · ${r.resolved} resolvido(s)`) } catch (e) { toast(e.message, true) } finally { setBusy('') } }
   return <div style={{ display: 'grid', gap: 16 }}>
@@ -69,7 +69,9 @@ function Config() {
       <Check label="Monitorar o EMS" checked={x.ems_enabled} onChange={v => set('ems_enabled', v)} />
       <div className="row r3" style={{ marginTop: 12 }}><Field label="ENDEREÇO (IP OU DNS)"><input value={x.ems_host} onChange={e => set('ems_host', e.target.value)} placeholder="172.16.31.205" /></Field>
         <Field label="PORTA HTTPS"><input type="number" value={x.ems_port} onChange={e => set('ems_port', e.target.value)} /></Field>
-        <Field label="CHAVE DE API" hint={x.ems_key_set ? 'Já configurada — deixe em branco para manter.' : ''}><input type="password" autoComplete="new-password" value={x.ems_api_key} onChange={e => set('ems_api_key', e.target.value)} placeholder={x.ems_key_set ? '••••••••' : ''} /></Field></div></Card>
+        <Field label="CHAVE DE API" hint={x.ems_key_set ? 'Já configurada — deixe em branco para manter.' : ''}><input type="password" autoComplete="new-password" value={x.ems_api_key} onChange={e => set('ems_api_key', e.target.value)} placeholder={x.ems_key_set ? '••••••••' : ''} /></Field></div>
+      <div className="row r2"><Field label="OU USUÁRIO DA API" hint="Alternativa à chave: usuário somente leitura do EMS."><input value={x.ems_user || ''} onChange={e => set('ems_user', e.target.value)} /></Field>
+        <Field label="SENHA" hint={x.ems_password_set ? 'Já configurada — deixe em branco para manter.' : ''}><input type="password" autoComplete="new-password" value={x.ems_password} onChange={e => set('ems_password', e.target.value)} placeholder={x.ems_password_set ? '••••••••' : ''} /></Field></div></Card>
     <div><button className="btn primary" onClick={save}>Salvar configuração</button></div></div>
 }
 

@@ -96,7 +96,6 @@ export function Clients() {
       { h: 'Status', r: r => <Pill tone={r.status === 'ativo' ? 'info' : 'mut'}>{r.status}</Pill> },
       { h: '', r: r => can(me, 'clients.edit') && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={e => { e.stopPropagation(); open(r.id) }}><Pencil />Editar</button>
         <button className="btn sm danger" title="Excluir cliente" onClick={async e => { e.stopPropagation(); if (await deleteClient(r, toast)) reload() }}><Trash2 /></button></div> }]} /> : <Loading err={err} />}</Card>
-    {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }
 
@@ -129,5 +128,6 @@ export function ClientDetail() {
       <Card title="Hosts" pad={false}><Table rows={d.hosts} cols={[{ h: '', r: r => <i className="dot" style={{ background: r.available === 2 ? '#bd1723' : r.available === 1 ? '#16a34a' : '#b8c0d8' }} /> , w: 30 }, { h: 'Host', k: 'name' }, { h: 'IP', k: 'ip' }]} /></Card>
       <Card title="Histórico recente" pad={false}><Table rows={d.history.slice(0, 15)} cols={[{ h: 'Host', k: 'host' }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s) }, { h: '', r: r => <StatusBadge s={r.status} /> }]} /></Card>
     </div>
+    {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }

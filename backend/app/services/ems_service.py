@@ -9,20 +9,33 @@ class EmsError(RuntimeError):
 
 
 class EmsService:
-    def __init__(self, host: str, port: int, api_key: str):
+    def __init__(self, host: str, port: int, api_key: str, user: str = "", password: str = ""):
         self.host, self.port, self.key = (host or "").strip(), port, api_key
+        self.user, self.password, self._signed = user, password, False
         self.base = f"https://{self.host}" + (f":{port}" if port and port != 443 else "")
         self.http = httpx.Client(timeout=25, verify=False, headers={"User-Agent": "NAVI/1.0"})  # EMS costuma ter certificado autoassinado
 
     @property
     def configured(self) -> bool:
-        return bool(self.host and self.key)
+        return bool(self.host and (self.key or (self.user and self.password)))
+
+    def _signin(self):
+        """Login com usuario e senha (alternativa a chave de API); a sessao fica nos cookies do cliente HTTP."""
+        r = self.http.post(f"{self.base}/api/v1/auth/signin", json={"name": self.user, "password": self.password})
+        if r.status_code != 200 or '"retval": 0' not in r.text.replace('"retval":0', '"retval": 0'):
+            raise EmsError(f"EMS recusou o usuário/senha (HTTP {r.status_code}: {r.text[:120]})")
+        self._signed = True
 
     def get(self, path: str, **params):
         if not self.configured:
             raise EmsError("EMS não configurado (endereço e chave de API)")
         try:
-            r = self.http.get(f"{self.base}{path}", params=params, headers={"Authorization": f"Bearer {self.key}"})
+            headers = {}
+            if self.key:
+                headers["Authorization"] = f"Bearer {self.key}"
+            elif not self._signed:
+                self._signin()
+            r = self.http.get(f"{self.base}{path}", params=params, headers=headers)
         except httpx.ConnectError:
             raise EmsError(f"Sem conexão com {self.host}:{self.port} (porta fechada ou bloqueada por firewall)") from None
         except httpx.TimeoutException:

@@ -106,6 +106,8 @@ class CfgIn(BaseModel):
     ems_host: str = ""
     ems_port: int = 443
     ems_api_key: str | None = None
+    ems_user: str = ""
+    ems_password: str | None = None
     ems_enabled: bool = False
 
 
@@ -115,7 +117,7 @@ def get_cfg(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
     return {"acronis_url": S.get(db, "acronis.url"), "acronis_client_id": S.get(db, "acronis.client_id"), "acronis_secret_set": bool(S.get(db, "acronis.secret")),
             "acronis_enabled": c["acronis_enabled"], "stale_h": c["stale_h"], "offline_min": c["offline_min"],
             "ems_host": S.get(db, "ems.host"), "ems_port": int(S.get(db, "ems.port") or 443), "ems_key_set": bool(S.get(db, "ems.api_key")),
-            "ems_enabled": S.get(db, "ems.enabled") == "1"}
+            "ems_enabled": S.get(db, "ems.enabled") == "1", "ems_user": S.get(db, "ems.user"), "ems_password_set": bool(S.get(db, "ems.password"))}
 
 
 @router.put("/config")
@@ -134,6 +136,9 @@ def put_cfg(body: CfgIn, request: Request, db: Session = Depends(get_db), me=Dep
     S.put(db, "ems.port", str(body.ems_port), em)
     if body.ems_api_key:
         S.put(db, "ems.api_key", body.ems_api_key.strip(), em)
+    S.put(db, "ems.user", body.ems_user.strip(), em)
+    if body.ems_password:
+        S.put(db, "ems.password", body.ems_password, em)
     S.put(db, "ems.enabled", "1" if body.ems_enabled else "0", em)
     audit.log(db, request, "protection_config", detail={"acronis": body.acronis_enabled, "ems": body.ems_enabled})
     db.commit()

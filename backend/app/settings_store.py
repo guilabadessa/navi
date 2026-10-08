@@ -6,7 +6,7 @@ from .config import get_settings
 from .models import Setting
 from .security import decrypt, encrypt
 
-SECRET_KEYS = {"acronis.secret", "ems.api_key", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key"}
+SECRET_KEYS = {"acronis.secret", "ems.api_key", "ems.password", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key"}
 
 
 def _env_default(key: str) -> str:
