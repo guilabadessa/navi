@@ -25,7 +25,8 @@ def deliver(db: Session, run: ReportRun, rep: Report, wa_dest: str | None = None
         run.wa_status = "não enviado: cliente sem grupo nem celular WhatsApp cadastrado"
     if wa:
         try:
-            factory.evolution(db).send_document(wa, data, fname, caption=f"📊 *{rep.name}*\n🏢 {cname}\n📅 {plabel}")
+            factory.evolution(db).send_document(wa, data, fname, caption=(f"Segue anexo o relatório gerado automaticamente pela plataforma NAVI da Orca TI.\n\n"
+                                                          f"🏢 *{cname}*\n📅 Período: {plabel}"))
             run.wa_status = "enviado"
         except Exception as e:  # noqa: BLE001
             run.wa_status = f"erro: {str(e)[:200]}"

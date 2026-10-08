@@ -74,7 +74,7 @@ def signature(db: Session) -> dict | None:
 def _plain(kind: str, ctx: dict, sig: dict | None) -> str:
     if kind == "report":
         t = (f"Prezados,\n\nSegue em anexo o relatório de disponibilidade e SLA de {ctx['client_name']}, "
-             f"referente ao período {ctx['period']}.\n\nAtenciosamente,\nNOC Orca TI")
+             f"referente ao período {ctx['period']}.\n\nAtenciosamente,")
     elif kind == "new_user":
         t = (f"Olá, {ctx['name']}!\n\n{ctx['intro']}\n\nEndereço: {ctx['url']}\nUsuário: {ctx['email']}\n"
              f"Senha temporária: {ctx['password']}\nPerfil: {ctx['role']}\n\nAltere a senha no primeiro acesso.")
