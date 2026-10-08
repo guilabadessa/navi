@@ -15,7 +15,7 @@ from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGr
 from pydantic import BaseModel, EmailStr, Field
 
 from ..schemas import ClientIn
-from ..security import require
+from ..security import require, user_has
 from ..services import event_service
 from ..services import kpi_service, maintenance_service
 from ..util import to_dict
@@ -236,6 +236,12 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
 class PortalUserIn(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     email: EmailStr
+    finance: bool = False  # acesso ao financeiro (Conta Azul): exige que quem concede tenha finance.view
+
+
+class PortalUserPatch(BaseModel):
+    finance: bool | None = None
+    active: bool | None = None
 
 
 @router.get("/{cid}/portal-users")
@@ -243,12 +249,13 @@ def portal_users(cid: int, db: Session = Depends(get_db), _=Depends(require("cli
     if not db.get(Client, cid):
         raise HTTPException(404)
     return [{"id": u.id, "name": u.name, "email": u.email, "active": u.active, "invite_pending": u.invite_pending,
-             "last_login": u.last_login.isoformat() if u.last_login else None}
+             "last_login": u.last_login.isoformat() if u.last_login else None,
+             "finance": "portal.finance" in (u.extra_perms or [])}
             for u in db.scalars(select(User).where(User.client_id == cid, User.role == "CLIENTE").order_by(User.name))]
 
 
 @router.post("/{cid}/portal-users")
-def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
     """Convida uma pessoa do cliente para o portal (somente leitura, restrito a este cliente)."""
     import secrets
     from .users import send_invite
@@ -257,13 +264,33 @@ def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Sessi
         raise HTTPException(404)
     if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
         raise HTTPException(409, "Este e-mail já possui acesso à NAVI")
+    if body.finance and not user_has(me, "finance.view"):
+        raise HTTPException(403, "Você não tem permissão para conceder acesso ao financeiro")
     u = User(email=body.email.lower(), name=body.name, role="CLIENTE", client_id=cid, active=True,
-             password_hash=hash_password(secrets.token_urlsafe(48)), invite_pending=True, invited_at=datetime.now(timezone.utc))
+             password_hash=hash_password(secrets.token_urlsafe(48)), invite_pending=True, invited_at=datetime.now(timezone.utc),
+             extra_perms=["portal.finance"] if body.finance else [])
     db.add(u)
     db.flush()
     audit.log(db, request, "portal_user_invite", "user", u.id, detail={"email": u.email, "client_id": cid})
     db.commit()
     return {"id": u.id, "email_status": send_invite(db, u)}
+
+
+@router.patch("/{cid}/portal-users/{uid}")
+def patch_portal_user(cid: int, uid: int, body: PortalUserPatch, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
+    u = db.get(User, uid)
+    if not u or u.client_id != cid or u.role != "CLIENTE":
+        raise HTTPException(404)
+    if body.finance is not None:
+        if not user_has(me, "finance.view"):
+            raise HTTPException(403, "Você não tem permissão para alterar o acesso ao financeiro")
+        perms = [p for p in (u.extra_perms or []) if p != "portal.finance"]
+        u.extra_perms = perms + (["portal.finance"] if body.finance else [])
+    if body.active is not None:
+        u.active = body.active
+    audit.log(db, request, "portal_user_update", "user", uid, detail={"finance": body.finance, "active": body.active})
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{cid}/portal-users/{uid}/invite")

@@ -4,6 +4,7 @@ import { Card, Check, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } 
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
 import ProtectionConfig from './ProtectionConfig'
+import ContaAzulTab from './ContaAzulTab'
 
 function Save({ onClick, test, busy }) { return <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>{test && <button className="btn" onClick={test}>Testar conexão</button>}<button className="btn primary" disabled={busy} onClick={onClick}>Salvar</button></div> }
 
@@ -55,7 +56,7 @@ function SmtpTab({ edit }) {
         <div className="row" style={{ display: 'flex', gap: 22 }}>{[['text', 'Assinatura em texto'], ['image', 'Assinatura como imagem']].map(([k, l]) => <label key={k} className="check"><input type="radio" name="sig" checked={f.sig_mode === k} onChange={() => setF({ ...f, sig_mode: k })} />{l}</label>)}</div>
         {f.sig_mode === 'text' && <Field label="TEXTO DA ASSINATURA" hint="A primeira linha fica em destaque. Ex.: nome, cargo, telefone e site em linhas separadas."><textarea style={{ minHeight: 120 }} value={f.sig_text} onChange={e => setF({ ...f, sig_text: e.target.value })} placeholder={'NOC Orca TI\nCentral de Monitoramento\n(14) 0000-0000 · orcati.com.br'} /></Field>}
         {f.sig_mode === 'image' && <div>
-          {data.sig_image ? <div style={{ border: '1px dashed #cdd5ea', borderRadius: 12, padding: 14, marginBottom: 10, background: '#fff' }}><img key={imgv} src={`/navi/api/settings/smtp/signature-image?v=${imgv}`} alt="Assinatura" style={{ maxWidth: '100%', maxHeight: 160 }} /></div> : <p className="hint" style={{ marginBottom: 8 }}>Nenhuma imagem enviada.</p>}
+          {data.sig_image ? <div style={{ border: '1px dashed #cdd5ea', borderRadius: 12, padding: 14, marginBottom: 10, background: '#fff' }}><img key={imgv} src={`/cliente/api/settings/smtp/signature-image?v=${imgv}`} alt="Assinatura" style={{ maxWidth: '100%', maxHeight: 160 }} /></div> : <p className="hint" style={{ marginBottom: 8 }}>Nenhuma imagem enviada.</p>}
           {edit && <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{ maxWidth: 300 }} onChange={async e => { const file = e.target.files[0]; if (!file) return; try { await upload('/settings/smtp/signature-image', file); toast('Imagem enviada'); setImgv(v => v + 1); await reload(); preview() } catch (x) { toast(x.message, true) } e.target.value = '' }} />
             {data.sig_image && <button className="btn sm danger" onClick={async () => { await del('/settings/smtp/signature-image'); setImgv(v => v + 1); await reload(); preview() }}>Remover imagem</button>}</div>}
           <p className="hint">PNG, JPG, GIF ou WEBP até 1,5 MB (largura ajustada para 640 px automaticamente).</p></div>}
@@ -102,7 +103,7 @@ function WebhookTab({ edit }) {
 export default function Settings() {
   const me = useAuth(); const [tab, setTab] = useState('zbx'); const edit = can(me, 'settings.edit')
   return <>
-    <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS), papel timbrado e webhook" />
-    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
-    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
+    <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS, Conta Azul), papel timbrado e webhook" />
+    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
+    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
 }

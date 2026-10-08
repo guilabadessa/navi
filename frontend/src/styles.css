@@ -133,7 +133,7 @@ label.f{display:block;font-size:12.5px;font-weight:600;color:var(--mut);margin-b
 .login .art{background:radial-gradient(900px 520px at 15% 0%,#2457e6 0%,transparent 62%),radial-gradient(700px 500px at 100% 100%,#0e38be 0%,transparent 60%),linear-gradient(160deg,#071a5a 0%,#050f3a 100%);color:#fff;padding:56px 64px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
 .login .art:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 70%)}
 .login .art>*{position:relative}
-.login .art:after{content:"";position:absolute;right:-160px;bottom:-190px;width:640px;height:640px;background:url(/navi/brand/simbolo_branco.png) center/contain no-repeat;opacity:.08;animation:float 14s ease-in-out infinite}
+.login .art:after{content:"";position:absolute;right:-160px;bottom:-190px;width:640px;height:640px;background:url(/cliente/brand/simbolo_branco.png) center/contain no-repeat;opacity:.08;animation:float 14s ease-in-out infinite}
 @keyframes float{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-18px) rotate(2deg)}}
 .login .art h1{color:#fff;font-size:68px;letter-spacing:.22em;margin:0;line-height:1}
 .login .art .tag{font:500 20px var(--head);color:#b9c8ff;margin:10px 0 22px}

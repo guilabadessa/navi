@@ -16,7 +16,7 @@ export default function AcceptInvite({ onLogin }) {
     try { onLogin(await post('/auth/accept-invite', { token, password: pw })); nav('/', { replace: true }) } catch (x) { setErr(x.message) } finally { setBusy(false) }
   }
   return <div className="login"><div className="art">
-    <img src="/navi/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
+    <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
     <div><h1>NAVI</h1><div className="tag">Navegação, Orientação e Assistência</div><p>Defina sua senha para ativar o acesso à plataforma.</p></div>
     <div style={{ fontSize: 13, color: '#8fa8ee' }}>© {new Date().getFullYear()} Orca TI</div></div>
     <div className="form"><div className="box">

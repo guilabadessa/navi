@@ -34,8 +34,29 @@ PERMS = {
 }
 
 
+# Permissoes que podem ser concedidas a um usuario alem das do perfil
+EXTRA_PERMS = {
+    "portal.finance": "Portal: financeiro do cliente (títulos, boletos e notas fiscais)",
+    "finance.view": "Equipe: ver o financeiro dos clientes (Conta Azul)",
+}
+
+
 def has_perm(role: str, perm: str) -> bool:
     p = PERMS.get(role, set())
+    return "*" in p or perm in p
+
+
+def user_perms(user) -> set[str]:
+    p = set(PERMS.get(user.role, set()))
+    # portal.finance so faz sentido para o perfil CLIENTE; finance.view so para a equipe
+    for x in (getattr(user, "extra_perms", None) or []):
+        if x in EXTRA_PERMS and ((x == "portal.finance") == (user.role == "CLIENTE")):
+            p.add(x)
+    return p
+
+
+def user_has(user, perm: str) -> bool:
+    p = user_perms(user)
     return "*" in p or perm in p
 
 
@@ -138,7 +159,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 def require(perm: str):
     def dep(user: User = Depends(current_user)) -> User:
-        if not has_perm(user.role, perm):
+        if not user_has(user, perm):
             raise HTTPException(403, "Sem permissão")
         return user
     return dep

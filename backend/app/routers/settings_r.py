@@ -119,7 +119,7 @@ def smtp_preview(body: PreviewIn, db: Session = Depends(get_db), _=Depends(requi
         "notice": mailer.notice_ctx("Aviso de manutenção programada", ["Informamos que será realizada uma manutenção programada no ambiente, sem previsão de indisponibilidade."],
                                     highlight="Sábado, 10/10 · 22:00 às 23:30", greeting="Prezados,"),
         "new_user": mailer.new_user_ctx("Maria Souza", "maria.souza@orcati.com.br", "Temp-4821-xQ", "Analista NOC"),
-        "invite": mailer.invite_ctx("Maria Souza", "Analista NOC", "https://sonar.orcati.com.br/navi/convite/exemplo"),
+        "invite": mailer.invite_ctx("Maria Souza", "Analista NOC", "https://navi.orcati.com.br/cliente/convite/exemplo"),
     }
     html, _t, _i = mailer.build(db, body.kind, ctxs[body.kind], preview=True)
     return {"html": html}
@@ -154,7 +154,7 @@ def lh_put(body: LetterheadIn, request: Request, db: Session = Depends(get_db), 
 
 @router.get("/webhook")
 def webhook_info(db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
-    return {"token_set": bool(S.get(db, "webhook.token")), "path": "/navi/api/webhook/zabbix"}
+    return {"token_set": bool(S.get(db, "webhook.token")), "path": "/cliente/api/webhook/zabbix"}
 
 
 @router.post("/webhook/rotate")

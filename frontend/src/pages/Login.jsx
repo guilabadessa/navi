@@ -23,7 +23,7 @@ export default function Login({ onLogin }) {
   }
   return <div className="login">
     <div className="art">
-      <img src="/navi/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
+      <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
       <div>
         <h1>NAVI</h1>
         <div className="tag">Navegação, Orientação e Assistência</div>
@@ -34,7 +34,7 @@ export default function Login({ onLogin }) {
     </div>
     <div className="form">
       <div className="box">{forgot ? <form onSubmit={sendForgot}>
-        <img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
+        <img src={dark ? '/cliente/brand/branco.png' : '/cliente/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
         <h2>Redefinir senha</h2><p className="sub" style={{ marginBottom: 22 }}>Informe seu e-mail. Se ele estiver cadastrado, você receberá um link para criar uma nova senha.</p>
         {sent ? <div className="banner info" style={{ marginBottom: 16 }}><div className="grow">Pronto! Se o e-mail existir, o link foi enviado. Verifique sua caixa de entrada (e o spam).</div></div> : <>
           <div className="row"><div><label className="f">E-MAIL</label><input type="email" autoFocus required value={email} onChange={e => setEmail(e.target.value)} /></div></div>
@@ -42,7 +42,7 @@ export default function Login({ onLogin }) {
           <button className="btn primary" style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 16 }} disabled={busy}>{busy ? 'Enviando…' : 'Enviar link'}</button></>}
         <div style={{ textAlign: 'center', marginTop: 16 }}><a href="#" onClick={e => { e.preventDefault(); setForgot(false); setSent(false); setErr('') }}>← Voltar ao login</a></div>
       </form> : <form onSubmit={submit}>
-        <img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
+        <img src={dark ? '/cliente/brand/branco.png' : '/cliente/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
         <h2>Acessar a plataforma</h2><p className="sub" style={{ marginBottom: 22 }}>Entre com as credenciais fornecidas pela Orca TI.</p>
         <div className="row"><div><label className="f">E-MAIL</label>
           <input type="email" autoFocus required value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" placeholder="voce@orcati.com.br" /></div></div>

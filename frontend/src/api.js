@@ -1,4 +1,4 @@
-const BASE = '/navi/api'
+const BASE = '/cliente/api'
 let csrf = ''
 export const setCsrf = (t) => { csrf = t || '' }
 
@@ -33,6 +33,7 @@ async function doApi(path, { method = 'GET', body, raw } = {}) {
 export const get = (p) => api(p)
 export const post = (p, body = {}) => api(p, { method: 'POST', body })
 export const put = (p, body = {}) => api(p, { method: 'PUT', body })
+export const patch = (p, body = {}) => api(p, { method: 'PATCH', body })
 export const del = (p) => api(p, { method: 'DELETE' })
 
 export async function upload(path, file) {

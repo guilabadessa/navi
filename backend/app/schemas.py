@@ -24,6 +24,7 @@ class UserIn(BaseModel):
     role: Role = "VISUALIZADOR"
     active: bool = True
     client_id: int | None = None  # obrigatorio para o perfil CLIENTE
+    extra_perms: list[str] = []  # permissoes alem do perfil (ex.: finance.view)
 
 
 class AcceptInviteIn(BaseModel):

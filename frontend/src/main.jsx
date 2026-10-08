@@ -10,4 +10,4 @@ import { applyTheme, getTv, tvMode } from './theme'
 applyTheme(); tvMode(getTv())
 
 createRoot(document.getElementById('root')).render(
-  <BrowserRouter basename="/navi"><ToastProvider><App /></ToastProvider></BrowserRouter>)
+  <BrowserRouter basename="/cliente"><ToastProvider><App /></ToastProvider></BrowserRouter>)

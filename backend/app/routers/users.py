@@ -10,7 +10,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import Client, User
 from ..schemas import UserIn
-from ..security import hash_password, make_invite_token, require
+from ..security import EXTRA_PERMS, hash_password, make_invite_token, require, user_has
 from ..services import mailer
 from ..util import to_dict
 
@@ -36,6 +36,15 @@ def send_invite(db: Session, u: User, reset: bool = False) -> str:
         return f"erro: {str(e)[:200]}"
 
 
+def _extras(body: UserIn, me: User, current: list | None = None) -> list[str]:
+    """Permissoes extras validas para o perfil. Quem nao pode ver o financeiro nao concede nem retira acesso a ele."""
+    want = [p for p in dict.fromkeys(body.extra_perms) if p in EXTRA_PERMS and ((p == "portal.finance") == (body.role == "CLIENTE"))]
+    fin = {"portal.finance", "finance.view"}
+    if not user_has(me, "finance.view"):
+        want = [p for p in want if p not in fin] + [p for p in (current or []) if p in fin and p not in want and ((p == "portal.finance") == (body.role == "CLIENTE"))]
+    return want
+
+
 def _check(db: Session, body: UserIn) -> int | None:
     if body.role == "CLIENTE":
         if not body.client_id or not db.get(Client, body.client_id):
@@ -58,7 +67,7 @@ def create_user(body: UserIn, request: Request, db: Session = Depends(get_db), m
     # senha aleatoria inutilizavel: o acesso so existe depois que a pessoa define a propria senha pelo convite
     u = User(email=body.email.lower(), name=body.name, role=body.role, active=body.active, client_id=cid,
              password_hash=hash_password(secrets.token_urlsafe(48)), must_change_password=False,
-             invite_pending=True, invited_at=datetime.now(timezone.utc))
+             invite_pending=True, invited_at=datetime.now(timezone.utc), extra_perms=_extras(body, me))
     db.add(u)
     db.flush()
     audit.log(db, request, "user_invite", "user", u.id, detail={"email": u.email, "role": u.role, "client_id": cid})
@@ -75,7 +84,8 @@ def update_user(uid: int, body: UserIn, request: Request, db: Session = Depends(
         raise HTTPException(400, "Você não pode remover seu próprio acesso de administrador")
     u.client_id = _check(db, body)
     u.name, u.role, u.active = body.name, body.role, body.active
-    audit.log(db, request, "user_update", "user", u.id, detail={"role": u.role, "active": u.active, "client_id": u.client_id})
+    u.extra_perms = _extras(body, me, u.extra_perms)
+    audit.log(db, request, "user_update", "user", u.id, detail={"role": u.role, "active": u.active, "client_id": u.client_id, "extra_perms": u.extra_perms})
     db.commit()
     return to_dict(u, EX)
 

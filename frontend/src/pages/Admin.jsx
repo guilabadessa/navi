@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Plus, Pencil, Send, Mail, Trash2 } from 'lucide-react'
 import { get, post, put, del, fmtDT } from '../api'
+import { useAuth, can } from '../App'
 import { Card, Check, Field, Loading, Modal, PageHead, Pager, Pill, Table, useLoad, useToast } from '../ui'
 
 const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador', CLIENTE: 'Cliente (portal)' }
@@ -9,10 +10,10 @@ const DESC = { ADMIN: 'Acesso total', GESTOR: 'Clientes, relatórios, alertas, d
 
 function UserForm({ u, onClose, onSaved }) {
   const [x, setX] = useState({ email: '', name: '', role: 'VISUALIZADOR', active: true, client_id: null, ...u }); const toast = useToast()
-  const clients = useLoad(() => get('/clients'), [])
+  const clients = useLoad(() => get('/clients'), []); const me = useAuth(); const finMe = can(me, 'finance.view'); const finKey = x.role === 'CLIENTE' ? 'portal.finance' : 'finance.view'
   const save = async () => {
     try {
-      const b = { email: x.email, name: x.name, role: x.role, active: x.active, client_id: x.role === 'CLIENTE' ? (x.client_id ? +x.client_id : null) : null }
+      const b = { email: x.email, name: x.name, role: x.role, active: x.active, client_id: x.role === 'CLIENTE' ? (x.client_id ? +x.client_id : null) : null, extra_perms: x.extra_perms || [] }
       const r = x.id ? await put('/users/' + x.id, b) : await post('/users', b)
       toast(x.id ? 'Usuário atualizado' : 'Convite enviado · ' + (r.email_status || ''), !!(r.email_status || '').startsWith('erro')); onSaved()
     } catch (e) { toast(e.message, true) }
@@ -22,6 +23,7 @@ function UserForm({ u, onClose, onSaved }) {
     <div className="row r2"><Field label="NOME"><input value={x.name} onChange={e => setX({ ...x, name: e.target.value })} /></Field><Field label="E-MAIL"><input value={x.email} disabled={!!x.id} onChange={e => setX({ ...x, email: e.target.value })} /></Field></div>
     <div className="row r2"><Field label="PERFIL / PERMISSÃO" hint={DESC[x.role]}><select value={x.role} onChange={e => setX({ ...x, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
       {x.role === 'CLIENTE' ? <Field label="CLIENTE QUE ELE ACOMPANHA *" hint="Verá somente os hosts, incidentes, SLA e relatórios deste cliente."><select value={x.client_id || ''} onChange={e => setX({ ...x, client_id: e.target.value })}><option value="">Selecione…</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field> : <div />}</div>
+    {finMe && x.role !== 'ADMIN' && <div style={{ marginBottom: 12 }}><Check label={x.role === 'CLIENTE' ? 'Pode ver o financeiro do cliente (boletos, títulos e notas fiscais)' : 'Pode ver o financeiro dos clientes (Conta Azul)'} checked={(x.extra_perms || []).includes(finKey)} onChange={v => setX({ ...x, extra_perms: [...(x.extra_perms || []).filter(p => p !== finKey), ...(v ? [finKey] : [])] })} /></div>}
     {x.id ? <Check label="Usuário ativo" checked={x.active} onChange={v => setX({ ...x, active: v })} />
       : <div className="banner info" style={{ marginBottom: 0 }}><Mail size={18} /><div className="grow">A pessoa receberá um <b>e-mail com um link pessoal</b> para criar a própria senha (válido por 72 horas). Nenhuma senha é definida ou exibida aqui.</div></div>}
   </Modal>

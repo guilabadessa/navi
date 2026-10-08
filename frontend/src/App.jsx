@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
+import { Activity, Globe, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
   HardDrive, Search, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
@@ -19,6 +19,7 @@ import { UsersPage, AuditPage } from './pages/Admin'
 import Settings from './pages/Settings'
 import Palette from './Palette'
 import Portal from './pages/Portal'
+import PortalSwitch from './pages/PortalSwitch'
 import Protection from './pages/Protection'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
@@ -33,6 +34,7 @@ const NAV = [
   ['/monitoramento', 'Monitoramento', Radar, 'monitoring.view'],
   ['/eventos', 'Eventos', Activity, 'events.view'],
   ['/protecao', 'Backup e Endpoints', HardDrive, 'monitoring.view'],
+  ['/portal', 'Portal do cliente', Globe, 'clients.view'],
   ['/alertas', 'Alertas', Bell, 'alerts.view'],
   ['/relatorios', 'Relatórios', FileText, 'reports.view'],
   ['/rotinas', 'Rotinas', Timer, 'routines.view'],
@@ -58,7 +60,7 @@ function Shell({ me, onLogout }) {
   const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
   return <div className="app">
     <aside className="side">
-      <div className="brand"><img src="/navi/brand/simbolo_branco.png" alt="" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
+      <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
@@ -80,6 +82,7 @@ function Shell({ me, onLogout }) {
           <Route path="/monitoramento" element={<Monitoring />} />
           <Route path="/eventos" element={<Events key={loc.search} />} />
           <Route path="/protecao" element={<Protection />} />
+          <Route path="/portal" element={<PortalSwitch />} />
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/rotinas" element={<Routines />} />

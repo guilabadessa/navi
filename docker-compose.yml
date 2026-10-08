@@ -21,10 +21,10 @@ services:
     <<: *common
     command: ["api"]
     ports:
-      - "127.0.0.1:8100:8100"     # exposto apenas via Apache (/navi)
+      - "127.0.0.1:8100:8100"     # exposto apenas via Apache (/cliente)
     mem_limit: 700m
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8100/navi/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8100/cliente/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

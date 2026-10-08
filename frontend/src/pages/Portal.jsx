@@ -4,6 +4,8 @@ import { Download, LogOut, Moon, Sun, Wrench } from 'lucide-react'
 import { download, get, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
 import { Card, Loading, Pill, SevBadge, Stat, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { getTheme, toggleTheme } from '../theme'
+import { useAuth, can } from '../App'
+import FinanceTab from './FinanceTab'
 
 const TYPES = { machine: 'Servidor', database: 'Banco de dados', mailbox: 'E-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }
 const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ? ['warn', 'com alerta'] : h.available === 1 ? ['ok', 'disponível'] : ['mut', 'desconhecido']
@@ -11,7 +13,7 @@ const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ?
 // Portal do cliente: somente leitura, restrito ao proprio cliente (o servidor garante o isolamento).
 // "embedded"/clientId = pre-visualizacao pela equipe Orca (mostra exatamente o que o cliente ve).
 export default function Portal({ me, onLogout, clientId, embedded }) {
-  const toast = useToast(); const [days, setDays] = useState(30); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
+  const toast = useToast(); const auth = useAuth(); const canFin = can(auth, 'portal.finance') || can(auth, 'finance.view'); const [days, setDays] = useState(30); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
   const [grp, setGrp] = useState(''); const [hq, setHq] = useState('')
   const { data: d, err } = useLoad(() => get(`/portal/overview?days=${days}${clientId ? '&client_id=' + clientId : ''}`), [days, clientId], 30000)
   const dark = theme === 'dark'
@@ -20,10 +22,10 @@ export default function Portal({ me, onLogout, clientId, embedded }) {
   const hosts = d ? d.hosts.filter(h => (!grp || h.groups.includes(grp)) && (!hq || (h.name + ' ' + (h.ip || '')).toLowerCase().includes(hq.toLowerCase()))) : []
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
   const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`], ['grp', `Grupos (${d.groups.length})`],
-    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios']] : []
+    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top" style={{ position: 'sticky' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 30 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src={dark ? '/cliente/brand/branco.png' : '/cliente/brand/azul.png'} alt="Orca TI" style={{ height: 30 }} />
         <div><h1 style={{ fontSize: 19, lineHeight: 1.1 }}>{d ? d.client.name : 'Portal do cliente'}</h1><div className="sub" style={{ fontSize: 12.5 }}>Monitoramento · NAVI by Orca TI</div></div></div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
@@ -70,6 +72,7 @@ export default function Portal({ me, onLogout, clientId, embedded }) {
         {tab === 'eps' && d.endpoints && <Card title={`Estações protegidas (${d.endpoints.assets.length})`} pad={false}><Table rows={d.endpoints.assets} empty="Nenhuma estação." cols={[
           { h: 'Situação', r: r => <Pill tone={r.status === 'online' ? 'ok' : r.status === 'offline' ? 'mut' : 'warn'}>{r.status}</Pill> }, { h: 'Estação', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
           { h: 'Sistema', r: r => <span className="sub">{r.os}</span> }, { h: 'Último contato', r: r => fmtDT(r.last_contact) }]} /></Card>}
+        {tab === 'fin' && canFin && <FinanceTab clientId={clientId} />}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },
           { h: '', r: r => <button className="btn sm" onClick={() => dl(r)}><Download />Baixar PDF</button> }]} /></Card>}

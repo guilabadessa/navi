@@ -1,10 +1,10 @@
 # NAVI — Navegação, Orientação e Assistência
 Plataforma de NOC da **Orca TI**: monitoramento (Zabbix), incidentes, SLA/KPIs, alertas por WhatsApp (Evolution API),
-relatórios executivos/técnicos em PDF e rotinas agendadas. Acesso: `https://sonar.orcati.com.br/navi/`.
+relatórios executivos/técnicos em PDF e rotinas agendadas. Acesso: `https://navi.orcati.com.br/cliente/`.
 
 ## Arquitetura
 ```
-Navegador ──HTTPS──> Apache (já existente, /zabbix intocado) ──/navi──> 127.0.0.1:8100  [container api]
+Navegador ──HTTPS──> Apache (já existente, /zabbix intocado) ──/cliente──> 127.0.0.1:8100  [container api]
                                                                          │  FastAPI + SPA React (Vite)
 Zabbix Server/API  <───── ZabbixService ─────────────────────────────────┤
 Evolution API      <───── EvolutionService ──────────────[container worker: APScheduler]

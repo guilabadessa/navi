@@ -9,7 +9,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import User
 from ..schemas import AcceptInviteIn, ForgotIn, LoginIn, PasswordChange
-from ..security import (COOKIE, PERMS, RateLimiter, read_invite_token, client_ip, current_user, hash_password, login_limiter, make_session, needs_rehash,
+from ..security import (COOKIE, PERMS, RateLimiter, user_perms, read_invite_token, client_ip, current_user, hash_password, login_limiter, make_session, needs_rehash,
                         read_session, verify_password)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -18,7 +18,7 @@ _invite_limiter = RateLimiter(10, 900)
 
 
 def _me(u: User, csrf: str | None = None):
-    perms = PERMS.get(u.role, set())
+    perms = user_perms(u)
     return {"id": u.id, "email": u.email, "name": u.name, "role": u.role, "perms": sorted(perms),
             "must_change_password": u.must_change_password, "csrf": csrf, "client_id": u.client_id}
 

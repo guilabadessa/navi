@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
+from sqlalchemy import (JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,7 @@ class User(Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)  # perfil CLIENTE
     invite_pending: Mapped[bool] = mapped_column(Boolean, default=False)  # convite enviado e ainda nao aceito
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra_perms: Mapped[list | None] = mapped_column(JSON)  # permissoes alem das do perfil (ex.: portal.finance)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -75,6 +76,8 @@ class Client(Base):
     sla_target: Mapped[float] = mapped_column(Float, default=99.5)
     service_hours: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(16), default="ativo")
+    ca_person_id: Mapped[str | None] = mapped_column(String(64), index=True)  # cadastro correspondente no Conta Azul
+    ca_match: Mapped[str | None] = mapped_column(String(16))  # cnpj | manual
     # Alertas WhatsApp (padrao do cliente)
     wa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     wa_min_severity: Mapped[int] = mapped_column(Integer, default=3)
@@ -402,3 +405,23 @@ class HealthCheck(Base):
     ok: Mapped[bool] = mapped_column(Boolean, default=False)
     detail: Mapped[str | None] = mapped_column(String(512))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class FinDoc(Base):
+    """Espelho (somente leitura) do financeiro do cliente no Conta Azul: titulos a receber e notas fiscais."""
+    __tablename__ = "fin_docs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # titulo | nota
+    ext_id: Mapped[str] = mapped_column(String(96))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    person_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    number: Mapped[str | None] = mapped_column(String(64))
+    description: Mapped[str | None] = mapped_column(String(512))
+    status: Mapped[str | None] = mapped_column(String(32))  # aberto | vencido | pago | cancelado | emitida ...
+    amount: Mapped[float | None] = mapped_column(Float)
+    paid: Mapped[float | None] = mapped_column(Float)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    links: Mapped[dict | None] = mapped_column(JSON)  # {"pdf":..., "xml":..., "boleto":...} quando a API fornece
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint("kind", "ext_id"),)
