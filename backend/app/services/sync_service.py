@@ -55,6 +55,7 @@ def sync_inventory(db: Session, z: ZabbixService, trigger: str = "schedule") -> 
         counts["hosts"] = len(rows)
         counts["removidos"] = {"hosts": removed_h, "host_groups": removed_g}
         run.status, run.counts = "ok", counts
+        db.flush()
     except Exception as e:  # noqa: BLE001
         db.rollback()
         run = db.get(SyncRun, run.id)
@@ -64,4 +65,6 @@ def sync_inventory(db: Session, z: ZabbixService, trigger: str = "schedule") -> 
         raise
     run.finished_at = datetime.now(timezone.utc)
     db.commit()
+    from . import event_service
+    counts["eventos_reassociados"] = event_service.relink_events(db)
     return counts

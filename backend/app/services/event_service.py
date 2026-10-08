@@ -132,8 +132,9 @@ def poll(db: Session, z: ZabbixService, backfill: bool = False) -> dict:
             break
         tids = list({b["objectid"] for b in batch})
         titems = z.trigger_items(tids) if len(tids) < 2000 else {}
+        hmap = _hosts_by_trigger(z, [b["objectid"] for b in batch if not b.get("hosts")])
         for b in batch:
-            host = (b.get("hosts") or [{}])[0]
+            host = (b.get("hosts") or [hmap.get(b["objectid"]) or {}])[0]
             trig = b.get("relatedObject") or {}
             its = titems.get(b["objectid"]) or []
             ev, created = upsert_problem(db, {
@@ -152,28 +153,103 @@ def poll(db: Session, z: ZabbixService, backfill: bool = False) -> dict:
         if len(batch) < 2000:
             break
         t_from = int(batch[-1]["clock"])
+    new += ingest_active(db, z, alert=not first)
     resolved = refresh_open(db, z, alert=not first)
     return {"new": new, "resolved": resolved, "first_run": first}
 
 
+def _hosts_by_trigger(z: ZabbixService, triggerids: list[str]) -> dict:
+    out = {}
+    for i in range(0, len(triggerids), 500):
+        for t in z.call("trigger.get", {"triggerids": triggerids[i:i + 500], "output": ["triggerid"], "selectHosts": ["hostid", "name"]}):
+            if t.get("hosts"):
+                out[t["triggerid"]] = t["hosts"][0]
+    return out
+
+
+def ingest_active(db: Session, z: ZabbixService, alert: bool = True) -> int:
+    """Garante que todo problema ATIVO no Zabbix exista na NAVI, mesmo que tenha iniciado antes da janela do backfill."""
+    active = z.active_problems()
+    have = {e for (e,) in db.execute(select(Event.zbx_eventid).where(Event.zbx_eventid.in_([a["eventid"] for a in active])))} if active else set()
+    missing = [a["eventid"] for a in active if a["eventid"] not in have]
+    n = 0
+    for i in range(0, len(missing), 200):
+        batch = z.call("event.get", {"eventids": missing[i:i + 200], "output": ["eventid", "r_eventid", "clock", "name", "severity", "objectid", "acknowledged"],
+                                      "source": 0, "object": 0, "selectHosts": ["hostid", "host", "name"], "selectTags": "extend"})
+        tids = list({b["objectid"] for b in batch})
+        titems = z.trigger_items(tids) if tids else {}
+        hmap = _hosts_by_trigger(z, [b["objectid"] for b in batch if not b.get("hosts")])
+        for b in batch:
+            host = (b.get("hosts") or [hmap.get(b["objectid"]) or {}])[0]
+            its = titems.get(b["objectid"]) or []
+            ev, created = upsert_problem(db, {
+                "eventid": b["eventid"], "hostid": host.get("hostid"), "host": host.get("name") or host.get("host"),
+                "triggerid": b["objectid"], "trigger_name": b.get("name"), "itemid": its[0]["itemid"] if its else None,
+                "item_name": its[0]["name"] if its else None, "severity": b.get("severity"), "started_at": _dt(b["clock"]),
+                "tags": b.get("tags"), "acknowledged": b.get("acknowledged"), "source": "api"}, alert=alert)
+            n += int(created)
+        db.commit()
+    return n
+
+
 def refresh_open(db: Session, z: ZabbixService, alert: bool = True) -> int:
-    """Confere no Zabbix os eventos ainda abertos e fecha os que ja foram recuperados."""
+    """Confere no Zabbix os eventos abertos na NAVI. Fecha os recuperados e os que o Zabbix nao considera mais ativos."""
     open_evs = db.scalars(select(Event).where(Event.status == "PROBLEM")).all()
     if not open_evs:
         return 0
     n = 0
     byid = {e.zbx_eventid: e for e in open_evs}
+    active_ids = {a["eventid"] for a in z.active_problems()}
     ids = list(byid)
+    now = datetime.now(timezone.utc)
+    # completa host dos eventos abertos que ficaram sem host (via trigger)
+    nohost = [e for e in open_evs if not e.hostid and e.triggerid]
+    if nohost:
+        hm = _hosts_by_trigger(z, list({e.triggerid for e in nohost}))
+        for e in nohost:
+            h = hm.get(e.triggerid)
+            if h:
+                e.hostid, e.host = h["hostid"], h.get("name")
     for i in range(0, len(ids), 500):
         part = ids[i:i + 500]
         res = z.call("event.get", {"eventids": part, "output": ["eventid", "r_eventid", "acknowledged"], "source": 0, "object": 0})
-        rmap = {r["eventid"]: r["r_eventid"] for r in res if r.get("r_eventid") not in (None, "0", 0)}
-        for r in res:
-            byid[r["eventid"]].acknowledged = bool(int(r.get("acknowledged") or 0))
-        if rmap:
-            recs = {e["eventid"]: _dt(e["clock"]) for e in z.events_by_ids(list(rmap.values()))}
-            for eid, rid in rmap.items():
-                if recs.get(rid):
-                    n += mark_resolved(db, byid[eid], recs[rid], rid, alert=alert)
+        seen = {r["eventid"]: r for r in res}
+        rmap = {k: r["r_eventid"] for k, r in seen.items() if r.get("r_eventid") not in (None, "0", 0)}
+        for k, r in seen.items():
+            byid[k].acknowledged = bool(int(r.get("acknowledged") or 0))
+        recs = {e["eventid"]: _dt(e["clock"]) for e in z.events_by_ids(list(rmap.values()))} if rmap else {}
+        for eid in part:
+            ev = byid[eid]
+            rid = rmap.get(eid)
+            if rid and recs.get(rid):
+                n += mark_resolved(db, ev, recs[rid], rid, alert=alert)
+            elif eid not in active_ids:
+                # Zabbix nao lista mais como ativo e nao ha evento de recuperacao (trigger/host removido ou descoberta expirada):
+                # encerra sem contar como indisponibilidade (duracao desconhecida).
+                ev.notes = ((ev.notes + "\n") if ev.notes else "") + "Encerrado automaticamente: o Zabbix não considera mais o problema ativo (sem evento de recuperação)."
+                n += mark_resolved(db, ev, ev.started_at, None, alert=False)
         db.commit()
     return n
+
+
+def relink_events(db: Session) -> int:
+    """Reassocia eventos aos clientes conforme os host groups/hosts atuais (a associacao pode ser feita depois do evento)."""
+    gmap, hmap = client_map(db)
+    hosts = {h.hostid: h for h in db.scalars(select(ZbxHost))}
+    gnames = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
+    changed = 0
+    for ev in db.scalars(select(Event)):
+        h = hosts.get(ev.hostid) if ev.hostid else None
+        gids = (h.group_ids if h else None) or ev.group_ids or []
+        cid = resolve_client(ev.hostid, gids, gmap, hmap)
+        if h:
+            names = [gnames.get(g, g) for g in gids]
+            if ev.group_ids != gids:
+                ev.group_ids = gids
+            if ev.group_names != names:
+                ev.group_names = names
+        if cid != ev.client_id:
+            ev.client_id = cid
+            changed += 1
+    db.commit()
+    return changed

@@ -14,6 +14,7 @@ from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGr
                       ZbxHost, ZbxHostGroup)
 from ..schemas import ClientIn
 from ..security import require
+from ..services import event_service
 from ..services import kpi_service
 from ..util import to_dict
 
@@ -69,6 +70,7 @@ def create(body: ClientIn, request: Request, db: Session = Depends(get_db), _=De
     db.flush()
     audit.log(db, request, "client_create", "client", c.id, detail={"name": c.trade_name})
     db.commit()
+    event_service.relink_events(db)
     return _full(db, c)
 
 
@@ -88,6 +90,7 @@ def update(cid: int, body: ClientIn, request: Request, db: Session = Depends(get
     _apply(db, c, body)
     audit.log(db, request, "client_update", "client", c.id, detail={"name": c.trade_name})
     db.commit()
+    event_service.relink_events(db)
     return _full(db, c)
 
 

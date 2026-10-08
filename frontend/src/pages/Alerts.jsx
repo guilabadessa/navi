@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { get, post, put, del, fmtDT, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
@@ -9,17 +9,20 @@ const MACROS = ['{CLIENTE}', '{HOST}', '{HOST.IP}', '{TRIGGER.NAME}', '{ITEM.NAM
 
 function RuleForm({ r, clients, tpls, onClose, onSaved }) {
   const [x, setX] = useState({ name: '', client_id: null, host_pattern: '', trigger_pattern: '', severities: [], min_severity: 0, on_problem: true, on_recovery: true, delay_s: 0, dest_jid: '', problem_template_id: null, recovery_template_id: null, quote_recovery: true, enabled: true, ...r })
+  // campos nulos vindos do banco nao podem derrubar o formulario
+  useEffect(() => { setX(v => ({ ...v, severities: v.severities || [], host_pattern: v.host_pattern || '', trigger_pattern: v.trigger_pattern || '', dest_jid: v.dest_jid || '' })) }, []) // eslint-disable-line
   const toast = useToast(); const set = k => e => setX({ ...x, [k]: e.target ? e.target.value : e })
   const num = k => e => setX({ ...x, [k]: e.target.value === '' ? null : Number(e.target.value) })
-  const toggleSev = i => setX({ ...x, severities: x.severities.includes(i) ? x.severities.filter(s => s !== i) : [...x.severities, i] })
-  const save = async () => { try { const b = { ...x, severities: x.severities.length ? x.severities : null, dest_jid: x.dest_jid || null, host_pattern: x.host_pattern || null, trigger_pattern: x.trigger_pattern || null }
+  const sevs = x.severities || []
+  const toggleSev = i => setX({ ...x, severities: sevs.includes(i) ? sevs.filter(s => s !== i) : [...sevs, i] })
+  const save = async () => { try { const b = { ...x, severities: sevs.length ? sevs : null, dest_jid: x.dest_jid || null, host_pattern: x.host_pattern || null, trigger_pattern: x.trigger_pattern || null }
     x.id ? await put('/alerts/rules/' + x.id, b) : await post('/alerts/rules', b); toast('Regra salva'); onSaved() } catch (e) { toast(e.message, true) } }
   return <Modal title={x.id ? 'Editar regra de alerta' : 'Nova regra de alerta'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
     <div className="row r2"><Field label="NOME *"><input value={x.name} onChange={set('name')} placeholder="WAN2 Down — MTE SC" /></Field>
       <Field label="CLIENTE"><select value={x.client_id || ''} onChange={num('client_id')}><option value="">Todos os clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field></div>
     <div className="row r2"><Field label="HOST (contém / curinga *)" hint="ex.: FortiGate"><input value={x.host_pattern || ''} onChange={set('host_pattern')} /></Field>
       <Field label="TRIGGER (contém / curinga *)" hint="ex.: WAN2 Down"><input value={x.trigger_pattern || ''} onChange={set('trigger_pattern')} /></Field></div>
-    <div className="row"><Field label="SEVERIDADES" hint="Sem seleção = qualquer severidade ≥ mínima"><div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 4 }}>{SEV.map((s, i) => <Check key={i} label={s} checked={x.severities.includes(i)} onChange={() => toggleSev(i)} />)}</div></Field></div>
+    <div className="row"><Field label="SEVERIDADES" hint="Sem seleção = qualquer severidade ≥ mínima"><div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 4 }}>{SEV.map((s, i) => <Check key={i} label={s} checked={sevs.includes(i)} onChange={() => toggleSev(i)} />)}</div></Field></div>
     <div className="row r3"><Field label="SEVERIDADE MÍNIMA"><select value={x.min_severity} onChange={num('min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
       <Field label="CONDIÇÃO: PROBLEMA ATIVO HÁ MAIS DE"><select value={DELAYS.some(d => d[0] === x.delay_s) ? x.delay_s : 'c'} onChange={e => e.target.value !== 'c' && setX({ ...x, delay_s: +e.target.value })}>{DELAYS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}<option value="c">Personalizado…</option></select></Field>
       <Field label="ATRASO PERSONALIZADO (segundos)"><input type="number" min="0" value={x.delay_s} onChange={num('delay_s')} /></Field></div>

@@ -125,6 +125,14 @@ def dispatches(status: str | None = None, page: int = 1, size: int = 50, db: Ses
     return {"total": total, "items": items}
 
 
+@router.get("/diagnose/{event_id}")
+def diagnose(event_id: int, db: Session = Depends(get_db), _=Depends(require("alerts.view"))):
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise HTTPException(404)
+    return N.explain(db, ev)
+
+
 @router.post("/test-whatsapp")
 def test_whatsapp(body: TestSend, request: Request, db: Session = Depends(get_db), _=Depends(require("alerts.edit"))):
     try:

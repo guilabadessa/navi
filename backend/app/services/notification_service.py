@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..models import SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
 
+ALERT_WINDOW_S = 20 * 60  # igual a event_service.ALERT_WINDOW
+
 DEFAULT_PROBLEM = """🚨 *ALERTA — {SEVERIDADE}*
 
 🏢 {CLIENTE}
@@ -225,3 +227,65 @@ def process_due(db: Session, evo, limit: int = 20) -> int:
         done += 1
         db.commit()
     return done
+
+
+def explain(db: Session, ev: Event) -> dict:
+    """Diagnostico: por que este evento gerou (ou nao) alerta de WhatsApp. Nao altera nada."""
+    now = datetime.now(timezone.utc)
+    checks = []
+
+    def add(label, ok, detail):
+        checks.append({"label": label, "ok": ok, "detail": detail})
+
+    client = db.get(Client, ev.client_id) if ev.client_id else None
+    if client:
+        add("Cliente", True, client.trade_name)
+    else:
+        grp = ", ".join(ev.group_names or []) or "sem grupo"
+        add("Cliente", False, f"O host não pertence a nenhum cliente da NAVI (grupos: {grp}). Associe o host group a um cliente em Clientes → Host Groups.")
+    if client and client.maintenance_until and client.maintenance_until > now:
+        add("Manutenção", False, f"Cliente em manutenção até {fmt_dt(client.maintenance_until)}.")
+    elif client:
+        add("Manutenção", True, "Fora de manutenção.")
+    if client and client.wa_hours:
+        add("Horário", _in_hours(client.wa_hours, ev.created_at), f"Janela de envio: {client.wa_hours}.")
+    age = (ev.created_at - ev.started_at).total_seconds() if ev.created_at and ev.started_at else 0
+    if age > ALERT_WINDOW_S:
+        add("Registro do evento", False, f"O evento foi registrado {int(age // 60)} min após iniciar (limite {ALERT_WINDOW_S // 60} min): eventos antigos não geram alerta.")
+    rules = db.scalars(select(AlertRule).where(AlertRule.enabled.is_(True), AlertRule.on_problem.is_(True),
+                                               (AlertRule.client_id == ev.client_id) | (AlertRule.client_id.is_(None)))).all()
+    matched = False
+    for r in rules:
+        if r.client_id is None and not client and not r.dest_jid:
+            add(f"Regra “{r.name}”", False, "Regra global sem destino e evento sem cliente.")
+            continue
+        miss = []
+        if not _match(r.host_pattern, ev.host):
+            miss.append(f"host não contém “{r.host_pattern}”")
+        if not _match(r.trigger_pattern, ev.trigger_name):
+            miss.append(f"trigger não contém “{r.trigger_pattern}”")
+        if r.severities:
+            if ev.severity not in r.severities:
+                miss.append(f"severidade {SEVERITIES.get(ev.severity)} fora de [{', '.join(SEVERITIES.get(s, str(s)) for s in r.severities)}]")
+        elif ev.severity < r.min_severity:
+            miss.append(f"severidade {SEVERITIES.get(ev.severity)} abaixo do mínimo ({SEVERITIES.get(r.min_severity)})")
+        dest = r.dest_jid or ((client.whatsapp_group_jid or client.whatsapp) if client else None)
+        if not miss and not dest:
+            miss.append("sem destino (cadastre grupo/celular no cliente ou informe o destino na regra)")
+        add(f"Regra “{r.name}”", not miss, "Atende — enviaria para " + str(dest) if not miss else "; ".join(miss).capitalize() + ".")
+        matched = matched or not miss
+    if not rules:
+        add("Regras personalizadas", True, "Nenhuma regra aplicável; vale a configuração padrão do cliente.")
+    if client and not matched:
+        miss = []
+        if not client.wa_enabled:
+            miss.append("“Enviar alertas deste cliente por WhatsApp” está desligado")
+        if not (client.whatsapp_group_jid or client.whatsapp):
+            miss.append("cliente sem grupo nem celular WhatsApp")
+        if ev.severity < client.wa_min_severity:
+            miss.append(f"severidade {SEVERITIES.get(ev.severity)} abaixo do mínimo do cliente ({SEVERITIES.get(client.wa_min_severity)})")
+        add("Padrão do cliente", not miss, "Atende — enviaria para " + str(client.whatsapp_group_jid or client.whatsapp) if not miss else "; ".join(miss).capitalize() + ".")
+        matched = not miss
+    ds = db.scalars(select(Dispatch).where(Dispatch.event_id == ev.id).order_by(Dispatch.id)).all()
+    return {"will_alert": matched and (not client or not (client.maintenance_until and client.maintenance_until > now)),
+            "checks": checks, "dispatches": [{"kind": d.kind, "status": d.status, "dest": d.dest_jid, "error": d.error} for d in ds]}
