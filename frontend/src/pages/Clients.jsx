@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
 import Coverage from './Coverage'
+import PortalAccess from './PortalAccess'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
@@ -95,6 +96,7 @@ export function Clients() {
       { h: 'Status', r: r => <Pill tone={r.status === 'ativo' ? 'info' : 'mut'}>{r.status}</Pill> },
       { h: '', r: r => can(me, 'clients.edit') && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={e => { e.stopPropagation(); open(r.id) }}><Pencil />Editar</button>
         <button className="btn sm danger" title="Excluir cliente" onClick={async e => { e.stopPropagation(); if (await deleteClient(r, toast)) reload() }}><Trash2 /></button></div> }]} /> : <Loading err={err} />}</Card>
+    {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }
 

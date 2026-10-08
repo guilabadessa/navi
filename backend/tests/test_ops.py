@@ -76,3 +76,25 @@ def test_convite_vale_uma_vez(monkeypatch):
     u.password_hash = "y" * 32  # senha definida: o link deixa de valer
     assert read_invite_token(tok, _DB(u)) is None
     assert read_invite_token("lixo", _DB(u)) is None
+
+
+def test_protecao_textos_e_datas():
+    from app.services import protection_service as P
+    assert P.human_type("BackupFailed") == "Falha no backup"
+    assert P.human_type("SomethingNewHappened") == "Something New Happened"
+    d = P._dt("2026-10-08T03:32:16.123456789Z")
+    assert d.tzinfo is not None and d.year == 2026 and d.microsecond == 123456
+    assert P._dt(1791430336).year == 2026
+
+
+def test_status_do_ativo_de_backup():
+    from app.routers.protection import asset_status
+    now = datetime.now(UTC)
+    c = {"stale_h": 72, "offline_min": 240}
+    mk = lambda **k: NS(**{"ignored": False, "online": None, "offline_since": None, "last_success_at": None, "last_failure_at": None, **k})  # noqa: E731
+    assert asset_status(mk(last_success_at=now - timedelta(hours=2)), c, now) == "ok"
+    assert asset_status(mk(last_success_at=now - timedelta(days=5)), c, now) == "sem backup"
+    assert asset_status(mk(last_success_at=now - timedelta(hours=30), last_failure_at=now - timedelta(hours=1)), c, now) == "falha"
+    assert asset_status(mk(online=False, offline_since=now - timedelta(hours=9)), c, now) == "offline"
+    assert asset_status(mk(ignored=True, last_success_at=now - timedelta(days=9)), c, now) == "ignorado"
+    assert asset_status(mk(), c, now) == "sem dados"

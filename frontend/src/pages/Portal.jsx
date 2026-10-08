@@ -32,7 +32,7 @@ export default function Portal({ me, onLogout }) {
           <Stat label="Indisponibilidade total" value={fmtDur(s.downtime_s)} desc={`${s.hosts_affected} de ${s.hosts_total} host(s) afetado(s)`} />
           <Stat label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />
         </div>
-        <div className="tabs">{[['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', 'Hosts'], ['rel', 'Relatórios']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+        <div className="tabs">{[['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', 'Hosts'], ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ['rel', 'Relatórios']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {tab === 'geral' && <>
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
@@ -42,6 +42,12 @@ export default function Portal({ me, onLogout }) {
         {tab === 'inc' && <Card pad={false}><Table rows={d.history} empty="Nenhum incidente no período." cols={[{ h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <b>{r.host}</b> },
           { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s), cls: 'mono' }]} /></Card>}
         {tab === 'hosts' && <Card pad={false}><Table rows={d.by_host} empty="Sem hosts." cols={[{ h: 'Host', r: r => <b>{r.host}</b> }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponibilidade', r: r => fmtDur(r.downtime_s) }, { h: 'Disponibilidade', r: r => fmtPct(r.availability, 3) }]} /></Card>}
+        {tab === 'bkp' && d.backup && <>
+          {d.backup.alerts.length > 0 && <Card title="Atenção no backup" pad={false} style={{ marginBottom: 16 }}><Table rows={d.backup.alerts} cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Situação', k: 'trigger_name' }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
+          <Card title={`Itens protegidos (${d.backup.assets.length})`} pad={false}><Table rows={d.backup.assets} empty="Nenhum item de backup." cols={[
+            { h: 'Situação', r: r => <Pill tone={r.status === 'ok' ? 'ok' : r.status === 'sem dados' ? 'mut' : r.status === 'offline' ? 'warn' : 'bad'}>{r.status === 'ok' ? 'protegido' : r.status}</Pill> },
+            { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => ({ machine: 'Servidor', database: 'Banco de dados', mailbox: 'E-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }[r.type] || r.type) },
+            { h: 'Último backup com sucesso', r: r => fmtDT(r.last_success_at) }]} /></Card></>}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },
           { h: '', r: r => <button className="btn sm" onClick={() => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))}><Download />Baixar PDF</button> }]} /></Card>}

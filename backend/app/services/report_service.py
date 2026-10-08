@@ -161,6 +161,30 @@ def summary_text(k: dict, client_name: str, period: str) -> str:
     return t
 
 
+def backup_section(db: Session, client_id: int | None, z) -> dict | None:
+    """Situacao atual do backup (Acronis) dos itens do cliente; None se o cliente nao tem tenant associado."""
+    if not client_id:
+        return None
+    from ..models import ExtAsset, ExtTenant
+    from ..routers.protection import asset_status
+    from . import protection_service as P
+    tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == client_id, ExtTenant.source == "acronis")))
+    if not tids:
+        return None
+    c, now = P.cfg(db), datetime.now(timezone.utc)
+    names = {"machine": "Servidor", "database": "Banco de dados", "mailbox": "E-mail", "drive": "OneDrive", "site": "SharePoint", "team": "Teams"}
+    rows = []
+    for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
+        st = asset_status(a, c, now)
+        if st == "sem dados":
+            continue
+        rows.append({"name": a.name, "type": names.get(a.type, a.type), "status": "Protegido" if st == "ok" else st.capitalize(),
+                     "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—", "ok": st == "ok"})
+    if not rows:
+        return None
+    return {"rows": rows[:120], "total": len(rows), "ok": sum(1 for r in rows if r["ok"]), "problems": sum(1 for r in rows if not r["ok"])}
+
+
 def compare_text(k: dict, prev: dict | None, plabel: str) -> str:
     """Comparativo com o periodo anterior de mesma duracao + hosts reincidentes."""
     out = []
@@ -221,7 +245,8 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         rows = sorted(sorted(events, key=lambda e: -(e.duration_s or 0))[:MAX_ROWS], key=lambda e: e.started_at)
         env = Environment(loader=FileSystemLoader(str(APP / "templates")), autoescape=select_autoescape(["html"]))
         z = tz()
-        html = env.get_template("report.html").render(
+        backup = backup_section(db, rep.client_id, z)
+        html = env.get_template("report.html").render(backup=backup,
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
             client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),

@@ -12,6 +12,8 @@ from ..db import get_db
 from ..formats import try_phone
 from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
                       User, ZbxHost, ZbxHostGroup)
+from pydantic import BaseModel, EmailStr, Field
+
 from ..schemas import ClientIn
 from ..security import require
 from ..services import event_service
@@ -194,7 +196,7 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)
     hids = [h.hostid for h in hosts]
-    evs = list(db.scalars(select(Event).where(Event.client_id == cid, Event.started_at < end,
+    evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == cid, Event.started_at < end,
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start))
                           .order_by(Event.started_at.desc())))
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
@@ -207,3 +209,60 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
             "reports": [to_dict(r, {"kpis"}) for r in db.scalars(select(ReportRun).where(ReportRun.client_id == cid)
                                                                  .order_by(ReportRun.generated_at.desc()).limit(10))],
             "rules": [to_dict(r) for r in db.scalars(select(AlertRule).where(AlertRule.client_id == cid))]}
+
+
+# ---------------- usuarios do portal do cliente ----------------
+class PortalUserIn(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    email: EmailStr
+
+
+@router.get("/{cid}/portal-users")
+def portal_users(cid: int, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    return [{"id": u.id, "name": u.name, "email": u.email, "active": u.active, "invite_pending": u.invite_pending,
+             "last_login": u.last_login.isoformat() if u.last_login else None}
+            for u in db.scalars(select(User).where(User.client_id == cid, User.role == "CLIENTE").order_by(User.name))]
+
+
+@router.post("/{cid}/portal-users")
+def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    """Convida uma pessoa do cliente para o portal (somente leitura, restrito a este cliente)."""
+    import secrets
+    from .users import send_invite
+    from ..security import hash_password
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
+        raise HTTPException(409, "Este e-mail já possui acesso à NAVI")
+    u = User(email=body.email.lower(), name=body.name, role="CLIENTE", client_id=cid, active=True,
+             password_hash=hash_password(secrets.token_urlsafe(48)), invite_pending=True, invited_at=datetime.now(timezone.utc))
+    db.add(u)
+    db.flush()
+    audit.log(db, request, "portal_user_invite", "user", u.id, detail={"email": u.email, "client_id": cid})
+    db.commit()
+    return {"id": u.id, "email_status": send_invite(db, u)}
+
+
+@router.post("/{cid}/portal-users/{uid}/invite")
+def resend_portal_invite(cid: int, uid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    from .users import send_invite
+    u = db.get(User, uid)
+    if not u or u.client_id != cid or u.role != "CLIENTE":
+        raise HTTPException(404)
+    audit.log(db, request, "portal_user_resend", "user", uid)
+    db.commit()
+    return {"email_status": send_invite(db, u, reset=not u.invite_pending)}
+
+
+@router.delete("/{cid}/portal-users/{uid}")
+def delete_portal_user(cid: int, uid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    u = db.get(User, uid)
+    if not u or u.client_id != cid or u.role != "CLIENTE":
+        raise HTTPException(404)
+    email = u.email
+    db.delete(u)
+    audit.log(db, request, "portal_user_delete", "user", uid, detail={"email": email})
+    db.commit()
+    return {"ok": True}

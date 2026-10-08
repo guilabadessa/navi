@@ -14,8 +14,8 @@ from . import scheduling, settings_store as S
 from .config import get_settings
 from .db import SessionLocal
 from .models import (AuditLog, Dispatch, Event, HealthCheck, JobStatus, Report, ReportRun, Schedule, SyncRun)
-from .services import (delivery_service, event_service, factory, noc_service, notification_service, report_service,
-                       sync_service)
+from .services import (delivery_service, event_service, factory, noc_service, notification_service, protection_service,
+                       report_service, sync_service)
 
 log = logging.getLogger("navi.jobs")
 JOBS = {
@@ -25,6 +25,7 @@ JOBS = {
     "dispatch_alerts": ("Envio de alertas", 10),
     "run_schedules": ("Geração/envio de relatórios agendados", 60),
     "health_checks": ("Health checks", 120),
+    "sync_acronis": ("Sincronização Acronis (backup)", 300),
     "escalate": ("Escalonamento de alertas", 60),
     "daily_digest": ("Resumo diário do NOC", 60),
     "cleanup": ("Limpeza de dados", 86400),
@@ -86,6 +87,13 @@ def poll_events(db):
 def dispatch_alerts(db):
     if db.scalar(select(Dispatch.id).where(Dispatch.status == "pending", Dispatch.due_at <= datetime.now(timezone.utc)).limit(1)):
         notification_service.process_due(db, factory.evolution(db))
+
+
+@tracked("sync_acronis")
+def sync_acronis(db):
+    res = protection_service.sync_acronis(db, factory.acronis(db))
+    if not res.get("skipped"):
+        log.info("acronis: %s", res)
 
 
 @tracked("escalate")
@@ -150,6 +158,18 @@ def health_checks(db):
         put("email", True, "SMTP autenticado")
     except Exception as e:  # noqa: BLE001
         put("email", False, e)
+    try:
+        ac = factory.acronis(db)
+        if ac.configured:
+            put("acronis", True, ac.test())
+    except Exception as e:  # noqa: BLE001
+        put("acronis", False, e)
+    try:
+        em = factory.ems(db)
+        if em.configured and S.get(db, "ems.enabled") == "1":
+            put("ems", True, em.test())
+    except Exception as e:  # noqa: BLE001
+        put("ems", False, e)
     put("navi", True, "operacional")
     db.commit()
 
@@ -200,7 +220,7 @@ def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
     for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
-                     ("dispatch_alerts", dispatch_alerts), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
+                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,
                     next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5 + 3 * list(JOBS).index(name)))

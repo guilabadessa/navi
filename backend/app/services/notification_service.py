@@ -82,7 +82,7 @@ def render(body: str, ev: Event, client: Client | None) -> str:
     started = ev.started_at
     rec = ev.recovered_at
     dur = ev.duration_s if ev.duration_s is not None else int((datetime.now(timezone.utc) - started).total_seconds())
-    tags = ", ".join(f"{t.get('tag')}:{t.get('value')}" if t.get("value") else t.get("tag", "") for t in (ev.tags or []))
+    tags = ", ".join(f"{t.get('tag')}:{t.get('value')}" if t.get("value") else t.get("tag", "") for t in (ev.tags or []) if isinstance(t, dict))
     m = {
         "{CLIENTE}": client.trade_name if client else "-", "{HOST}": ev.host or "-", "{HOST.IP}": ev.ip or "-",
         "{TRIGGER.NAME}": ev.trigger_name or "-", "{ITEM.NAME}": ev.item_name or "-",

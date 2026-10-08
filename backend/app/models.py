@@ -152,12 +152,13 @@ class ZbxHost(Base):
 class Event(Base):
     __tablename__ = "events"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    zbx_eventid: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    zbx_eventid: Mapped[str] = mapped_column(String(96), unique=True, index=True)  # Zabbix: id numerico; outras fontes: "origem:id"
+    kind: Mapped[str] = mapped_column(String(12), default="infra", index=True)  # infra (Zabbix) | backup (Acronis) | endpoint (EMS)
     r_eventid: Mapped[str | None] = mapped_column(String(32))
-    hostid: Mapped[str | None] = mapped_column(String(32), index=True)
+    hostid: Mapped[str | None] = mapped_column(String(64), index=True)
     host: Mapped[str | None] = mapped_column(String(255), index=True)
     ip: Mapped[str | None] = mapped_column(String(64))
-    triggerid: Mapped[str | None] = mapped_column(String(32), index=True)
+    triggerid: Mapped[str | None] = mapped_column(String(64), index=True)
     trigger_name: Mapped[str | None] = mapped_column(String(1024))
     itemid: Mapped[str | None] = mapped_column(String(32))
     item_name: Mapped[str | None] = mapped_column(String(1024))
@@ -189,6 +190,42 @@ class MessageTemplate(Base):
     kind: Mapped[str] = mapped_column(String(16), default="problem")  # problem | recovery
     body: Mapped[str] = mapped_column(Text)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ExtTenant(Base):
+    """Cliente (tenant) de uma plataforma externa (Acronis, EMS) e a associacao com o cliente da NAVI."""
+    __tablename__ = "ext_tenants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(16), index=True)  # acronis | ems
+    ext_id: Mapped[str] = mapped_column(String(96))
+    name: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str | None] = mapped_column(String(32))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint("source", "ext_id"),)
+
+
+class ExtAsset(Base):
+    """Maquina/caixa postal/endpoint monitorado por uma plataforma externa."""
+    __tablename__ = "ext_assets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(16), index=True)
+    ext_id: Mapped[str] = mapped_column(String(96))
+    name: Mapped[str] = mapped_column(String(255))
+    type: Mapped[str | None] = mapped_column(String(32))
+    ext_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("ext_tenants.id", ondelete="SET NULL"), index=True)
+    policy_name: Mapped[str | None] = mapped_column(String(255))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_result: Mapped[str | None] = mapped_column(String(64))
+    online: Mapped[bool | None] = mapped_column(Boolean)
+    offline_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ignored: Mapped[bool] = mapped_column(Boolean, default=False)  # nao alertar "sem backup" / "offline"
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("source", "ext_id"),)
 
 
 class MaintenanceWindow(Base):

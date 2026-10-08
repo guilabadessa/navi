@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import engine
-from .routers import (alerts, audit_r, auth, clients, dashboard, events, navi_r, ops, portal, reports, routines, settings_r, users,
+from .routers import (alerts, audit_r, auth, clients, dashboard, events, navi_r, ops, portal, protection, reports, routines, settings_r, users,
                       webhook, zabbix_r)
 from .security import api_limiter, client_ip
 
@@ -39,7 +39,7 @@ async def security_headers(request: Request, call_next):
     return resp
 
 
-for r in (auth, users, clients, zabbix_r, events, alerts, reports, routines, dashboard, settings_r, navi_r, audit_r, webhook, ops, portal):
+for r in (auth, users, clients, zabbix_r, events, alerts, reports, routines, dashboard, settings_r, navi_r, audit_r, webhook, ops, portal, protection):
     app.include_router(r.router, prefix=f"{BASE}/api")
 
 

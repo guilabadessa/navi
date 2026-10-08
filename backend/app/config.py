@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     EVOLUTION_API_URL: str = "https://orcafy.orcati.com.br/evolution"
     EVOLUTION_INSTANCE: str = ""
     EVOLUTION_API_KEY: str = ""
+    ACRONIS_URL: str = ""
+    ACRONIS_CLIENT_ID: str = ""
+    ACRONIS_CLIENT_SECRET: str = ""
+    EMS_HOST: str = ""
+    EMS_PORT: int = 443
+    EMS_API_KEY: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""

@@ -6,7 +6,7 @@ from .config import get_settings
 from .models import Setting
 from .security import decrypt, encrypt
 
-SECRET_KEYS = {"zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key"}
+SECRET_KEYS = {"acronis.secret", "ems.api_key", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key"}
 
 
 def _env_default(key: str) -> str:
@@ -18,6 +18,8 @@ def _env_default(key: str) -> str:
         "smtp.host": s.SMTP_HOST, "smtp.port": str(s.SMTP_PORT), "smtp.user": s.SMTP_USER,
         "smtp.password": s.SMTP_PASSWORD, "smtp.from": s.SMTP_FROM,
         "webhook.token": s.NAVI_WEBHOOK_TOKEN,
+        "acronis.url": s.ACRONIS_URL, "acronis.client_id": s.ACRONIS_CLIENT_ID, "acronis.secret": s.ACRONIS_CLIENT_SECRET,
+        "ems.host": s.EMS_HOST, "ems.port": str(s.EMS_PORT), "ems.api_key": s.EMS_API_KEY,
         "llm.provider": s.NAVI_LLM_PROVIDER, "llm.api_key": s.NAVI_LLM_API_KEY,
     }.get(key, "")
 

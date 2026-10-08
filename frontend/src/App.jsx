@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
-  Search, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
+  HardDrive, Search, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
 import Login from './pages/Login'
@@ -19,6 +19,7 @@ import { UsersPage, AuditPage } from './pages/Admin'
 import Settings from './pages/Settings'
 import Palette from './Palette'
 import Portal from './pages/Portal'
+import Protection from './pages/Protection'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
@@ -31,6 +32,7 @@ const NAV = [
   ['/clientes', 'Clientes', Building2, 'clients.view'],
   ['/monitoramento', 'Monitoramento', Radar, 'monitoring.view'],
   ['/eventos', 'Eventos', Activity, 'events.view'],
+  ['/protecao', 'Backup e Endpoints', HardDrive, 'monitoring.view'],
   ['/alertas', 'Alertas', Bell, 'alerts.view'],
   ['/relatorios', 'Relatórios', FileText, 'reports.view'],
   ['/rotinas', 'Rotinas', Timer, 'routines.view'],
@@ -47,7 +49,7 @@ function StatusPills() {
   const [st, setSt] = useState({})
   useEffect(() => { const f = () => get('/settings/status').then(setSt).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t) }, [])
   const P = ({ k, label }) => <div className={'pill ' + (st[k] ? (st[k].ok ? 'ok' : 'bad') : '')} title={st[k]?.detail || 'sem verificação ainda'}><i />{label}</div>
-  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" /><P k="navi" label="NAVI" /></div>
+  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" />{st.acronis && <P k="acronis" label="Acronis" />}{st.ems && <P k="ems" label="EMS" />}<P k="navi" label="NAVI" /></div>
 }
 
 function Shell({ me, onLogout }) {
@@ -77,6 +79,7 @@ function Shell({ me, onLogout }) {
           <Route path="/clientes/:id" element={<ClientDetail />} />
           <Route path="/monitoramento" element={<Monitoring />} />
           <Route path="/eventos" element={<Events key={loc.search} />} />
+          <Route path="/protecao" element={<Protection />} />
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/rotinas" element={<Routines />} />

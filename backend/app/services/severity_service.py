@@ -22,7 +22,7 @@ def reapply(db: Session) -> int:
     """Reclassifica eventos ja gravados que ainda estao abaixo do alvo. Retorna quantos mudaram."""
     rs = rules(db)
     n = 0
-    for ev in db.scalars(select(Event)):
+    for ev in db.scalars(select(Event).where(Event.kind == "infra")):
         new = effective(rs, ev.host, ev.trigger_name, ev.severity or 0)
         if new != ev.severity:
             ev.severity, n = new, n + 1

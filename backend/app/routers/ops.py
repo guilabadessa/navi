@@ -27,7 +27,7 @@ def coverage(db: Session = Depends(get_db), _=Depends(require("clients.view"))):
     hosts_assigned = set(db.scalars(select(ClientHost.zbx_hostid)))
     hosts = list(db.scalars(select(ZbxHost).where(ZbxHost.active.is_(True), ZbxHost.status == 0)))
     since = datetime.now(timezone.utc) - timedelta(days=30)
-    ev30 = dict(db.execute(select(Event.hostid, func.count()).where(Event.client_id.is_(None), Event.started_at >= since)
+    ev30 = dict(db.execute(select(Event.hostid, func.count()).where(Event.kind == "infra", Event.client_id.is_(None), Event.started_at >= since)
                            .group_by(Event.hostid)).all())
     groups = []
     for g in db.scalars(select(ZbxHostGroup).where(ZbxHostGroup.active.is_(True)).order_by(ZbxHostGroup.name)):
@@ -42,7 +42,7 @@ def coverage(db: Session = Depends(get_db), _=Depends(require("clients.view"))):
                        "events_30d": sum(ev30.get(h.hostid, 0) for h in pend), "sample": [h.name for h in pend[:4]]})
     uncovered = [h for h in hosts if not (set(h.group_ids or []) & assigned) and h.hostid not in hosts_assigned]
     return {"groups": sorted(groups, key=lambda x: -x["events_30d"]), "hosts_uncovered": len(uncovered), "hosts_total": len(hosts),
-            "events_without_client_30d": db.scalar(select(func.count()).select_from(Event).where(Event.client_id.is_(None), Event.started_at >= since))}
+            "events_without_client_30d": db.scalar(select(func.count()).select_from(Event).where(Event.kind == "infra", Event.client_id.is_(None), Event.started_at >= since))}
 
 
 class AssignIn(BaseModel):

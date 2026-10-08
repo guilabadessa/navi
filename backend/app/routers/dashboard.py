@@ -37,7 +37,7 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
         d24 = now - timedelta(hours=24)
         today = datetime.now(timezone.utc).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
         hosts = list(db.scalars(select(ZbxHost).where(ZbxHost.active.is_(True), ZbxHost.status == 0)))
-        evf = [Event.client_id == client_id] if client_id else []
+        evf = [Event.kind == "infra"] + ([Event.client_id == client_id] if client_id else [])
         if client_id:
             c = db.get(Client, client_id)
             hosts = client_hosts(db, c) if c else []
@@ -67,6 +67,8 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
                 stale.append(j.label or j.name)
             elif j.status == "error":
                 stale.append((j.label or j.name) + " (erro)")
+        bk = [Event.kind == "backup", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
+        backup_active = db.scalar(select(func.count()).select_from(Event).where(*bk)) or 0
         sent = dict(db.execute(select(Dispatch.status, func.count()).where(Dispatch.created_at >= d24).group_by(Dispatch.status)).all())
         shadow = settings_store.get(db, "alerts.shadow") == "1"
         cov = {}
@@ -87,7 +89,7 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+            "backup_active": backup_active, "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return _cached(f"dash{client_id}-{days}", 20, build)
 
 
@@ -101,7 +103,7 @@ def sla(days: int = 30, db: Session = Depends(get_db), _=Depends(require("sla.vi
         out = []
         for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
             hosts = client_hosts(db, c)
-            evs = list(db.scalars(select(Event).where(Event.client_id == c.id, Event.started_at < now,
+            evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < now,
                                                       (Event.recovered_at.is_(None)) | (Event.recovered_at > start))))
             k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, now, c.sla_target,
                                     exclude=maintenance_service.exclusions(db, c.id, start, now))

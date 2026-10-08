@@ -19,10 +19,12 @@ class NoteIn(BaseModel):
 
 
 @router.get("")
-def list_events(status: str | None = None, client_id: int | None = None, hostid: str | None = None, q: str | None = None,
+def list_events(kind: str | None = None, status: str | None = None, client_id: int | None = None, hostid: str | None = None, q: str | None = None,
                 min_severity: int | None = None, since: str | None = None, until: str | None = None, page: int = 1,
                 size: int = 50, db: Session = Depends(get_db), _=Depends(require("events.view"))):
     stmt = select(Event)
+    if kind:
+        stmt = stmt.where(Event.kind == kind)
     if status:
         stmt = stmt.where(Event.status == status.upper())
     if client_id:

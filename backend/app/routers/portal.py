@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..db import get_db
-from ..models import Client, Event, MaintenanceWindow, ReportRun, User
+from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User
 from ..security import require
 from ..services import kpi_service, maintenance_service
 from .clients import client_hosts
@@ -38,7 +38,7 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)
-    evs = list(db.scalars(select(Event).where(Event.client_id == c.id, Event.started_at < end,
+    evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < end,
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at.desc())))
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
@@ -49,6 +49,15 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
         for a, b in maintenance_service.expand(w, now, now + timedelta(days=30)):
             if b > now:
                 upcoming.append({"name": w.name, "start": a.isoformat(), "end": b.isoformat()})
+    tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == c.id, ExtTenant.source == "acronis")))
+    from .protection import asset_status
+    from ..services import protection_service as P
+    pc = P.cfg(db)
+    bk_assets = [] if not tids else [{"name": a.name, "type": a.type, "last_success_at": a.last_success_at.isoformat() if a.last_success_at else None,
+                                      "status": asset_status(a, pc, now)}
+                                     for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name))]
+    bk_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
+                 for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.client_id == c.id))]
     runs = db.scalars(select(ReportRun).where(ReportRun.client_id == c.id, ReportRun.file_path.is_not(None)).order_by(ReportRun.generated_at.desc()).limit(2))
     return {
         "client": {"name": c.trade_name, "sla_target": c.sla_target},
@@ -57,6 +66,7 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
         "hosts": [{"name": h.name, "ip": h.ip, "available": h.available} for h in hosts],
         "active": [_ev(e) for e in evs if e.status == "PROBLEM"],
         "history": [_ev(e) for e in evs[:80]],
+        "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
         "reports": [{"id": r.id, "name": r.name, "period_start": r.period_start.isoformat() if r.period_start else None,
                      "period_end": r.period_end.isoformat() if r.period_end else None, "generated_at": r.generated_at.isoformat()} for r in runs]}

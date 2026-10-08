@@ -196,7 +196,7 @@ def ingest_active(db: Session, z: ZabbixService, alert: bool = True) -> int:
 
 def refresh_open(db: Session, z: ZabbixService, alert: bool = True) -> int:
     """Confere no Zabbix os eventos abertos na NAVI. Fecha os recuperados e os que o Zabbix nao considera mais ativos."""
-    open_evs = db.scalars(select(Event).where(Event.status == "PROBLEM")).all()
+    open_evs = db.scalars(select(Event).where(Event.status == "PROBLEM", Event.kind == "infra")).all()
     if not open_evs:
         return 0
     n = 0
@@ -240,7 +240,7 @@ def relink_events(db: Session) -> int:
     hosts = {h.hostid: h for h in db.scalars(select(ZbxHost))}
     gnames = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
     changed = 0
-    for ev in db.scalars(select(Event)):
+    for ev in db.scalars(select(Event).where(Event.kind == "infra")):
         h = hosts.get(ev.hostid) if ev.hostid else None
         gids = (h.group_ids if h else None) or ev.group_ids or []
         cid = resolve_client(ev.hostid, gids, gmap, hmap)
