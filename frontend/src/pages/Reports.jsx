@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Download, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send } from 'lucide-react'
-import { get, post, put, del, download, fmtDT, fmtDur, fmtPct, SEV } from '../api'
+import { Download, Eye, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send } from 'lucide-react'
+import { api, get, post, put, del, download, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pager, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskCNPJ, cnpjHint } from '../mask'
@@ -39,15 +39,34 @@ function ReportForm({ r, clients, onClose, onSaved }) {
 
 function GenerateModal({ r, onClose, onDone }) {
   const toast = useToast(); const [m, setM] = useState(r.period_start ? 'custom' : 'prev_month'); const [a, setA] = useState(r.period_start); const [b, setB] = useState(r.period_end)
-  const [wa, setWa] = useState(false); const [em, setEm] = useState(false); const [busy, setBusy] = useState(false); const [pv, setPv] = useState(null)
-  const body = () => m === 'custom' ? { period_start: iso(a), period_end: iso(b), send_wa: wa, send_email: em } : { period_mode: m, send_wa: wa, send_email: em }
-  const go = async () => { setBusy(true); try { const run = await post(`/reports/${r.id}/generate`, body()); toast(`PDF gerado${run.wa_status ? ' · WhatsApp: ' + run.wa_status : ''}${run.email_status ? ' · E-mail: ' + run.email_status : ''}`); onDone(run) } catch (e) { toast(e.message, true) } finally { setBusy(false) } }
+  const [busy, setBusy] = useState(false); const [pv, setPv] = useState(null); const [run, setRun] = useState(null); const [dest, setDest] = useState(null)
+  const [wa, setWa] = useState(true); const [em, setEm] = useState(true); const [waTo, setWaTo] = useState(''); const [emTo, setEmTo] = useState(''); const [res, setRes] = useState(null); const [sending, setSending] = useState(false)
+  const body = () => m === 'custom' ? { period_start: iso(a), period_end: iso(b) } : { period_mode: m }
   const prev = async () => { try { setPv(await post(`/reports/${r.id}/preview`, body())) } catch (e) { toast(e.message, true) } }
-  return <Modal title={`Gerar: ${r.name}`} onClose={onClose} footer={<><button className="btn" onClick={prev}>Prévia dos KPIs</button><button className="btn primary" disabled={busy} onClick={go}><Play />{busy ? 'Gerando…' : 'Gerar PDF'}</button></>}>
+  const go = async () => { setBusy(true); try { const x = await post(`/reports/${r.id}/generate`, body()); setRun(x)
+      const d = await get(`/reports/runs/${x.id}/destinations`); setDest(d); setWaTo(d.wa); setEmTo(d.email); setWa(!!d.wa); setEm(!!d.email) } catch (e) { toast(e.message, true) } finally { setBusy(false) } }
+  const view = async () => { const rr = await api(`/reports/runs/${run.id}/download`, { raw: true }); window.open(URL.createObjectURL(await rr.blob()), '_blank') }
+  const send = async () => { setSending(true); try { const out = await post(`/reports/runs/${run.id}/send`, { wa_dest: wa ? waTo : null, email_to: em ? emTo : null }); setRes(out)
+      toast('Envio concluído — veja o resultado abaixo') } catch (e) { toast(e.message, true) } finally { setSending(false) } }
+  const close = () => { onDone(run); }
+  if (!run) return <Modal title={`Gerar: ${r.name}`} onClose={onClose} footer={<><button className="btn" onClick={prev}>Prévia dos KPIs</button><button className="btn primary" disabled={busy} onClick={go}><Play />{busy ? 'Gerando PDF…' : 'Gerar PDF'}</button></>}>
     <div className="row r3"><Field label="PERÍODO"><select value={m} onChange={e => setM(e.target.value)}><option value="prev_day">Dia anterior</option><option value="prev_week">Semana anterior</option><option value="prev_month">Mês anterior</option><option value="custom">Personalizado</option></select></Field>
       {m === 'custom' && <><Field label="INÍCIO"><input type="datetime-local" value={loc(a)} onChange={e => setA(e.target.value)} /></Field><Field label="FIM"><input type="datetime-local" value={loc(b)} onChange={e => setB(e.target.value)} /></Field></>}</div>
-    <div style={{ display: 'flex', gap: 24 }}><Check label="Enviar por WhatsApp" checked={wa} onChange={setWa} /><Check label="Enviar por e-mail" checked={em} onChange={setEm} /></div>
+    <p className="hint">O PDF é gerado primeiro, sem enviar nada. Depois você poderá baixar, conferir e só então confirmar o envio.</p>
     {pv && <div className="grid g4" style={{ marginTop: 16 }}>{[['Disponibilidade', fmtPct(pv.kpis.summary.availability, 3)], ['Incidentes', pv.kpis.summary.incidents], ['Indisponibilidade', fmtDur(pv.kpis.summary.downtime_s)], ['Hosts', pv.hosts]].map(([l, v]) => <div key={l} className="card stat"><div className="l">{l}</div><div className="v" style={{ fontSize: 22 }}>{v}</div></div>)}</div>}</Modal>
+  return <Modal title="PDF gerado" onClose={close} footer={<button className="btn" onClick={close}>Concluir</button>}>
+    <div className="card" style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div><b>{run.name}</b><div className="sub">{fmtDT(run.period_start).slice(0, 10)} → {fmtDT(run.period_end).slice(0, 10)} · {(run.size / 1024).toFixed(0)} KB{run.kpis ? ` · disponibilidade ${fmtPct(run.kpis.availability, 3)}` : ''}</div></div>
+      <div style={{ display: 'flex', gap: 8 }}><button className="btn" onClick={view}><Eye />Visualizar</button><button className="btn primary" onClick={() => download(`/reports/runs/${run.id}/download`, `${(run.name || 'relatorio').replace(/\s+/g, '_')}.pdf`)}><Download />Baixar PDF</button></div></div>
+    <h3 style={{ margin: '22px 0 10px' }}>Enviar o relatório</h3>
+    <p className="hint" style={{ marginBottom: 12 }}>Nada foi enviado ainda. Confira o PDF e confirme os destinos para enviar.</p>
+    <div className="row r2"><div><Check label="WhatsApp" checked={wa} onChange={setWa} /><input style={{ marginTop: 6 }} disabled={!wa} value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="JID do grupo (1203…@g.us) ou número" />
+        {dest?.wa_missing && <div className="hint" style={{ color: 'var(--orange)' }}>⚠ O cliente não tem grupo WhatsApp cadastrado — informe o destino aqui ou cadastre em Clientes.</div>}</div>
+      <div><Check label="E-mail" checked={em} onChange={setEm} /><input style={{ marginTop: 6 }} disabled={!em} value={emTo} onChange={e => setEmTo(e.target.value)} placeholder="email1@dominio.com, email2@dominio.com" />
+        {dest?.email_missing && <div className="hint" style={{ color: 'var(--orange)' }}>⚠ O cliente não tem e-mail de relatório cadastrado — informe aqui.</div>}</div></div>
+    <button className="btn primary" disabled={sending || (!(wa && waTo) && !(em && emTo))} onClick={send}><Send />{sending ? 'Enviando…' : 'Confirmar envio'}</button>
+    {res && <div className="card" style={{ padding: 14, marginTop: 14 }}><div><b>WhatsApp:</b> {res.wa_status || 'não solicitado'}</div><div><b>E-mail:</b> {res.email_status || 'não solicitado'}</div></div>}
+  </Modal>
 }
 
 export default function Reports() {
@@ -57,7 +76,7 @@ export default function Reports() {
   const resend = async (run, kind) => { const to = kind === 'wa' ? prompt('JID do destino WhatsApp (ou "client"):', 'client') : prompt('E-mail(s) destino (ou "client"):', 'client'); if (!to) return
     try { const r = await post(`/reports/runs/${run.id}/send`, kind === 'wa' ? { wa_dest: to } : { email_to: to }); toast(kind === 'wa' ? 'WhatsApp: ' + r.wa_status : 'E-mail: ' + r.email_status); runs.reload() } catch (e) { toast(e.message, true) } }
   return <>
-    <PageHead title="Relatórios" desc="Relatórios executivos e técnicos de disponibilidade e SLA em PDF">
+    <PageHead title="Relatórios" desc="Relatórios executivos e técnicos de disponibilidade e SLA em PDF · dados consultados ao vivo no Zabbix · guardamos os 2 PDFs mais recentes por cliente">
       {edit && <button className="btn primary" onClick={() => setEd({})}><Plus />Novo relatório</button>}</PageHead>
     <Tabs value={tab} onChange={setTab} tabs={[['def', 'Definições'], ['hist', 'Histórico de PDFs']]} />
     {tab === 'def' && <Card pad={false}>{reps.data ? <Table rows={reps.data} empty="Nenhum relatório criado ainda." cols={[

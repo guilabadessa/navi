@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import (Client, ClientHost, ClientHostGroup, Event, SyncRun, ZbxHost, ZbxHostGroup, ZbxItem, ZbxTrigger)
+from ..models import (Client, ClientHost, ClientHostGroup, Event, SyncRun, ZbxHost, ZbxHostGroup)
 from ..schemas import ZabbixSettingsIn
 from ..security import require
 from ..services import event_service, factory, sync_service
@@ -23,8 +23,8 @@ def get_settings_(db: Session = Depends(get_db), _=Depends(require("settings.vie
             "last_sync": to_dict(last) if last else None,
             "objects": {"hosts": db.scalar(select(func.count()).select_from(ZbxHost).where(ZbxHost.active.is_(True))),
                         "host_groups": db.scalar(select(func.count()).select_from(ZbxHostGroup).where(ZbxHostGroup.active.is_(True))),
-                        "triggers": db.scalar(select(func.count()).select_from(ZbxTrigger).where(ZbxTrigger.active.is_(True))),
-                        "items": db.scalar(select(func.count()).select_from(ZbxItem).where(ZbxItem.active.is_(True)))}}
+                        "triggers": db.scalar(select(func.coalesce(func.sum(ZbxHost.trigger_count), 0))),
+                        "items": db.scalar(select(func.coalesce(func.sum(ZbxHost.item_count), 0)))}}
 
 
 @router.put("/settings")
@@ -52,9 +52,9 @@ def test(request: Request, db: Session = Depends(get_db), _=Depends(require("set
 
 
 @router.post("/sync")
-def sync(request: Request, items: bool = False, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
+def sync(request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
     try:
-        counts = sync_service.sync_inventory(db, factory.zabbix(db), with_items=items, trigger="manual")
+        counts = sync_service.sync_inventory(db, factory.zabbix(db), trigger="manual")
         ev = event_service.poll(db, factory.zabbix(db))
     except ZabbixError as e:
         audit.log(db, request, "zabbix_sync", "settings", result="falha", detail={"error": str(e)})
@@ -117,9 +117,15 @@ def host(hostid: str, db: Session = Depends(get_db), _=Depends(require("monitori
     gmap = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
     d = to_dict(h)
     d["groups"] = [gmap.get(g, g) for g in (h.group_ids or [])]
-    d["triggers"] = [to_dict(t) for t in db.scalars(select(ZbxTrigger).where(ZbxTrigger.hostid == hostid, ZbxTrigger.active.is_(True))
-                                                    .order_by(ZbxTrigger.priority.desc()).limit(200))]
-    d["items"] = [to_dict(i) for i in db.scalars(select(ZbxItem).where(ZbxItem.hostid == hostid, ZbxItem.active.is_(True))
-                                                 .order_by(ZbxItem.name).limit(300))]
+    # itens e triggers sao consultados ao vivo na API (nao sao armazenados na NAVI)
+    try:
+        z = factory.zabbix(db)
+        d["triggers"] = [{"triggerid": t["triggerid"], "description": t["description"], "priority": int(t["priority"]),
+                          "value": int(t["value"]), "status": int(t["status"])} for t in z.host_triggers(hostid)]
+        d["items"] = [{"itemid": i["itemid"], "name": i["name"], "key_": i["key_"], "units": i.get("units"),
+                       "lastvalue": i.get("lastvalue"), "state": int(i.get("state") or 0)} for i in z.host_items(hostid)]
+        d["live_error"] = None
+    except ZabbixError as e:
+        d["triggers"], d["items"], d["live_error"] = [], [], str(e)
     d["events"] = [to_dict(e) for e in db.scalars(select(Event).where(Event.hostid == hostid).order_by(Event.started_at.desc()).limit(50))]
     return d

@@ -19,10 +19,10 @@ function ZabbixTab({ edit }) {
       {edit && <Save busy={busy === 's'} onClick={() => run('s', async () => { await put('/zabbix/settings', { url, token: token || null }); setToken(''); toast('Configuração salva'); reload() })}
         test={() => run('t', async () => setRes(await post('/zabbix/test')))} />}</Card>
     <Card title="Sincronização"><div className="kv" style={{ marginBottom: 14 }}><b>Última</b><span>{ls ? fmtDT(ls.finished_at || ls.started_at) : 'nunca'}</span><b>Status</b><span>{ls ? <Pill tone={ls.status === 'ok' ? 'ok' : 'bad'}>{ls.status}</Pill> : '—'} {ls?.error && <span className="sub">{ls.error}</span>}</span>
-      <b>Hosts</b><span>{o.hosts}</span><b>Host groups</b><span>{o.host_groups}</span><b>Triggers</b><span>{o.triggers}</span><b>Itens</b><span>{o.items}</span></div>
+      <b>Hosts</b><span>{o.hosts}</span><b>Host groups</b><span>{o.host_groups}</span><b>Triggers</b><span>{o.triggers} <span className="sub">(consulta ao vivo)</span></span><b>Itens</b><span>{o.items} <span className="sub">(consulta ao vivo)</span></span></div>
       {edit && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button className="btn primary" disabled={!!busy} onClick={() => run('y', async () => { toast('Sincronizando…'); const r = await post('/zabbix/sync'); toast(`Sincronizado: ${r.counts.hosts} hosts, ${r.counts.host_groups} grupos`); reload() })}>{busy === 'y' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
-        <button className="btn" disabled={!!busy} onClick={() => run('i', async () => { toast('Sincronizando itens (pode demorar)…'); const r = await post('/zabbix/sync?items=true'); toast(`${r.counts.items} itens sincronizados`); reload() })}>{busy === 'i' ? 'Aguarde…' : 'Sincronizar itens'}</button></div>}
-      <p className="hint" style={{ marginTop: 12 }}>A sincronização é incremental e nunca apaga dados locais: objetos que somem da API apenas são marcados como inativos.</p></Card></div>
+</div>}
+      <p className="hint" style={{ marginTop: 12 }}>A NAVI espelha apenas grupos e hosts. Itens, triggers e o histórico de relatórios são consultados diretamente na API do Zabbix, e o que deixa de existir no Zabbix também é removido da NAVI. Eventos resolvidos são mantidos por 90 dias.</p></Card></div>
 }
 
 function EvoTab({ edit }) {

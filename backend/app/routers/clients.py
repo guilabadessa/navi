@@ -134,7 +134,7 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
     c = db.get(Client, cid)
     if not c:
         raise HTTPException(404)
-    days = max(1, min(days, 365))
+    days = max(1, min(days, 90))  # limite = retencao local de eventos
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)

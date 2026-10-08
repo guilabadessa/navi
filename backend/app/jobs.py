@@ -18,8 +18,7 @@ from .services import delivery_service, event_service, factory, notification_ser
 log = logging.getLogger("navi.jobs")
 JOBS = {
     # name: (label, interval_s)
-    "sync_inventory": ("Sincronização Zabbix (grupos/hosts/triggers)", 600),
-    "sync_items": ("Sincronização de itens Zabbix", 21600),
+    "sync_inventory": ("Sincronização Zabbix (grupos e hosts)", 600),
     "poll_events": ("Processamento de eventos", 60),
     "dispatch_alerts": ("Envio de alertas", 10),
     "run_schedules": ("Geração/envio de relatórios agendados", 60),
@@ -68,13 +67,7 @@ def _zabbix_ready(db) -> bool:
 @tracked("sync_inventory")
 def sync_inventory(db):
     if _zabbix_ready(db):
-        sync_service.sync_inventory(db, factory.zabbix(db), with_items=False)
-
-
-@tracked("sync_items")
-def sync_items(db):
-    if _zabbix_ready(db):
-        sync_service.sync_inventory(db, factory.zabbix(db), with_items=True)
+        sync_service.sync_inventory(db, factory.zabbix(db))
 
 
 @tracked("poll_events")
@@ -143,9 +136,21 @@ def health_checks(db):
 @tracked("cleanup")
 def cleanup(db):
     now = datetime.now(timezone.utc)
-    db.execute(delete(Dispatch).where(Dispatch.created_at < now - timedelta(days=90)))
+    ret = int(os.environ.get("NAVI_EVENT_RETENTION_DAYS", "90"))
+    # eventos resolvidos alem da retencao saem da NAVI (consulta historica e feita ao vivo no Zabbix)
+    db.execute(delete(Event).where(Event.status == "RESOLVED", Event.started_at < now - timedelta(days=ret)))
+    db.execute(delete(Dispatch).where(Dispatch.created_at < now - timedelta(days=ret)))
     db.execute(delete(SyncRun).where(SyncRun.started_at < now - timedelta(days=30)))
     db.execute(delete(AuditLog).where(AuditLog.ts < now - timedelta(days=730)))
+    # PDFs orfaos (sem registro) e excedentes por cliente
+    for cid in {r for r in db.scalars(select(ReportRun.client_id).distinct())}:
+        report_service.prune_runs(db, cid)
+    known = {p for p in db.scalars(select(ReportRun.file_path)) if p}
+    root = Path(get_settings().NAVI_STORAGE) / "reports"
+    if root.exists():
+        for f in root.rglob("*.pdf"):
+            if str(f) not in known:
+                f.unlink(missing_ok=True)
     # tmp de relatorios
     tmp = Path(get_settings().NAVI_STORAGE) / "tmp"
     if tmp.exists():
@@ -173,7 +178,7 @@ def backup(db):
 def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
-    for name, fn in [("sync_inventory", sync_inventory), ("sync_items", sync_items), ("poll_events", poll_events),
+    for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
                      ("dispatch_alerts", dispatch_alerts), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,

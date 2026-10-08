@@ -56,6 +56,20 @@ def download(rid: int, request: Request, db: Session = Depends(get_db), _=Depend
     return FileResponse(run.file_path, media_type="application/pdf", filename=Path(run.file_path).name)
 
 
+@router.get("/runs/{rid}/destinations")
+def destinations(rid: int, db: Session = Depends(get_db), _=Depends(require("reports.send"))):
+    """Destinos padrao sugeridos para a etapa de confirmacao de envio."""
+    run = db.get(ReportRun, rid)
+    rep = db.get(Report, run.report_id) if run and run.report_id else None
+    if not run:
+        raise HTTPException(404)
+    c = db.get(Client, run.client_id) if run.client_id else None
+    wa = rep.wa_dest if rep and rep.wa_dest and rep.wa_dest != "client" else (c.whatsapp_group_jid if c else None)
+    mail = rep.email_dest if rep and rep.email_dest and rep.email_dest != "client" else (c.report_emails if c else None)
+    return {"wa": wa or "", "email": mail or "", "client": c.trade_name if c else None,
+            "wa_missing": not wa, "email_missing": not mail}
+
+
 @router.post("/runs/{rid}/send")
 def resend(rid: int, body: SendIn, request: Request, db: Session = Depends(get_db), _=Depends(require("reports.send"))):
     run = db.get(ReportRun, rid)
@@ -130,9 +144,6 @@ def generate(rid: int, body: GenerateIn, request: Request, db: Session = Depends
         audit.log(db, request, "report_generate", "report", rid, result="falha", detail={"error": str(ex)[:300]})
         db.commit()
         raise HTTPException(500, f"Falha ao gerar relatório: {ex}")
-    if body.send_wa or body.send_email:
-        delivery_service.deliver(db, run, r, wa_dest=r.wa_dest if body.send_wa else "",
-                                 email_to=r.email_dest if body.send_email else "")
     audit.log(db, request, "report_generate", "report", rid, detail={"run": run.id})
     db.commit()
     return to_dict(run, {"kpis"})

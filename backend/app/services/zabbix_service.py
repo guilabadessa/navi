@@ -45,13 +45,17 @@ class ZabbixService:
             "selectInterfaces": ["interfaceid", "ip", "dns", "type", "main", "available", "port"],
             "selectHostGroups": ["groupid"],
             "selectParentTemplates": ["templateid", "name"],
-            "selectTags": ["tag", "value"],
+            "selectTags": ["tag", "value"], "selectItems": "count", "selectTriggers": "count",
             "filter": {"flags": 0},
         })
 
-    def item_counts(self):
-        return self.call("item.get", {"output": ["hostid"], "countOutput": False, "filter": {"flags": [0, 4]},
-                                      "monitored": True, "templated": None})
+    def host_items(self, hostid: str, limit: int = 300):
+        return self.call("item.get", {"hostids": [hostid], "output": ["itemid", "name", "key_", "status", "state", "units", "lastvalue", "lastclock"],
+                                      "filter": {"flags": [0, 4]}, "sortfield": "name", "limit": limit})
+
+    def host_triggers(self, hostid: str):
+        return self.call("trigger.get", {"hostids": [hostid], "output": ["triggerid", "description", "priority", "status", "value", "lastchange"],
+                                         "expandDescription": True, "sortfield": "priority", "sortorder": "DESC", "limit": 200})
 
     def items(self, hostids: list[str] | None = None, limit: int | None = None):
         p = {"output": ["itemid", "hostid", "name", "key_", "status", "state", "units", "lastvalue", "lastclock"],

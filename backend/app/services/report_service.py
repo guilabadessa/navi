@@ -19,7 +19,7 @@ from weasyprint import HTML  # noqa: E402
 from .. import settings_store as S  # noqa: E402
 from ..config import get_settings  # noqa: E402
 from ..models import SEVERITIES, Client, Event, Report, ReportRun, ZbxHost  # noqa: E402
-from . import kpi_service  # noqa: E402
+from . import factory, kpi_service, live_events  # noqa: E402
 from .notification_service import fmt_duration, tz  # noqa: E402
 
 APP = Path(__file__).resolve().parent.parent
@@ -113,18 +113,14 @@ def make_charts(k: dict) -> list[str]:
     return out
 
 
-def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dict, list[Event], list[ZbxHost], Client | None]:
+def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dict, list, list[ZbxHost], Client | None]:
+    """Eventos vem AO VIVO da API do Zabbix (nada e armazenado alem do PDF final)."""
     client = db.get(Client, rep.client_id) if rep.client_id else None
     hosts = universe_hosts(db, rep, client)
     host_ids = [h.hostid for h in hosts]
-    q = select(Event).where(Event.started_at < end, (Event.recovered_at.is_(None)) | (Event.recovered_at > start))
-    if host_ids:
-        q = q.where(Event.hostid.in_(host_ids))
-    elif client:
-        q = q.where(Event.client_id == client.id)
+    events = live_events.fetch(db, factory.zabbix(db), host_ids, start, end, rep.client_id)
     if rep.severities:
-        q = q.where(Event.severity.in_(rep.severities))
-    events = list(db.scalars(q.order_by(Event.started_at)))
+        events = [e for e in events if e.severity in rep.severities]
     for needle, attr in ((rep.triggers, "trigger_name"), (rep.items, "item_name")):
         if needle:
             events = [e for e in events if any(n.lower() in (getattr(e, attr) or "").lower() for n in needle)]
@@ -135,6 +131,19 @@ def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dic
     k = kpi_service.compute(events, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end,
                             client.sla_target if client else None)
     return k, events, hosts, client
+
+
+def dur2(sec) -> str:
+    """Duracao curta: apenas as 2 unidades mais significativas (cabe nos cartoes)."""
+    if sec is None:
+        return "—"
+    sec = int(sec)
+    d, r = divmod(sec, 86400)
+    h, r = divmod(r, 3600)
+    m, s = divmod(r, 60)
+    parts = [(d, "d"), (h, "h"), (m, "min"), (s, "s")]
+    parts = [f"{v}{u}" for v, u in parts if v]
+    return " ".join(parts[:2]) if parts else "0s"
 
 
 def summary_text(k: dict, client_name: str, period: str) -> str:
@@ -151,6 +160,23 @@ def summary_text(k: dict, client_name: str, period: str) -> str:
     return t
 
 
+KEEP_RUNS_PER_CLIENT = 2
+
+
+def prune_runs(db: Session, client_id: int | None, keep: int = KEEP_RUNS_PER_CLIENT) -> int:
+    """Mantem apenas os `keep` PDFs mais recentes por cliente (apaga arquivo e registro)."""
+    cond = ReportRun.client_id == client_id if client_id is not None else ReportRun.client_id.is_(None)
+    runs = list(db.scalars(select(ReportRun).where(cond).order_by(ReportRun.generated_at.desc(), ReportRun.id.desc())))
+    n = 0
+    for r in runs[keep:]:
+        if r.file_path:
+            Path(r.file_path).unlink(missing_ok=True)
+        db.delete(r)
+        n += 1
+    db.commit()
+    return n
+
+
 def generate(db: Session, rep: Report, user: str | None, start: datetime | None = None, end: datetime | None = None,
              name_suffix: str = "") -> ReportRun:
     start = start or rep.period_start
@@ -165,21 +191,19 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         k, events, hosts, client = build(db, rep, start, end)
         cname = client.trade_name if client else "Todos os clientes"
         plabel = period_label(start, end)
-        MAX_ROWS = 600
-        rows = sorted(events, key=lambda e: e.started_at)[:MAX_ROWS]
-        for e in rows:
-            if e.duration_s is None:
-                e.duration_s = int((min(datetime.now(timezone.utc), end) - e.started_at).total_seconds())
+        MAX_ROWS = 150  # PDF legivel e rapido; resumos por host/trigger cobrem 100% dos eventos
+        rows = sorted(sorted(events, key=lambda e: -(e.duration_s or 0))[:MAX_ROWS], key=lambda e: e.started_at)
         env = Environment(loader=FileSystemLoader(str(APP / "templates")), autoescape=select_autoescape(["html"]))
         z = tz()
         html = env.get_template("report.html").render(
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
+            client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),
             s=k["summary"], k=k, kpis_on=rep.include_kpis, charts=make_charts(k) if rep.include_charts else [],
             rows=rows, total_rows=len(events), truncated=len(events) > MAX_ROWS, notes=rep.notes,
             summary_text=summary_text(k, cname, plabel),
             pct=lambda v: "—" if v is None else f"{v:.3f}%".replace(".", ","),
-            dur=lambda v: fmt_duration(v) if v is not None else "—",
+            dur=lambda v: fmt_duration(v) if v is not None else "—", dur2=dur2,
             dt=lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—",
             sevname=lambda n: SEVERITIES.get(n, str(n)))
         pdf = HTML(string=html, base_url=str(APP)).write_pdf()
@@ -190,6 +214,8 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         path.write_bytes(pdf)
         run.file_path, run.size, run.sha256 = str(path), len(pdf), hashlib.sha256(pdf).hexdigest()
         run.kpis, run.status = k["summary"], "ok"
+        db.commit()
+        prune_runs(db, rep.client_id)
     except Exception as e:  # noqa: BLE001
         run.status, run.error = "error", str(e)[:2000]
         db.commit()

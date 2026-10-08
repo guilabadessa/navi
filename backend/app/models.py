@@ -144,34 +144,6 @@ class ZbxHost(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
-class ZbxTrigger(Base):
-    __tablename__ = "zbx_triggers"
-    triggerid: Mapped[str] = mapped_column(String(32), primary_key=True)
-    description: Mapped[str] = mapped_column(String(1024))
-    priority: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[int] = mapped_column(Integer, default=0)
-    value: Mapped[int] = mapped_column(Integer, default=0)  # 1 = em problema
-    hostid: Mapped[str | None] = mapped_column(String(32), index=True)
-    last_change: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class ZbxItem(Base):
-    __tablename__ = "zbx_items"
-    itemid: Mapped[str] = mapped_column(String(32), primary_key=True)
-    hostid: Mapped[str] = mapped_column(String(32), index=True)
-    name: Mapped[str] = mapped_column(String(1024))
-    key_: Mapped[str] = mapped_column(String(1024))
-    status: Mapped[int] = mapped_column(Integer, default=0)
-    state: Mapped[int] = mapped_column(Integer, default=0)
-    units: Mapped[str | None] = mapped_column(String(64))
-    lastvalue: Mapped[str | None] = mapped_column(String(255))
-    lastclock: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
 class Event(Base):
     __tablename__ = "events"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

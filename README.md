@@ -14,6 +14,10 @@ PostgreSQL 16 (172.16.31.208, db `navi`, SSL)  <── SQLAlchemy/Alembic
 - `backend/app`: `routers/` (API), `services/` (zabbix, evolution, email, sync, event, notification, kpi, report, delivery, navi), `jobs.py` (worker), `models.py`, `security.py`.
 - `frontend/src`: React (Dashboard, Clientes, Monitoramento, Eventos, Alertas, Relatórios, Rotinas, SLA, WhatsApp, E-mail, NAVI IA, Usuários, Auditoria, Configurações).
 - O banco do Zabbix **não** é usado como banco da NAVI e nada é gravado nele.
+- **API-first / retenção mínima**: a NAVI espelha só grupos e hosts (e remove o que sumiu do Zabbix). Itens, triggers e os eventos
+  dos relatórios são consultados **ao vivo** na API. Eventos resolvidos ficam 90 dias (alertas/dashboard), PDFs: **2 por cliente**,
+  logs: 5 dias.
+- Relatório em duas etapas: **gerar → baixar/visualizar → confirmar envio** (WhatsApp/e-mail só enviam após confirmação).
 
 ## Comandos
 ```bash

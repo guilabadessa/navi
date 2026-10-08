@@ -89,7 +89,7 @@ export function ClientDetail() {
   return <>
     <PageHead title={c.trade_name} desc={[c.legal_name, c.cnpj].filter(Boolean).join(' · ')}>
       <Link className="btn" to="/clientes">← Clientes</Link>
-      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90, 180, 365].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
+      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}</PageHead>
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.sla_met === false ? 'bad' : 'ok'} desc={`SLA contratado ${fmtPct(c.sla_target)} · ${s.sla_met === false ? 'não atingido' : 'atingido'}`} />

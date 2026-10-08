@@ -11,8 +11,8 @@ function HostDetail({ id, onClose }) {
       <b>Templates</b><span>{(h.templates || []).slice(0, 8).map(g => <span className="chip" key={g}>{g}</span>)}</span><b>Disponibilidade</b><span><Pill tone={AV[h.available][0]}>{AV[h.available][1]}</Pill></span><b>Status</b><span>{h.status === 0 ? 'monitorado' : 'desabilitado'}</span></div>
     <Tabs value={tab} onChange={setTab} tabs={[['ev', `Eventos (${h.events.length})`], ['tr', `Triggers (${h.triggers.length})`], ['it', `Itens (${h.item_count})`]]} />
     {tab === 'ev' && <Table rows={h.events} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Problema', r: r => <div className="trunc" style={{ maxWidth: 200 }}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s) }]} />}
-    {tab === 'tr' && <Table rows={h.triggers} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.priority} /> }, { h: 'Trigger', k: 'description' }, { h: 'Estado', r: r => r.value ? <Pill tone="bad">PROBLEMA</Pill> : <Pill tone="ok">OK</Pill> }]} />}
-    {tab === 'it' && <Table rows={h.items} cols={[{ h: 'Item', r: r => <div className="trunc" style={{ maxWidth: 260 }} title={r.key_}>{r.name}</div> }, { h: 'Último valor', r: r => <span className="mono">{r.lastvalue} {r.units}</span> }]} empty="Itens ainda não sincronizados (use Configurações → Zabbix → Sincronizar itens)." />}
+    {tab === 'tr' && <Table rows={h.triggers} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.priority} /> }, { h: 'Trigger', k: 'description' }, { h: 'Estado', r: r => r.value ? <Pill tone="bad">PROBLEMA</Pill> : <Pill tone="ok">OK</Pill> }]} empty={h.live_error || 'Nenhuma trigger.'} />}
+    {tab === 'it' && <Table rows={h.items} cols={[{ h: 'Item', r: r => <div className="trunc" style={{ maxWidth: 260 }} title={r.key_}>{r.name}</div> }, { h: 'Último valor', r: r => <span className="mono">{r.lastvalue} {r.units}</span> }]} empty={h.live_error || 'Nenhum item.'} />}
   </>}</Drawer>
 }
 

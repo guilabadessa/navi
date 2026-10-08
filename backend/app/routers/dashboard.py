@@ -61,7 +61,7 @@ def dashboard(db: Session = Depends(get_db), _=Depends(require("dashboard.view")
 
 @router.get("/sla")
 def sla(days: int = 30, db: Session = Depends(get_db), _=Depends(require("sla.view"))):
-    days = max(1, min(days, 365))
+    days = max(1, min(days, 90))  # limite = retencao local de eventos
 
     def build():
         now = datetime.now(timezone.utc)

@@ -8,7 +8,7 @@ export default function SLA() {
   const items = data?.items || []; const below = items.filter(i => i.met === false).length
   return <>
     <PageHead title="SLA" desc="SLA realizado versus contratado por cliente">
-      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90, 180, 365].map(d => <option key={d} value={d}>Últimos {d} dias</option>)}</select></PageHead>
+      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(d => <option key={d} value={d}>Últimos {d} dias</option>)}</select></PageHead>
     {!data ? <Loading err={err} /> : <>
       <div className="grid g3" style={{ marginBottom: 16 }}><Stat label="Clientes ativos" value={items.length} /><Stat label="Abaixo do SLA" value={below} tone={below ? 'bad' : 'ok'} /><Stat label="Dentro do SLA" value={items.length - below} tone="ok" /></div>
       <Card pad={false}><Table rows={items} onRow={r => nav('/clientes/' + r.client_id)} cols={[
