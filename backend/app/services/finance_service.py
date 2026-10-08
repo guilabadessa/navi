@@ -1,5 +1,6 @@
 """Financeiro do cliente a partir do Conta Azul: vinculo por CNPJ, titulos a receber e notas fiscais (somente leitura)."""
 import logging
+import re
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
@@ -140,57 +141,85 @@ def sync_titles(db: Session, ca: ContaAzul) -> dict:
         if ext_id not in seen:
             db.delete(f)
     db.flush()
-    # link do boleto: so para titulos em aberto (limita as chamadas)
-    for f in to_detail[:150]:
+    # link do boleto/fatura: so para titulos em aberto (limita as chamadas)
+    for f in to_detail[:200]:
         try:
-            lk = _links(ca.installment(f.ext_id))
-            f.links = lk or None
+            det = ca.installment(f.ext_id)
         except ContaAzulError as e:
             log.warning("parcela %s: %s", f.ext_id, e)
             break
+        lk: dict = {}
+        for sol in det.get("solicitacoes_cobrancas") or []:
+            url = sol.get("url")
+            if url and str(url).startswith("http"):
+                # a pagina da fatura do Conta Azul reune o boleto e a nota fiscal: e o unico endereco que a API fornece
+                lk.setdefault("boleto" if sol.get("tipo_solicitacao_cobranca") == "BOLETO" else "fatura", url)
+        f.links = lk or _links(det) or None
     return {"titles": len(seen)}
 
 
+def _windows(start: date, end: date):
+    """A API do Conta Azul aceita no maximo 15 dias por consulta de notas fiscais."""
+    while start <= end:
+        e = min(start + timedelta(days=14), end)
+        yield start.isoformat(), e.isoformat()
+        start = e + timedelta(days=1)
+
+
+_NOTE_ST = {"EMITIDA": "emitida", "CANCELAMENTO_MANUAL": "cancelada", "CANCELADA": "cancelada", "AUTORIZADA": "emitida"}
+
+
 def sync_notes(db: Session, ca: ContaAzul) -> dict:
-    pid_client = {c.ca_person_id: c.id for c in db.scalars(select(Client).where(Client.ca_person_id.is_not(None)))}
-    doc_client = {digits(c.cnpj): c.id for c in db.scalars(select(Client)) if len(digits(c.cnpj)) >= 11}
-    if not pid_client and not doc_client:
+    """Notas fiscais SEPARADAS das vendas: NFS-e (documento do cliente) e NF-e (destinatario por nome)."""
+    by_doc = {digits(c.cnpj): c.id for c in db.scalars(select(Client)) if len(digits(c.cnpj)) >= 11}
+    linked = list(db.scalars(select(Client).where(Client.ca_person_id.is_not(None))))
+    pid_client = {c.ca_person_id: c.id for c in linked}
+    for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.ext_id.in_(list(pid_client) or ["-"]))):
+        if t.kind:
+            by_doc.setdefault(digits(t.kind), pid_client[t.ext_id])
+    by_name = {}
+    for c in linked:
+        for nm in (c.trade_name, c.legal_name):
+            if _norm(nm):
+                by_name[_norm(nm)] = c.id
+    for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.ext_id.in_(list(pid_client) or ["-"]))):
+        by_name.setdefault(_norm(t.name), pid_client[t.ext_id])
+    if not by_doc and not by_name:
         return {"notes": 0}
     today = date.today()
+    have = db.scalar(select(FinDoc.id).where(FinDoc.kind == "nota").limit(1)) is not None
+    start = today - timedelta(days=(75 if have else 400))  # primeira carga busca o ultimo ano; depois so o recente
+    old = {f.ext_id: f for f in db.scalars(select(FinDoc).where(FinDoc.kind == "nota"))}
     n = 0
 
-    def put(kind_tag: str, it: dict):
+    def put(key: str, cid: int | None, **kw):
         nonlocal n
-        ext = str(it.get("id") or it.get("chave_acesso") or it.get("numero") or "")
-        if not ext:
-            return
-        who = it.get("cliente") or it.get("destinatario") or {}
-        cid = pid_client.get(who.get("id")) or doc_client.get(digits(who.get("documento") or who.get("cnpj") or who.get("cpf_cnpj")))
         if not cid:
             return
-        key = f"{kind_tag}:{ext}"
-        f = db.scalar(select(FinDoc).where(FinDoc.kind == "nota", FinDoc.ext_id == key)) or FinDoc(kind="nota", ext_id=key)
-        if f.id is None:
+        f = old.get(key)
+        if f is None:
+            f = FinDoc(kind="nota", ext_id=key)
             db.add(f)
+            old[key] = f
         f.client_id = cid
-        f.number = str(it.get("numero") or it.get("numero_nota") or "")[:64] or None
-        f.description = (it.get("descricao") or it.get("discriminacao") or ("NFS-e" if kind_tag == "nfse" else "NF-e"))[:512]
-        f.status = str(it.get("status") or it.get("situacao") or "emitida")[:32].lower()
-        f.amount = float(it.get("valor") or it.get("valor_total") or it.get("total") or 0)
-        f.issue_date = _d(it.get("data_emissao") or it.get("data_competencia") or it.get("data"))
-        f.links = _links(it) or None
+        for k_, v_ in kw.items():
+            setattr(f, k_, v_)
         f.synced_at = datetime.now(timezone.utc)
         n += 1
 
     try:
-        for it in ca.service_notes((today - timedelta(days=180)).isoformat(), today.isoformat()):
-            put("nfse", it)
-        start = today - timedelta(days=90)
-        while start < today:  # NF-e: janelas de ate 15 dias
-            end = min(start + timedelta(days=14), today)
-            for it in ca.product_notes(start.isoformat(), end.isoformat()):
-                put("nfe", it)
-            start = end + timedelta(days=1)
+        for de, ate in _windows(start, today):
+            for it in ca.service_notes(de, ate):
+                st = _NOTE_ST.get(str(it.get("status") or "").upper(), "cancelada" if "CANCEL" in str(it.get("status") or "").upper() else str(it.get("status") or "").lower()[:32])
+                num = it.get("numero_nfse")
+                put(f"nfse:{it.get('id')}", by_doc.get(digits(it.get("documento_cliente"))), number=str(num) if num else None,
+                    description=f"NFS-e {num or '(RPS ' + str(it.get('numero_rps')) + ')'} · Venda {it.get('numero_venda') or '—'}"[:512],
+                    status=st or "emitida", amount=float(it.get("valor_total_nfse") or 0), issue_date=_d(it.get("data_competencia")), links=None)
+            for it in ca.product_notes(de, ate):
+                num = it.get("numero_nota")
+                put(f"nfe:{it.get('chave_acesso') or num}", by_name.get(_norm(it.get("nome_destinatario"))), number=str(num) if num else None,
+                    description=f"NF-e {num}"[:512], status=_NOTE_ST.get(str(it.get("status") or "").upper(), str(it.get("status") or "").lower()[:32] or "emitida"),
+                    amount=float(it.get("valor_total") or 0) or None, issue_date=_d(it.get("data_emissao")), links=None)
     except ContaAzulError as e:
         log.warning("notas fiscais: %s", e)
         return {"notes": n, "error": str(e)[:160]}
@@ -209,23 +238,49 @@ def sync_all(db: Session, ca: ContaAzul) -> dict:
     return res
 
 
-def client_finance(db: Session, client_id: int) -> dict:
+_NF = re.compile(r"NFS-?e\s*:?\s*(\d+)", re.I)
+_MONTHS = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def _ym(d: date | None) -> str | None:
+    return f"{d.year:04d}-{d.month:02d}" if d else None
+
+
+def client_finance(db: Session, client_id: int, month: str | None = None) -> dict:
+    """month = 'AAAA-MM' (padrao: mes atual) ou 'all'. Titulos em atraso de meses anteriores sempre aparecem."""
     docs = list(db.scalars(select(FinDoc).where(FinDoc.client_id == client_id).order_by(FinDoc.due_date.desc().nullslast(), FinDoc.issue_date.desc().nullslast())))
-    tit = [d for d in docs if d.kind == "titulo"]
+    tit = [d for d in docs if d.kind == "titulo" and d.status != "cancelado"]
+    notes = [d for d in docs if d.kind == "nota"]
     today = date.today()
+    cur = _ym(today)
+    month = month or cur
+    if month != "all" and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+        month = cur
+    open_ = [d for d in tit if d.status in ("aberto", "vencido")]
+    lo, hi = _ym(date(today.year - 1, today.month, 1)), _ym(date(today.year + (1 if today.month > 1 else 0), (today.month - 2) % 12 + 1, 1))
+    months = sorted(m for m in ({_ym(d.due_date) for d in tit if d.due_date} | {_ym(d.issue_date) for d in notes if d.issue_date} | {cur}) if m and lo <= m <= hi)
 
     def row(d: FinDoc) -> dict:
-        return {"id": d.id, "description": d.description, "number": d.number, "status": d.status, "amount": d.amount, "paid": d.paid,
+        m = _NF.search(d.description or "")
+        return {"id": d.id, "description": d.description, "number": d.number or (m.group(1) if m else None), "nfse": m.group(1) if m else None,
+                "status": d.status, "amount": d.amount, "paid": d.paid,
                 "due_date": d.due_date.isoformat() if d.due_date else None, "issue_date": d.issue_date.isoformat() if d.issue_date else None,
                 "links": sorted((d.links or {}).keys())}
 
-    open_ = [d for d in tit if d.status in ("aberto", "vencido")]
+    sel_t = [d for d in tit if month == "all" or _ym(d.due_date) == month]
+    late = [d for d in open_ if d.status == "vencido" and d not in sel_t and month != "all"]
+    sel_n = [d for d in notes if month == "all" or _ym(d.issue_date) == month]
+    nxt = min((d.due_date for d in open_ if d.due_date and d.due_date >= today), default=None)
+    label = "Todos os períodos" if month == "all" else f"{_MONTHS[int(month[5:])].capitalize()} de {month[:4]}"
     return {
+        "month": month, "month_label": label, "months": [{"value": m, "label": f"{_MONTHS[int(m[5:])].capitalize()} de {m[:4]}"} for m in months if m],
         "summary": {"open_total": round(sum((d.amount or 0) - (d.paid or 0) for d in open_), 2),
                     "overdue_total": round(sum((d.amount or 0) - (d.paid or 0) for d in open_ if d.status == "vencido"), 2),
                     "overdue_count": sum(1 for d in open_ if d.status == "vencido"), "open_count": len(open_),
-                    "next_due": (lambda x: x.isoformat() if x else None)(min((d.due_date for d in open_ if d.due_date and d.due_date >= today), default=None))},
-        "titles": [row(d) for d in tit if d.status != "cancelado"][:200],
-        "notes": [row(d) for d in docs if d.kind == "nota"][:200],
+                    "month_total": round(sum(d.amount or 0 for d in sel_t), 2), "month_paid": round(sum(d.paid or 0 for d in sel_t), 2),
+                    "next_due": nxt.isoformat() if nxt else None},
+        "late": [row(d) for d in sorted(late, key=lambda x: x.due_date or today)][:100],
+        "titles": [row(d) for d in sorted(sel_t, key=lambda x: (x.due_date or today))][:300],
+        "notes": [row(d) for d in sel_n][:300],
         "last_sync": S.get(db, "contaazul.last_sync") or None,
     }

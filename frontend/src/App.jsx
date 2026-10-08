@@ -60,7 +60,7 @@ function Shell({ me, onLogout }) {
   const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
   return <div className="app">
     <aside className="side">
-      <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
+      <div className="brand"><img src="/cliente/brand/navi-sm.png" alt="" className="side-mascot" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>

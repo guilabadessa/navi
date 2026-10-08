@@ -17,9 +17,14 @@ _forgot_limiter = RateLimiter(5, 900)
 _invite_limiter = RateLimiter(10, 900)
 
 
-def _me(u: User, csrf: str | None = None):
+def _me(u: User, csrf: str | None = None, db: Session | None = None):
     perms = user_perms(u)
-    return {"id": u.id, "email": u.email, "name": u.name, "role": u.role, "perms": sorted(perms),
+    clients = []
+    if u.role == "CLIENTE" and db is not None:
+        from .. import portal_access as PA
+        from ..models import Client
+        clients = [{"id": c.id, "name": c.trade_name} for c in (db.get(Client, i) for i in PA.client_ids(db, u)) if c and c.status == "ativo"]
+    return {"clients": clients, "id": u.id, "email": u.email, "name": u.name, "role": u.role, "perms": sorted(perms),
             "must_change_password": u.must_change_password, "csrf": csrf, "client_id": u.client_id}
 
 
@@ -47,7 +52,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
                         max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
     audit.log(db, request, "login", "auth", u.id, user=u)
     db.commit()
-    return _me(u, csrf)
+    return _me(u, csrf, db)
 
 
 @router.post("/logout")
@@ -62,9 +67,9 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def me(request: Request, user: User = Depends(current_user)):
+def me(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     sess = read_session(request.cookies.get(COOKIE))
-    return _me(user, sess["csrf"])
+    return _me(user, sess["csrf"], db)
 
 
 @router.post("/change-password")
@@ -109,7 +114,7 @@ def accept_invite(body: AcceptInviteIn, request: Request, response: Response, db
                         max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
     audit.log(db, request, "invite_accept", "user", u.id, user=u)
     db.commit()
-    return _me(u, csrf)
+    return _me(u, csrf, db)
 
 
 @router.post("/forgot")

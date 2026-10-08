@@ -177,3 +177,63 @@ body.tv .side{display:none}body.tv .app{grid-template-columns:1fr}body.tv .conte
 .cardlink{cursor:pointer;transition:.15s}.cardlink:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(7,26,90,.14)}
 .sevbar{display:flex;height:10px;border-radius:9px;overflow:hidden;background:var(--line2)}
 .portal-embed{max-height:70vh;overflow:auto;padding:4px 2px}
+
+/* ---- NAVI, assistente (mascote) ---- */
+.guide{position:fixed;right:22px;bottom:22px;z-index:70;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none}
+.guide>*{pointer-events:auto}
+.guide-fab{position:relative;width:68px;height:68px;border:0;padding:0;border-radius:50%;background:#050f3a;cursor:pointer;box-shadow:0 8px 28px rgba(7,26,90,.45),0 0 0 2px rgba(77,143,255,.55);animation:navi-float 4.2s ease-in-out infinite;transition:transform .2s}
+.guide-fab:hover{transform:scale(1.08) rotate(-4deg);animation-play-state:paused}
+.guide-fab img{width:100%;height:100%;border-radius:50%;display:block}
+.guide-ring{position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(77,143,255,.65);opacity:0;animation:navi-ring 2.8s ease-out infinite}
+.guide-fab.attn .guide-ring{animation-duration:1.6s}
+.guide-dot{position:absolute;right:2px;bottom:3px;width:14px;height:14px;border-radius:50%;background:#22c55e;border:2px solid #fff;animation:navi-blink 3s ease-in-out infinite}
+.guide-bubble{position:relative;width:min(340px,calc(100vw - 44px));background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:18px 18px 4px 18px;padding:16px 18px 14px;box-shadow:0 18px 50px rgba(7,26,90,.28);animation:navi-pop .32s cubic-bezier(.2,1.4,.4,1)}
+.guide-bubble b{font:700 15.5px var(--head);color:var(--navy);display:block;margin-bottom:6px}
+.guide-bubble p{margin:0 0 12px;line-height:1.5;color:var(--ink);font-size:14.5px}
+.guide-tip span{color:var(--mut)}
+.guide-x{position:absolute;right:8px;top:8px;border:0;background:transparent;color:var(--mut);cursor:pointer;padding:4px;border-radius:8px}
+.guide-x:hover{background:var(--hover)}
+.guide-actions{display:flex;gap:8px;flex-wrap:wrap}
+.guide-asks{display:grid;gap:6px}
+.guide-asks button{text-align:left;border:1px solid var(--line);background:var(--soft);color:var(--ink);padding:8px 12px;border-radius:10px;cursor:pointer;font:inherit;font-size:14px;transition:.15s}
+.guide-asks button:hover{border-color:var(--blue);background:var(--sky);transform:translateX(2px)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--mut)}
+@keyframes navi-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes navi-ring{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+@keyframes navi-blink{0%,92%,100%{transform:scale(1)}96%{transform:scale(.6)}}
+@keyframes navi-pop{from{opacity:0;transform:translateY(10px) scale(.92)}to{opacity:1;transform:none}}
+.tabs button.pulse{animation:navi-ring 1.4s ease-out 2}
+@media (prefers-reduced-motion:reduce){.guide-fab,.guide-ring,.guide-dot,.guide-bubble{animation:none!important}}
+@media (max-width:560px){.guide{right:12px;bottom:12px}.guide-fab{width:58px;height:58px}}
+
+/* ---- Refinamento visual (NAVI + Portal do Cliente) ---- */
+body{background:radial-gradient(1100px 520px at 85% -10%,rgba(30,115,248,.07),transparent 60%),var(--bg)}
+:root[data-theme=dark] body{background:radial-gradient(1100px 520px at 85% -10%,rgba(77,143,255,.10),transparent 60%),var(--bg)}
+.content>*{animation:navi-fade .35s ease both}
+@keyframes navi-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{transition:box-shadow .2s,transform .2s,border-color .2s}
+.card:hover{border-color:rgba(30,115,248,.28)}
+.stat{border-radius:16px;background:linear-gradient(180deg,var(--card),var(--soft))}
+.stat:before{width:5px;border-radius:5px 0 0 5px}
+.stat .v{font-size:30px;letter-spacing:-.01em}
+.btn{box-shadow:0 1px 2px rgba(7,26,90,.05)}
+.btn:active{transform:translateY(1px)}
+.tabs{gap:6px;border-bottom:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px;width:fit-content;max-width:100%}
+.tabs button{border:0;border-radius:10px;padding:8px 15px;transition:.15s}
+.tabs button:hover{background:var(--hover);color:var(--navy)}
+.tabs button.on{background:var(--blue);color:#fff;box-shadow:0 4px 14px rgba(30,115,248,.35)}
+tbody tr{transition:background .12s}
+.side-mascot{border-radius:50%;box-shadow:0 0 0 2px rgba(77,143,255,.6),0 0 18px rgba(77,143,255,.45);animation:navi-float 5s ease-in-out infinite}
+.login-mascot{width:150px;height:150px;border-radius:50%;margin-bottom:18px;display:block;box-shadow:0 0 0 3px rgba(127,176,255,.6),0 0 60px rgba(77,143,255,.55);animation:navi-float 4.5s ease-in-out infinite}
+/* portal do cliente */
+.ptop{background:linear-gradient(100deg,#071a5a 0%,#0b2a8f 60%,#1e5fe0 100%);border-bottom:0;color:#fff;box-shadow:0 8px 30px rgba(7,26,90,.25)}
+.ptop select,.ptop .btn,.ptop .iconbtn{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.25)}
+.ptop select option{color:#141a2e}
+.ptop .btn:hover,.ptop .iconbtn:hover{background:rgba(255,255,255,.22);color:#fff;border-color:#fff}
+.pmascot{width:46px;height:46px;border-radius:50%;box-shadow:0 0 0 2px rgba(127,176,255,.7),0 0 22px rgba(77,143,255,.6);animation:navi-float 5s ease-in-out infinite}
+.pbrand{font:700 26px var(--head)!important;letter-spacing:.2em;color:#fff!important;line-height:1}
+.psub{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#a9c4ff;margin-top:3px}
+.pclient{margin-left:14px;padding-left:18px;border-left:1px solid rgba(255,255,255,.25);font:600 17px var(--head);color:#fff}
+.pclient select{width:auto;font:600 15px var(--head);min-width:220px}
+@media (max-width:760px){.ptop{flex-wrap:wrap;padding:12px 16px}.pclient{margin:0;padding:0;border:0;flex-basis:100%}}
+@media (prefers-reduced-motion:reduce){.content>*,.side-mascot,.pmascot,.login-mascot{animation:none!important}}

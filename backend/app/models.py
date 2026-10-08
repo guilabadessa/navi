@@ -27,6 +27,7 @@ class User(Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)  # perfil CLIENTE
     invite_pending: Mapped[bool] = mapped_column(Boolean, default=False)  # convite enviado e ainda nao aceito
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    portal_min_sev: Mapped[int] = mapped_column(Integer, default=4, server_default="4")  # menor severidade que o usuario do portal enxerga
     extra_perms: Mapped[list | None] = mapped_column(JSON)  # permissoes alem das do perfil (ex.: portal.finance)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -425,3 +426,10 @@ class FinDoc(Base):
     links: Mapped[dict | None] = mapped_column(JSON)  # {"pdf":..., "xml":..., "boleto":...} quando a API fornece
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (UniqueConstraint("kind", "ext_id"),)
+
+
+class UserClient(Base):
+    """Clientes adicionais que um usuario do portal pode acompanhar (alem do cliente principal em users.client_id)."""
+    __tablename__ = "user_clients"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True, index=True)

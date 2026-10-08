@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from .. import portal_access as PA
 from ..db import get_db
 from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
 from ..security import current_user, has_perm, require
@@ -40,6 +41,14 @@ def _ev(e: Event) -> dict:
 def _client_for(db: Session, user: User, client_id: int | None) -> Client:
     """Usuario CLIENTE: sempre o proprio cliente. Equipe (clients.view): pode pre-visualizar o portal de qualquer cliente."""
     from ..security import has_perm
+    if user.role == "CLIENTE":
+        allowed = PA.client_ids(db, user)
+        if client_id and client_id not in allowed:
+            raise HTTPException(403, "Você não tem acesso a este cliente")
+        c = db.get(Client, client_id or (allowed[0] if allowed else 0))
+        if not c or c.status != "ativo":
+            raise HTTPException(403, "Seu acesso não está associado a um cliente ativo. Fale com a Orca TI.")
+        return c
     if client_id and user.role != "CLIENTE":
         if not has_perm(user.role, "clients.view"):
             raise HTTPException(403, "Sem permissão")
@@ -50,9 +59,19 @@ def _client_for(db: Session, user: User, client_id: int | None) -> Client:
     return _client(db, user)
 
 
+@router.get("/clients")
+def my_clients(db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
+    """Clientes que o usuario pode acompanhar (para o seletor do portal)."""
+    if user.role != "CLIENTE":
+        return []
+    return [{"id": c.id, "name": c.trade_name} for c in (db.get(Client, i) for i in PA.client_ids(db, user)) if c and c.status == "ativo"]
+
+
 @router.get("/overview")
-def overview(days: int = 30, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
+def overview(days: int = 30, client_id: int | None = None, min_sev: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
     c = _client_for(db, user, client_id)
+    # severidade minima mostrada: a configurada para o usuario; a equipe, ao pre-visualizar, escolhe (padrao Alta)
+    msev = user.portal_min_sev if user.role == "CLIENTE" else (4 if min_sev is None else max(0, min(min_sev, 5)))
     days = max(1, min(days, 90))
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
@@ -61,6 +80,17 @@ def overview(days: int = 30, client_id: int | None = None, db: Session = Depends
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at.desc())))
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
+    vis = [e for e in evs if (e.severity or 0) >= msev]
+    sm = dict(k["summary"])
+    sm.update({"incidents": len(vis), "open": sum(1 for e in vis if e.status == "PROBLEM"), "resolved": sum(1 for e in vis if e.status != "PROBLEM")})
+    by_day: dict[str, int] = {}
+    for e in vis:
+        d = e.started_at.astimezone(timezone.utc).date().isoformat()
+        by_day[d] = by_day.get(d, 0) + 1
+    by_day = dict(sorted(by_day.items()))
+    by_sev: dict = {}
+    for e in vis:
+        by_sev[str(e.severity)] = by_sev.get(str(e.severity), 0) + 1
     now = datetime.now(timezone.utc)
     upcoming = []
     for w in db.scalars(select(MaintenanceWindow).where(MaintenanceWindow.enabled.is_(True), MaintenanceWindow.name != "Manutenção rápida",
@@ -73,7 +103,7 @@ def overview(days: int = 30, client_id: int | None = None, db: Session = Depends
     gname = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup).where(ZbxHostGroup.groupid.in_(list(my_gids) or ["-"])))}
     by_h = {h["hostid"]: h for h in k["by_host"]}
     open_by_host: dict[str, int] = {}
-    for e in evs:
+    for e in vis:
         if e.status == "PROBLEM":
             open_by_host[e.hostid] = open_by_host.get(e.hostid, 0) + 1
     explicit = {x.zbx_hostid for x in c.hosts}
@@ -107,12 +137,12 @@ def overview(days: int = 30, client_id: int | None = None, db: Session = Depends
     runs = db.scalars(select(ReportRun).where(ReportRun.client_id == c.id, ReportRun.file_path.is_not(None)).order_by(ReportRun.generated_at.desc()).limit(2))
     return {
         "client": {"name": c.trade_name, "sla_target": c.sla_target},
-        "summary": k["summary"], "by_day": k["by_day"], "by_severity": k["by_severity"],
+        "summary": sm, "by_day": by_day, "by_severity": by_sev, "min_sev": msev,
         "by_host": [{"host": h["host"], "incidents": h["incidents"], "downtime_s": h["downtime_s"], "availability": h["availability"]} for h in k["by_host"][:15]],
         "hosts": host_rows,
         "groups": group_rows,
-        "active": [_ev(e) for e in evs if e.status == "PROBLEM"],
-        "history": [_ev(e) for e in evs[:80]],
+        "active": [_ev(e) for e in vis if e.status == "PROBLEM"],
+        "history": [_ev(e) for e in vis[:300]],
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
         "endpoints": {"enabled": bool(etids), "assets": ep_assets},
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
@@ -123,7 +153,7 @@ def overview(days: int = 30, client_id: int | None = None, db: Session = Depends
 @router.get("/reports/{rid}/download")
 def download(rid: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
     run = db.get(ReportRun, rid)
-    c = _client_for(db, user, run.client_id if (run and user.role != "CLIENTE") else None)
+    c = _client_for(db, user, run.client_id if run else None)
     if not run or run.client_id != c.id or not run.file_path or not Path(run.file_path).exists():
         raise HTTPException(404, "Arquivo não encontrado")
     audit.log(db, request, "portal_report_download", "report_run", rid)

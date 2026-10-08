@@ -20,7 +20,9 @@ describe('portal do cliente', () => {
     const { container } = render(<Boundary><MemoryRouter initialEntries={['/']}><ToastProvider><App /></ToastProvider></MemoryRouter></Boundary>)
     await waitFor(() => expect(container.querySelector('.tabs, #boom')).toBeTruthy(), { timeout: 15000 })
     for (const t of [...container.querySelectorAll('.tabs button')]) { fireEvent.click(t); await new Promise(r => setTimeout(r, 300)); if (container.querySelector('#boom')) throw new Error(container.querySelector('#boom').textContent) }
-    expect([...container.querySelectorAll('.tabs button')].map(b => b.textContent)).toContain('Grupos')
+    const names = [...container.querySelectorAll('.tabs button')].map(b => b.textContent)
+    expect(names.some(n => n.startsWith('Grupos'))).toBe(true); expect(names).toContain('Financeiro')
+    expect(container.querySelector('.guide-fab')).toBeTruthy(); expect(container.querySelector('.pclient select')).toBeTruthy(); expect(container.textContent).toContain('Portal do Cliente')
     expect(container.textContent).not.toContain('Gestão'); expect(container.querySelector('.side')).toBeNull()
   }, 40000)
 })

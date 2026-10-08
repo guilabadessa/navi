@@ -10,12 +10,13 @@ from .. import audit
 from ..config import get_settings
 from ..db import get_db
 from ..formats import try_phone
-from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
+from ..models import (UserClient, AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
                       User, ZbxHost, ZbxHostGroup, ExtAsset, ExtTenant)
 from pydantic import BaseModel, EmailStr, Field
 
 from ..schemas import ClientIn
 from ..security import require, user_has
+from .. import portal_access as PA
 from ..services import event_service
 from ..services import kpi_service, maintenance_service
 from ..util import to_dict
@@ -72,6 +73,8 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
     open_by = dict(db.execute(select(Event.client_id, func.count()).where(Event.status == "PROBLEM")
                               .group_by(Event.client_id)).all())
     pu = dict(db.execute(select(User.client_id, func.count()).where(User.role == "CLIENTE").group_by(User.client_id)).all())
+    for k_, n_ in db.execute(select(UserClient.client_id, func.count()).group_by(UserClient.client_id)).all():
+        pu[k_] = pu.get(k_, 0) + n_
     out = []
     for c in db.scalars(stmt):
         d = to_dict(c)
@@ -119,7 +122,7 @@ def _impact(db: Session, cid: int) -> dict:
     runs = db.scalars(select(ReportRun).where((ReportRun.client_id == cid) | (ReportRun.report_id.in_(rep_ids)) if rep_ids else (ReportRun.client_id == cid))).all()
     return {"reports": len(rep_ids), "pdfs": len(runs), "rules": db.scalar(select(func.count()).select_from(AlertRule).where(AlertRule.client_id == cid)),
             "events": db.scalar(select(func.count()).select_from(Event).where(Event.client_id == cid)),
-            "portal_users": db.scalar(select(func.count()).select_from(User).where(User.client_id == cid, User.role == "CLIENTE")),
+            "portal_users": len(PA.users_of(db, cid)),
             "windows": db.scalar(select(func.count()).select_from(MaintenanceWindow).where(MaintenanceWindow.client_id == cid))}
 
 
@@ -146,8 +149,8 @@ def delete_client(cid: int, request: Request, db: Session = Depends(get_db), _=D
         db.delete(r)
     for r in db.scalars(select(Report).where(Report.client_id == cid)):
         db.delete(r)  # rotinas (schedules) saem por cascata
-    for u in db.scalars(select(User).where(User.client_id == cid, User.role == "CLIENTE")):
-        db.delete(u)
+    for u in PA.users_of(db, cid):
+        PA.detach(db, u, cid)  # quem acompanha outros clientes continua com eles
     for e in db.scalars(select(Event).where(Event.client_id == cid)):
         e.client_id = None
     logo = Path(c.logo_path) if c.logo_path else None
@@ -237,10 +240,12 @@ class PortalUserIn(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     email: EmailStr
     finance: bool = False  # acesso ao financeiro (Conta Azul): exige que quem concede tenha finance.view
+    min_sev: int = Field(default=4, ge=0, le=5)  # menor severidade que a pessoa enxerga no portal (padrao: Alta)
 
 
 class PortalUserPatch(BaseModel):
     finance: bool | None = None
+    min_sev: int | None = Field(default=None, ge=0, le=5)
     active: bool | None = None
 
 
@@ -250,8 +255,9 @@ def portal_users(cid: int, db: Session = Depends(get_db), _=Depends(require("cli
         raise HTTPException(404)
     return [{"id": u.id, "name": u.name, "email": u.email, "active": u.active, "invite_pending": u.invite_pending,
              "last_login": u.last_login.isoformat() if u.last_login else None,
-             "finance": "portal.finance" in (u.extra_perms or [])}
-            for u in db.scalars(select(User).where(User.client_id == cid, User.role == "CLIENTE").order_by(User.name))]
+             "finance": "portal.finance" in (u.extra_perms or []), "min_sev": u.portal_min_sev,
+             "other_clients": max(0, len(PA.client_ids(db, u)) - 1)}
+            for u in PA.users_of(db, cid)]
 
 
 @router.post("/{cid}/portal-users")
@@ -262,13 +268,22 @@ def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Sessi
     from ..security import hash_password
     if not db.get(Client, cid):
         raise HTTPException(404)
-    if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
-        raise HTTPException(409, "Este e-mail já possui acesso à NAVI")
     if body.finance and not user_has(me, "finance.view"):
         raise HTTPException(403, "Você não tem permissão para conceder acesso ao financeiro")
+    ex = db.scalar(select(User).where(func.lower(User.email) == body.email.lower()))
+    if ex:
+        # a mesma pessoa (ex.: prestador) pode acompanhar varios clientes com o mesmo login
+        if ex.role != "CLIENTE":
+            raise HTTPException(409, "Este e-mail pertence a um usuário da equipe Orca")
+        if PA.belongs(db, ex, cid):
+            raise HTTPException(409, "Esta pessoa já tem acesso a este cliente")
+        db.add(UserClient(user_id=ex.id, client_id=cid))
+        audit.log(db, request, "portal_user_link", "user", ex.id, detail={"email": ex.email, "client_id": cid})
+        db.commit()
+        return {"id": ex.id, "linked": True, "email_status": f"{ex.email} já tinha acesso à NAVI: o cliente foi adicionado ao login existente (sem novo convite)"}
     u = User(email=body.email.lower(), name=body.name, role="CLIENTE", client_id=cid, active=True,
              password_hash=hash_password(secrets.token_urlsafe(48)), invite_pending=True, invited_at=datetime.now(timezone.utc),
-             extra_perms=["portal.finance"] if body.finance else [])
+             extra_perms=["portal.finance"] if body.finance else [], portal_min_sev=body.min_sev)
     db.add(u)
     db.flush()
     audit.log(db, request, "portal_user_invite", "user", u.id, detail={"email": u.email, "client_id": cid})
@@ -279,8 +294,10 @@ def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Sessi
 @router.patch("/{cid}/portal-users/{uid}")
 def patch_portal_user(cid: int, uid: int, body: PortalUserPatch, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
     u = db.get(User, uid)
-    if not u or u.client_id != cid or u.role != "CLIENTE":
+    if not u or not PA.belongs(db, u, cid):
         raise HTTPException(404)
+    if body.min_sev is not None:
+        u.portal_min_sev = body.min_sev
     if body.finance is not None:
         if not user_has(me, "finance.view"):
             raise HTTPException(403, "Você não tem permissão para alterar o acesso ao financeiro")
@@ -288,7 +305,7 @@ def patch_portal_user(cid: int, uid: int, body: PortalUserPatch, request: Reques
         u.extra_perms = perms + (["portal.finance"] if body.finance else [])
     if body.active is not None:
         u.active = body.active
-    audit.log(db, request, "portal_user_update", "user", uid, detail={"finance": body.finance, "active": body.active})
+    audit.log(db, request, "portal_user_update", "user", uid, detail={"finance": body.finance, "active": body.active, "min_sev": body.min_sev})
     db.commit()
     return {"ok": True}
 
@@ -297,7 +314,7 @@ def patch_portal_user(cid: int, uid: int, body: PortalUserPatch, request: Reques
 def resend_portal_invite(cid: int, uid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
     from .users import send_invite
     u = db.get(User, uid)
-    if not u or u.client_id != cid or u.role != "CLIENTE":
+    if not u or not PA.belongs(db, u, cid):
         raise HTTPException(404)
     audit.log(db, request, "portal_user_resend", "user", uid)
     db.commit()
@@ -307,10 +324,10 @@ def resend_portal_invite(cid: int, uid: int, request: Request, db: Session = Dep
 @router.delete("/{cid}/portal-users/{uid}")
 def delete_portal_user(cid: int, uid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
     u = db.get(User, uid)
-    if not u or u.client_id != cid or u.role != "CLIENTE":
+    if not u or not PA.belongs(db, u, cid):
         raise HTTPException(404)
     email = u.email
-    db.delete(u)
+    PA.detach(db, u, cid)
     audit.log(db, request, "portal_user_delete", "user", uid, detail={"email": email})
     db.commit()
     return {"ok": True}

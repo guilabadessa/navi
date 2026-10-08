@@ -25,6 +25,7 @@ export default function Login({ onLogin }) {
     <div className="art">
       <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
       <div>
+        <img src="/cliente/brand/navi.png" alt="NAVI, assistente da Orca TI" className="login-mascot" />
         <h1>NAVI</h1>
         <div className="tag">Navegação, Orientação e Assistência</div>
         <p>O centro de inteligência do NOC Orca TI: monitoramento, incidentes, SLA, relatórios e comunicação operacional em um só lugar.</p>

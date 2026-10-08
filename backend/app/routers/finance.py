@@ -157,9 +157,9 @@ def _finance_client(db: Session, user: User, client_id: int | None) -> Client:
 
 
 @router.get("/portal/finance")
-def portal_finance(client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def portal_finance(client_id: int | None = None, month: str | None = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
     c = _finance_client(db, user, client_id)
-    out = F.client_finance(db, c.id)
+    out = F.client_finance(db, c.id, month)
     out["linked"] = bool(c.ca_person_id)
     return out
 
