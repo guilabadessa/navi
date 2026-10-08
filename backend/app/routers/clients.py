@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..db import get_db
+from ..formats import try_phone
 from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, Report, ReportRun,
                       ZbxHost, ZbxHostGroup)
 from ..schemas import ClientIn
@@ -33,9 +34,15 @@ def _apply(db: Session, c: Client, b: ClientIn):
     for k, v in b.model_dump(exclude={"group_ids", "host_ids", "contacts"}).items():
         setattr(c, k, v)
     gmap = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
-    c.groups = [ClientHostGroup(zbx_groupid=g, name=gmap.get(g)) for g in dict.fromkeys(b.group_ids)]
-    c.hosts = [ClientHost(zbx_hostid=h) for h in dict.fromkeys(b.host_ids)]
-    c.contacts = [ClientContact(name=x.get("name", "")[:255], role=x.get("role"), email=x.get("email"), phone=x.get("phone"))
+    want_g, want_h = list(dict.fromkeys(b.group_ids)), list(dict.fromkeys(b.host_ids))
+    # atualizacao por diferenca (evita violar a unicidade ao recriar linhas iguais)
+    c.groups[:] = [g for g in c.groups if g.zbx_groupid in want_g]
+    have = {g.zbx_groupid for g in c.groups}
+    c.groups.extend(ClientHostGroup(zbx_groupid=g, name=gmap.get(g)) for g in want_g if g not in have)
+    c.hosts[:] = [h for h in c.hosts if h.zbx_hostid in want_h]
+    have = {h.zbx_hostid for h in c.hosts}
+    c.hosts.extend(ClientHost(zbx_hostid=h) for h in want_h if h not in have)
+    c.contacts = [ClientContact(name=x.get("name", "")[:255], role=x.get("role"), email=x.get("email"), phone=try_phone(x.get("phone")))
                   for x in b.contacts if x.get("name")]
 
 

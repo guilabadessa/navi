@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from .formats import fmt_cnpj, fmt_phone
+
 Role = Literal["ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR"]
 
 
@@ -54,6 +56,16 @@ class ClientIn(BaseModel):
     host_ids: list[str] = []
     contacts: list[dict] = []
 
+    @field_validator("cnpj")
+    @classmethod
+    def _cnpj(cls, v):
+        return fmt_cnpj(v)
+
+    @field_validator("phone", "whatsapp")
+    @classmethod
+    def _phone(cls, v):
+        return fmt_phone(v)
+
     @field_validator("whatsapp_group_jid")
     @classmethod
     def jid(cls, v):
@@ -87,6 +99,11 @@ class TemplateIn(BaseModel):
 
 
 class ReportIn(BaseModel):
+    @field_validator("cnpj")
+    @classmethod
+    def _cnpj(cls, v):
+        return fmt_cnpj(v)
+
     name: str = Field(min_length=2, max_length=255)
     client_id: int | None = None
     cnpj: str | None = Field(default=None, max_length=32)
@@ -162,6 +179,16 @@ class SmtpSettingsIn(BaseModel):
 
 
 class LetterheadIn(BaseModel):
+    @field_validator("cnpj")
+    @classmethod
+    def _cnpj(cls, v):
+        return fmt_cnpj(v)
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, v):
+        return fmt_phone(v)
+
     company: str = Field(max_length=255)
     cnpj: str | None = Field(default=None, max_length=32)
     address: str | None = Field(default=None, max_length=512)

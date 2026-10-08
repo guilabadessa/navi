@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { get, post, put, fmtDT } from '../api'
 import { Card, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
 
 function Save({ onClick, test, busy }) { return <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>{test && <button className="btn" onClick={test}>Testar conexão</button>}<button className="btn primary" disabled={busy} onClick={onClick}>Salvar</button></div> }
 
@@ -49,8 +50,8 @@ function LetterTab({ edit }) {
   useEffect(() => { if (data) setF(data) }, [data])
   if (!f) return <Loading />
   const s = k => e => setF({ ...f, [k]: e.target.value })
-  return <Card title="Papel timbrado — modelo Orca TI"><div className="row r2"><Field label="EMPRESA"><input value={f.company} onChange={s('company')} /></Field><Field label="CNPJ"><input value={f.cnpj || ''} onChange={s('cnpj')} /></Field></div>
-    <div className="row r3"><Field label="ENDEREÇO"><input value={f.address || ''} onChange={s('address')} /></Field><Field label="TELEFONE"><input value={f.phone || ''} onChange={s('phone')} /></Field><Field label="SITE"><input value={f.site || ''} onChange={s('site')} /></Field></div>
+  return <Card title="Papel timbrado — modelo Orca TI"><div className="row r2"><Field label="EMPRESA"><input value={f.company} onChange={s('company')} /></Field><Field label="CNPJ" hint={cnpjHint(f.cnpj)}><input inputMode="numeric" value={f.cnpj || ''} onChange={e => setF({ ...f, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field></div>
+    <div className="row r3"><Field label="ENDEREÇO"><input value={f.address || ''} onChange={s('address')} /></Field><Field label="TELEFONE"><input inputMode="tel" value={f.phone || ''} onChange={e => setF({ ...f, phone: maskPhone(e.target.value) })} placeholder="(00) 0000-0000" /></Field><Field label="SITE"><input value={f.site || ''} onChange={s('site')} /></Field></div>
     <Field label="TEXTO INSTITUCIONAL (rodapé do relatório)"><textarea value={f.text || ''} onChange={s('text')} /></Field>
     {edit && <Save onClick={async () => { try { await put('/settings/letterhead', f); toast('Salvo') } catch (e) { toast(e.message, true) } }} />}</Card>
 }

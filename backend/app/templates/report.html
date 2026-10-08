@@ -80,7 +80,7 @@ tr:nth-child(even) td{background:#f9fafd}
 <div class="pb"></div>
 <h2>Detalhamento Técnico — Resumo por Host</h2>
 <table><tr><th>Host</th><th>IP</th><th>Incid.</th><th>Indisponib.</th><th>Disponib.</th></tr>
-{% for h in k.by_host if h.incidents or loop.index <= 30 %}<tr><td>{{ h.host }}</td><td>{{ h.ip or '—' }}</td><td>{{ h.incidents }}</td><td>{{ dur(h.downtime_s) }}</td><td>{{ pct(h.availability) }}</td></tr>{% endfor %}</table>
+{% for h in k.by_host[:60] %}<tr><td>{{ h.host }}</td><td>{{ h.ip or '—' }}</td><td>{{ h.incidents }}</td><td>{{ dur(h.downtime_s) }}</td><td>{{ pct(h.availability) }}</td></tr>{% endfor %}</table>
 
 <h2>Detalhamento Técnico — Eventos</h2>
 <table><tr><th>Host</th><th>IP</th><th>Trigger</th><th>Item</th><th>Sev.</th><th>Início</th><th>Recuperação</th><th>Duração</th></tr>

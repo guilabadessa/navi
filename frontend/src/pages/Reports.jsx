@@ -3,6 +3,7 @@ import { Download, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send } fr
 import { get, post, put, del, download, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pager, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { maskCNPJ, cnpjHint } from '../mask'
 
 const iso = (d) => d ? new Date(d).toISOString() : null
 const loc = (v) => v ? new Date(new Date(v).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
@@ -20,7 +21,7 @@ function ReportForm({ r, clients, onClose, onSaved }) {
     <Tabs value={tab} onChange={setTab} tabs={[['g', 'Geral'], ['f', 'Hosts e filtros'], ['o', 'Conteúdo'], ['d', 'Destinatários']]} />
     {tab === 'g' && <><div className="row r2"><Field label="NOME DO RELATÓRIO *"><input value={x.name} onChange={set('name')} placeholder="SLA Mensal — Hotel X" /></Field>
       <Field label="CLIENTE"><select value={x.client_id || ''} onChange={onClient}><option value="">— selecione —</option>{clients.map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field></div>
-      <div className="row r3"><Field label="CNPJ"><input value={x.cnpj || ''} onChange={set('cnpj')} /></Field><Field label="PERÍODO INICIAL" hint="Opcional se usar rotina"><input type="datetime-local" value={loc(x.period_start)} onChange={e => setX({ ...x, period_start: e.target.value })} /></Field>
+      <div className="row r3"><Field label="CNPJ" hint={cnpjHint(x.cnpj)}><input inputMode="numeric" value={x.cnpj || ''} onChange={e => setX({ ...x, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="PERÍODO INICIAL" hint="Opcional se usar rotina"><input type="datetime-local" value={loc(x.period_start)} onChange={e => setX({ ...x, period_start: e.target.value })} /></Field>
         <Field label="PERÍODO FINAL"><input type="datetime-local" value={loc(x.period_end)} onChange={e => setX({ ...x, period_end: e.target.value })} /></Field></div>
       <Field label="OBSERVAÇÕES (aparecem no PDF)"><textarea value={x.notes || ''} onChange={set('notes')} /></Field></>}
     {tab === 'f' && <><p className="sub" style={{ marginBottom: 10 }}>Sem seleção, o relatório usa todos os hosts dos Host Groups do cliente.</p>

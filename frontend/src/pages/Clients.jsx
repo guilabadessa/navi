@@ -5,6 +5,7 @@ import { Plus, Pencil } from 'lucide-react'
 import { get, post, put, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
 
 const blank = { trade_name: '', legal_name: '', cnpj: '', state_registration: '', address: '', city: '', state: '', contact_name: '', email: '', phone: '',
   whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', sla_target: 99.5, service_hours: '', status: 'ativo', wa_enabled: false,
@@ -29,10 +30,10 @@ function ClientForm({ initial, onClose, onSaved }) {
     <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas WhatsApp'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos']]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
-      <div className="row r3"><Field label="CNPJ"><input value={c.cnpj || ''} onChange={set('cnpj')} placeholder="00.000.000/0000-00" /></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
+      <div className="row r3"><Field label="CNPJ" hint={cnpjHint(c.cnpj)}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => setC({ ...c, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
         <Field label="STATUS"><select value={c.status} onChange={set('status')}><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></Field></div>
       <div className="row r3"><Field label="ENDEREÇO"><input value={c.address || ''} onChange={set('address')} /></Field><Field label="CIDADE"><input value={c.city || ''} onChange={set('city')} /></Field><Field label="UF"><input maxLength={2} value={c.state || ''} onChange={e => setC({ ...c, state: e.target.value.toUpperCase() })} /></Field></div>
-      <div className="row r3"><Field label="CONTATO"><input value={c.contact_name || ''} onChange={set('contact_name')} /></Field><Field label="E-MAIL"><input value={c.email || ''} onChange={set('email')} /></Field><Field label="TELEFONE"><input value={c.phone || ''} onChange={set('phone')} /></Field></div>
+      <div className="row r3"><Field label="CONTATO"><input value={c.contact_name || ''} onChange={set('contact_name')} /></Field><Field label="E-MAIL"><input value={c.email || ''} onChange={set('email')} /></Field><Field label="TELEFONE"><input inputMode="tel" value={c.phone || ''} onChange={e => setC({ ...c, phone: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
       <Field label="OBSERVAÇÕES"><textarea value={c.notes || ''} onChange={set('notes')} /></Field></>}
     {tab === 'groups' && <><p className="sub" style={{ marginBottom: 12 }}>Associe um ou mais Host Groups do Zabbix a este cliente. Eventos e relatórios dos hosts desses grupos passam a pertencer ao cliente.</p>
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
@@ -40,7 +41,7 @@ function ClientForm({ initial, onClose, onSaved }) {
     {tab === 'wa' && <>
       <div className="row"><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} /></div>
       <div className="row r2"><Field label="GRUPO WHATSAPP (JID)" hint="Formato 1203630…@g.us"><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
-        <Field label="WHATSAPP DO CLIENTE"><input value={c.whatsapp || ''} onChange={set('whatsapp')} /></Field></div>
+        <Field label="WHATSAPP DO CLIENTE"><input inputMode="tel" value={c.whatsapp || ''} onChange={e => setC({ ...c, whatsapp: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
       <div className="row r4"><Field label="SEVERIDADE MÍNIMA"><select value={c.wa_min_severity} onChange={set('wa_min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
         <Field label="ATRASO ANTES DO ENVIO"><select value={c.wa_delay_s} onChange={set('wa_delay_s')}>{[[0, 'Imediato'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="HORÁRIO (vazio = 24x7)" hint="ex.: 08:00-18:00"><input value={c.wa_hours || ''} onChange={set('wa_hours')} /></Field>
@@ -55,7 +56,7 @@ function ClientForm({ initial, onClose, onSaved }) {
       {c.id && <div style={{ marginTop: 14 }}><label className="f">LOGO DO CLIENTE</label><input type="file" accept="image/*" onChange={async e => { try { await upload(`/clients/${c.id}/logo`, e.target.files[0]); toast('Logo enviada') } catch (x) { toast(x.message, true) } }} /></div>}</>}
     {tab === 'contatos' && <>
       {c.contacts.map((x, i) => <div className="row r4" key={i}><input placeholder="Nome" value={x.name || ''} onChange={e => setContact(i, 'name', e.target.value)} /><input placeholder="Função" value={x.role || ''} onChange={e => setContact(i, 'role', e.target.value)} />
-        <input placeholder="E-mail" value={x.email || ''} onChange={e => setContact(i, 'email', e.target.value)} /><div style={{ display: 'flex', gap: 6 }}><input placeholder="Telefone" value={x.phone || ''} onChange={e => setContact(i, 'phone', e.target.value)} />
+        <input placeholder="E-mail" value={x.email || ''} onChange={e => setContact(i, 'email', e.target.value)} /><div style={{ display: 'flex', gap: 6 }}><input placeholder="(00) 00000-0000" value={x.phone || ''} onChange={e => setContact(i, 'phone', maskPhone(e.target.value))} />
           <button className="btn sm danger" onClick={() => setC({ ...c, contacts: c.contacts.filter((_, j) => j !== i) })}>✕</button></div></div>)}
       <button className="btn" onClick={() => setC({ ...c, contacts: [...c.contacts, {}] })}><Plus />Adicionar contato</button></>}
   </Modal>
