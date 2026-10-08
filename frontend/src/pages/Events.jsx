@@ -54,7 +54,7 @@ export default function Events() {
   const clear = () => { setKind(''); apply({ status: '', q: '', sev: '', cl: '', days: '7' }) }
   const dirty = kind || status || q || sev !== '' || cl || days !== '7'
   return <>
-    <PageHead title="Eventos e Incidentes" desc="PROBLEM e RESOLVED relacionados pelo Event ID do Zabbix">
+    <PageHead title="Eventos e Incidentes" desc="Ocorrências de todos os clientes (problema e recuperação ligados pelo Event ID do Zabbix). Filtre, exporte em CSV e abra o detalhe">
       <button className="btn" onClick={saveFilter}><Bookmark />Salvar filtro</button>
       <button className="btn" onClick={() => download(`/events-export?${qs}`, 'eventos-navi.csv').catch(e => toast(e.message, true))}><Download />Exportar CSV</button></PageHead>
     <div className="bar"><div className="grow"><input placeholder="Buscar host, IP, trigger ou item…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>

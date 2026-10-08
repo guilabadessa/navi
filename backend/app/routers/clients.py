@@ -291,6 +291,66 @@ def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Sessi
     return {"id": u.id, "email_status": send_invite(db, u)}
 
 
+class PortalSettingsIn(BaseModel):
+    notify_boleto: bool | None = None
+    notify_monthly: bool | None = None
+
+
+@router.get("/{cid}/portal-settings")
+def portal_settings(cid: int, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    return {"notify_boleto": bool(c.notify_boleto), "notify_monthly": bool(c.notify_monthly), "finance_linked": bool(c.ca_person_id)}
+
+
+@router.put("/{cid}/portal-settings")
+def portal_settings_put(cid: int, body: PortalSettingsIn, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    if body.notify_boleto is not None:
+        if body.notify_boleto and not user_has(me, "finance.view"):
+            raise HTTPException(403, "Você não tem permissão para ativar avisos financeiros")
+        c.notify_boleto = body.notify_boleto
+    if body.notify_monthly is not None:
+        c.notify_monthly = body.notify_monthly
+    audit.log(db, request, "portal_settings", "client", cid, detail=body.model_dump(exclude_none=True))
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{cid}/portal-settings/test/{kind}")
+def portal_settings_test(cid: int, kind: str, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
+    """Envia um exemplo do aviso SOMENTE para o e-mail de quem clicou (nunca para o cliente)."""
+    from ..services import notice_service as N
+    from datetime import date as _d
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    if kind == "mensal":
+        today = _d.today()
+        py, pm = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+        subj, ctx = N.monthly_ctx(db, c, None, py, pm)
+        from ..services import mailer
+        mailer.send(db, "notice", me.email, "[TESTE] " + subj, ctx)
+        res = {"sent": 1}
+    elif kind == "boleto":
+        from ..models import FinDoc
+        from ..services import mailer
+        d = db.scalar(select(FinDoc).where(FinDoc.client_id == cid, FinDoc.kind == "titulo", FinDoc.status.in_(["aberto", "vencido"])).order_by(FinDoc.due_date))
+        if not d:
+            raise HTTPException(422, "Este cliente não tem títulos em aberto para o exemplo")
+        subj, ctx = N.boleto_mail(c, [("boleto_d3", d)], me.name)
+        mailer.send(db, "notice", me.email, "[TESTE] " + subj, ctx)
+        res = {"sent": 1}
+    else:
+        raise HTTPException(404)
+    audit.log(db, request, "portal_notice_test", "client", cid, detail={"kind": kind, "to": me.email})
+    db.commit()
+    return {**res, "to": me.email}
+
+
 @router.patch("/{cid}/portal-users/{uid}")
 def patch_portal_user(cid: int, uid: int, body: PortalUserPatch, request: Request, db: Session = Depends(get_db), me=Depends(require("clients.edit"))):
     u = db.get(User, uid)

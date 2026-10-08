@@ -54,7 +54,7 @@ export function AuditPage() {
   const [page, setPage] = useState(1); const [action, setAction] = useState(''); const [user, setUser] = useState('')
   const { data, err } = useLoad(() => get(`/audit?page=${page}&size=50&action=${action}&user=${encodeURIComponent(user)}`), [page, action, user])
   return <>
-    <PageHead title="Auditoria" desc="Registro de ações: usuário, ação, data/hora, IP, recurso e resultado" />
+    <PageHead title="Auditoria" desc="Quem fez o quê, quando, de qual IP e com qual resultado. Os registros ficam guardados por 2 anos" />
     <div className="bar"><div className="grow"><input placeholder="Filtrar por usuário…" value={user} onChange={e => { setUser(e.target.value); setPage(1) }} /></div>
       <select value={action} onChange={e => { setAction(e.target.value); setPage(1) }}><option value="">Todas as ações</option>{(data?.actions || []).map(a => <option key={a}>{a}</option>)}</select></div>
     <Card pad={false}>{data ? <><Table rows={data.items} cols={[{ h: 'Data/hora', r: r => new Date(r.ts).toLocaleString('pt-BR') }, { h: 'Usuário', k: 'user_email' }, { h: 'Ação', r: r => <code>{r.action}</code> }, { h: 'Recurso', r: r => [r.resource, r.resource_id].filter(Boolean).join(' #') },

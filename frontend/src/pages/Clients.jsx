@@ -86,7 +86,7 @@ export function Clients() {
   const { data, err, reload } = useLoad(() => get('/clients' + (q ? '?q=' + encodeURIComponent(q) : '')), [q])
   const open = async (id) => setEdit(await get('/clients/' + id))
   return <>
-    <PageHead title="Clientes" desc="Cadastro de clientes e associação aos Host Groups do Zabbix">
+    <PageHead title="Clientes" desc="Cadastro dos clientes, vínculo com Host Groups (Zabbix), Acronis, EMS e Conta Azul e acesso ao portal">
       {can(me, 'clients.edit') && <button className="btn primary" onClick={() => setEdit({})}><Plus />Novo cliente</button>}</PageHead>
     {data && can(me, 'clients.edit') && <Coverage clients={data} open={sp.has('cobertura')} onChanged={reload} />}
     <div className="bar"><div className="grow"><input placeholder="Buscar por nome ou CNPJ…" value={q} onChange={e => setQ(e.target.value)} /></div></div>

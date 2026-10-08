@@ -12,7 +12,7 @@ export function WhatsApp() {
   const evo = health.data?.evolution
   const test = async () => { try { const r = await post('/alerts/test-whatsapp', { to, text }); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } }
   return <>
-    <PageHead title="WhatsApp" desc="Integração com a Evolution API e log de mensagens enviadas"><Link className="btn" to="/configuracoes">Configurar Evolution</Link></PageHead>
+    <PageHead title="WhatsApp" desc="Estado da integração com a Evolution API e histórico das mensagens enviadas"><Link className="btn" to="/configuracoes">Configurar Evolution</Link></PageHead>
     <div className="grid g3" style={{ marginBottom: 16 }}>
       <Stat label="Conexão Evolution" value={evo ? (evo.ok ? 'Conectada' : 'Com problema') : '—'} tone={evo ? (evo.ok ? 'ok' : 'bad') : ''} desc={evo?.detail} />
       <Stat label="Mensagens (página)" value={data ? data.total : '—'} desc="total no filtro atual" />
@@ -32,7 +32,7 @@ export function Email() {
   const smtp = useLoad(() => get('/settings/smtp'), []); const health = useLoad(() => get('/settings/status'), [], 30000); const runs = useLoad(() => get('/reports/runs?size=15'), [])
   const h = health.data?.email
   return <>
-    <PageHead title="E-mail" desc="SMTP para relatórios e notificações"><Link className="btn" to="/configuracoes">Configurar SMTP</Link></PageHead>
+    <PageHead title="E-mail" desc="Estado do SMTP e histórico dos e-mails de relatórios, alertas e avisos"><Link className="btn" to="/configuracoes">Configurar SMTP</Link></PageHead>
     <div className="grid g3" style={{ marginBottom: 16 }}>
       <Stat label="SMTP" value={h ? (h.ok ? 'Autenticado' : 'Com problema') : '—'} tone={h ? (h.ok ? 'ok' : 'bad') : ''} desc={h?.detail} />
       <Stat label="Servidor" value={smtp.data ? smtp.data.host || '—' : '—'} desc={smtp.data ? `porta ${smtp.data.port} · ${smtp.data.user}` : ''} />

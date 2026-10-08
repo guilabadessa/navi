@@ -20,6 +20,7 @@ import Settings from './pages/Settings'
 import Palette from './Palette'
 import Portal from './pages/Portal'
 import PortalSwitch from './pages/PortalSwitch'
+import NaviGuide, { STAFF_ASKS, STAFF_TIPS } from './pages/NaviGuide'
 import Protection from './pages/Protection'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
@@ -55,12 +56,15 @@ function StatusPills() {
 }
 
 function Shell({ me, onLogout }) {
-  const loc = useLocation(); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
+  const loc = useLocation(); const navTo = useNavigate(); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
   useEffect(() => { const h = e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPal(p => !p) } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [])
   const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
+  const allowed = new Set(NAV.filter(([, , , p]) => can(me, p)).map(([to]) => to))
+  const tips = Object.fromEntries(Object.entries(STAFF_TIPS).filter(([k]) => allowed.has(k)))
+  const here = Object.keys(tips).filter(k => k === '/' ? loc.pathname === '/' : loc.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0]
   return <div className="app">
     <aside className="side">
-      <div className="brand"><img src="/cliente/brand/navi-sm.png" alt="" className="side-mascot" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
+      <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="Orca TI" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
@@ -97,6 +101,7 @@ function Shell({ me, onLogout }) {
         </Routes>
       </div>
     </div>
+    <NaviGuide scope="staff" tips={tips} current={here} asks={STAFF_ASKS} go={navTo} tour={Object.keys(tips)} userKey={me.id} name={me.name} />
   </div>
 }
 

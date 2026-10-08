@@ -27,7 +27,7 @@ export default function Dashboard() {
   }
   const failed = d.alerts_24h?.failed || 0
   return <>
-    <PageHead title="NAVI NOC" desc={`Visão em tempo real · atualizado ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
+    <PageHead title="Painel do NOC" desc={`Situação de todos os clientes em tempo real · atualizado às ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
       <select style={{ width: 'auto' }} value={cl} onChange={e => { setCl(e.target.value); lset('cl', e.target.value) }}>
         <option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
       <select style={{ width: 'auto' }} value={days} onChange={e => { setDays(e.target.value); lset('days', e.target.value) }}>

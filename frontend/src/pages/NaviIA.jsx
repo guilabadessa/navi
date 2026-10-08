@@ -17,9 +17,9 @@ export default function NaviIA() {
   const ask = async (text) => { if (!text.trim()) return; setMsgs(m => [...m, { who: 'u', text }]); setQ(''); setBusy(true)
     try { const r = await post('/navi/ask', { question: text }); setMsgs(m => [...m, { who: 'n', text: r.answer, data: r.data, mode: r.mode }]) } catch (e) { setMsgs(m => [...m, { who: 'n', text: 'Erro: ' + e.message }]) } finally { setBusy(false) } }
   return <>
-    <PageHead title="NAVI IA" desc="Assistente do NOC — consultas ao ambiente com acesso apenas a dados autorizados" />
+    <PageHead title="NAVI IA" desc="Pergunte em linguagem natural sobre o ambiente. A NAVI consulta apenas os dados que você tem permissão para ver" />
     <Card><div className="chat">{msgs.map((m, i) => <div key={i} className={'msg ' + m.who} style={m.data ? { maxWidth: '95%' } : null}>{m.who === 'n' && <Sparkles size={15} style={{ marginRight: 6, color: 'var(--blue)', verticalAlign: -2 }} />}{m.text}{m.data && <Data d={m.data} />}</div>)}{busy && <div className="msg n">Analisando…</div>}<div ref={end} /></div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>{SUG.map(s => <span key={s} className="chip" style={{ cursor: 'pointer' }} onClick={() => ask(s)}>{s}</span>)}</div>
-      <form onSubmit={e => { e.preventDefault(); ask(q) }} style={{ display: 'flex', gap: 10 }}><input placeholder="Pergunte à NAVI…" value={q} onChange={e => setQ(e.target.value)} /><button className="btn primary" disabled={busy}><Send />Enviar</button></form>
+      <form onSubmit={e => { e.preventDefault(); ask(q) }} style={{ display: 'flex', gap: 10 }}><input placeholder="Pergunte algo sobre o ambiente…" value={q} onChange={e => setQ(e.target.value)} /><button className="btn primary" disabled={busy}><Send />Enviar</button></form>
       <p className="hint" style={{ marginTop: 10 }}>Modo atual: consultas determinísticas. A análise generativa (resumos, causas, relatórios sob demanda) será habilitada ao conectar um provedor de LLM — a NAVI nunca envia credenciais ao modelo.</p></Card></>
 }

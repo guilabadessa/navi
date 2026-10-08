@@ -21,7 +21,7 @@ export default function Monitoring() {
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data, err } = useLoad(() => get(`/zabbix/hosts?page=${page}&size=50&q=${encodeURIComponent(q)}&groupid=${groupid}${av !== '' ? '&available=' + av : ''}`), [page, q, groupid, av], 30000)
   return <>
-    <PageHead title="Monitoramento" desc="Hosts e Host Groups sincronizados do Zabbix" />
+    <PageHead title="Monitoramento" desc="Hosts e Host Groups sincronizados do Zabbix a cada 10 minutos, com o cliente associado a cada um" />
     <Tabs value={tab} onChange={setTab} tabs={[['hosts', 'Hosts'], ['groups', 'Host Groups']]} />
     {tab === 'hosts' && <>
       <div className="bar"><div className="grow"><input placeholder="Buscar host, IP ou DNS…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>

@@ -6,7 +6,7 @@ import { Card, Loading, Pill, SevBadge, Stat, StatusBadge, Table, useLoad, useTo
 import { getTheme, toggleTheme } from '../theme'
 import { useAuth, can } from '../App'
 import FinanceTab from './FinanceTab'
-import NaviGuide from './NaviGuide'
+import NaviGuide, { PORTAL_ASKS, PORTAL_SEV, PORTAL_TIPS } from './NaviGuide'
 
 const SEVN = { 0: 'Não classificado', 1: 'Informação', 2: 'Atenção', 3: 'Média', 4: 'Alta', 5: 'Desastre' }
 const CKEY = 'navi.portal.cid'
@@ -35,8 +35,8 @@ export default function Portal({ me, onLogout, clientId: forced, embedded, minSe
     ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/navi-sm.png" alt="NAVI" className="pmascot" />
-        <div><h1 className="pbrand">NAVI</h1><div className="psub">Portal do Cliente</div></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
+        <div className="pprod"><h1 className="pbrand">NAVI</h1><div className="psub">Portal do Cliente</div></div>
         <div className="pclient">{mine.length > 1 ? <select value={clientId || ''} onChange={e => choose(e.target.value)} title="Trocar de cliente">{mine.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select> : <b>{d ? d.client.name : ''}</b>}</div></div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
@@ -56,6 +56,7 @@ export default function Portal({ me, onLogout, clientId: forced, embedded, minSe
           <Stat label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />
         </div>
         <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+        {PORTAL_TIPS[tab] && <p className="tabhelp">{PORTAL_TIPS[tab][1]}</p>}
         {tab === 'geral' && <>
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
@@ -94,7 +95,7 @@ export default function Portal({ me, onLogout, clientId: forced, embedded, minSe
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },
           { h: '', r: r => <button className="btn sm" onClick={() => dl(r)}><Download />Baixar PDF</button> }]} /></Card>}
       </>}
-      {!embedded && d && <NaviGuide tabs={tabs} tab={tab} setTab={setTab} userKey={me?.id} name={me?.name} />}
+      {!embedded && d && <NaviGuide scope="portal" tips={PORTAL_TIPS} current={tab} asks={PORTAL_ASKS} go={setTab} tour={tabs.map(t => t[0])} extra={PORTAL_SEV} userKey={me?.id} name={me?.name} />}
       {!embedded && <div className="sub" style={{ textAlign: 'center', marginTop: 28, fontSize: 12.5 }}>Dados em tempo real do monitoramento · {me?.email}</div>}
     </div></div>
 }

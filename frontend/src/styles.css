@@ -237,3 +237,24 @@ tbody tr{transition:background .12s}
 .pclient select{width:auto;font:600 15px var(--head);min-width:220px}
 @media (max-width:760px){.ptop{flex-wrap:wrap;padding:12px 16px}.pclient{margin:0;padding:0;border:0;flex-basis:100%}}
 @media (prefers-reduced-motion:reduce){.content>*,.side-mascot,.pmascot,.login-mascot{animation:none!important}}
+
+/* ---- Login executivo / marca ---- */
+.login .art{padding:48px 64px}
+.login .art .hero{max-width:600px}
+.login .eyebrow{font:600 12px var(--head);letter-spacing:.22em;text-transform:uppercase;color:#7fb0ff;margin-bottom:14px}
+.login .eyebrow.dark{color:var(--blue);margin-bottom:8px}
+.login .art h1{font-size:76px;margin-bottom:2px;text-shadow:0 8px 40px rgba(30,115,248,.45)}
+.login .art p{font-size:17px;max-width:540px}
+.login .caps{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:30px}
+.login .cap{display:flex;gap:12px;align-items:flex-start;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(6px);padding:14px 16px;border-radius:14px;transition:.2s}
+.login .cap:hover{background:rgba(255,255,255,.1);transform:translateY(-2px)}
+.login .cap svg{width:22px;height:22px;color:#7fb0ff;flex:none;margin-top:2px}
+.login .cap b{display:block;color:#fff;font-weight:600;font-size:15px}.login .cap span{font-size:13px;color:#a9bdf5;line-height:1.35;display:block;margin-top:2px}
+.login .trust{display:flex;gap:22px;flex-wrap:wrap;color:#b9c8ff;font-size:13.5px}
+.login .trust span{display:inline-flex;gap:7px;align-items:center}
+.login .box{box-shadow:0 30px 80px rgba(7,26,90,.16)}
+@media (max-width:980px){.login{grid-template-columns:1fr}.login .art{display:none}}
+.plogo{height:32px}
+.pprod{padding-left:16px;margin-left:2px;border-left:1px solid rgba(255,255,255,.28)}
+.pbrand{font-size:22px!important}
+.tabhelp{color:var(--mut);font-size:14.5px;margin:-4px 2px 16px;max-width:900px;line-height:1.5}

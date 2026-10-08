@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Mail, Plus, Send, Trash2 } from 'lucide-react'
-import { get, post, del, patch, fmtDT } from '../api'
+import { get, post, put, del, patch, fmtDT } from '../api'
 import { useAuth, can } from '../App'
 import { Card, Check, Field, Loading, Modal, Pill, Table, useLoad, useToast } from '../ui'
 
@@ -10,6 +10,9 @@ const SEV = [[5, 'Desastre'], [4, 'Alta'], [3, 'Média'], [2, 'Atenção'], [1, 
 export default function PortalAccess({ client, bare }) {
   const toast = useToast(); const me = useAuth(); const finOk = can(me, 'finance.view'); const { data, reload } = useLoad(() => get(`/clients/${client.id}/portal-users`), [client.id])
   const [inv, setInv] = useState(null); const [busy, setBusy] = useState(false)
+  const { data: cfg, reload: reloadCfg } = useLoad(() => get(`/clients/${client.id}/portal-settings`), [client.id])
+  const setCfg = async (k, v) => { try { await put(`/clients/${client.id}/portal-settings`, { [k]: v }); toast(v ? 'Aviso ativado' : 'Aviso desativado'); reloadCfg() } catch (e) { toast(e.message, true) } }
+  const sample = async (kind) => { try { const r = await post(`/clients/${client.id}/portal-settings/test/${kind}`); toast(`Exemplo enviado somente para ${r.to}`) } catch (e) { toast(e.message, true) } }
   const send = async () => {
     if (busy) return
     setBusy(true)
@@ -31,6 +34,16 @@ export default function PortalAccess({ client, bare }) {
       { h: 'Estado', r: r => !r.active ? <Pill tone="mut">inativo</Pill> : r.invite_pending ? <Pill tone="warn">convite pendente</Pill> : <Pill tone="ok">ativo</Pill> },
       { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={() => resend(r)}><Send />{r.invite_pending ? 'Reenviar' : 'Redefinir'}</button>
         <button className="btn sm danger" title="Remover acesso" onClick={() => remove(r)}><Trash2 /></button></div> }]} /> : <Loading />}
+    {cfg && <div style={{ padding: '16px 20px 20px', borderTop: '1px solid var(--line)', display: 'grid', gap: 12 }}>
+      <b style={{ fontFamily: 'var(--head)' }}>Avisos por e-mail ao cliente</b>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Check label="Avisar sobre boletos a vencer (3 dias antes e no dia do vencimento)" checked={cfg.notify_boleto} onChange={v => (finOk && cfg.finance_linked) ? setCfg('notify_boleto', v) : toast(!cfg.finance_linked ? 'Vincule o financeiro (Conta Azul) deste cliente primeiro' : 'Você não tem permissão para ativar avisos financeiros', true)} />
+        <button className="btn sm" onClick={() => sample('boleto')} title="Envia um exemplo só para o seu e-mail">Enviar exemplo para mim</button></div>
+      <div className="sub" style={{ marginTop: -6 }}>Vai somente para quem tem a permissão de financeiro. Cada vencimento é avisado uma vez por pessoa.</div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Check label="Enviar resumo mensal de disponibilidade e financeiro" checked={cfg.notify_monthly} onChange={v => setCfg('notify_monthly', v)} />
+        <button className="btn sm" onClick={() => sample('mensal')} title="Envia um exemplo só para o seu e-mail">Enviar exemplo para mim</button></div>
+      <div className="sub" style={{ marginTop: -6 }}>Enviado nos primeiros dias de cada mês a todos os usuários ativos do portal. O financeiro só aparece para quem tem essa permissão.</div></div>}
     {inv && <Modal title={`Convidar usuário de ${client.trade_name}`} onClose={() => setInv(null)} footer={<><button className="btn" onClick={() => setInv(null)}>Cancelar</button><button className="btn primary" disabled={busy || !inv.name || !inv.email} onClick={send}><Mail />{busy ? 'Enviando…' : 'Enviar convite'}</button></>}>
       <div className="row r2"><Field label="NOME"><input value={inv.name} onChange={e => setInv({ ...inv, name: e.target.value })} autoFocus /></Field><Field label="E-MAIL"><input type="email" value={inv.email} onChange={e => setInv({ ...inv, email: e.target.value })} /></Field></div>
       <Field label="SEVERIDADE DOS INCIDENTES QUE ELA VÊ" hint="Padrão: Alta ou superior. Incidentes de severidade menor ficam ocultos no portal desta pessoa."><select value={inv.min_sev} onChange={e => setInv({ ...inv, min_sev: +e.target.value })}>{SEV.map(([n, l]) => <option key={n} value={n}>{l} ou superior</option>)}</select></Field>

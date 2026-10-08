@@ -79,6 +79,8 @@ class Client(Base):
     status: Mapped[str] = mapped_column(String(16), default="ativo")
     ca_person_id: Mapped[str | None] = mapped_column(String(64), index=True)  # cadastro correspondente no Conta Azul
     ca_match: Mapped[str | None] = mapped_column(String(16))  # cnpj | manual
+    notify_boleto: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # avisa os usuarios do financeiro sobre boletos a vencer
+    notify_monthly: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # resumo mensal por e-mail
     # Alertas WhatsApp (padrao do cliente)
     wa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     wa_min_severity: Mapped[int] = mapped_column(Integer, default=3)
@@ -433,3 +435,15 @@ class UserClient(Base):
     __tablename__ = "user_clients"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True, index=True)
+
+
+class FinNotice(Base):
+    """Avisos enviados aos usuarios do portal (evita reenvio): boleto a vencer e resumo mensal."""
+    __tablename__ = "fin_notices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # boleto_d3 | boleto_d0 | mensal
+    ref: Mapped[str] = mapped_column(String(64))  # id do titulo ou AAAA-MM
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint("user_id", "kind", "ref"),)

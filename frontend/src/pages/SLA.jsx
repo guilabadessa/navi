@@ -7,7 +7,7 @@ export default function SLA() {
   const [days, setDays] = useState(30); const nav = useNavigate(); const { data, err } = useLoad(() => get('/sla?days=' + days), [days], 60000)
   const items = data?.items || []; const below = items.filter(i => i.met === false).length
   return <>
-    <PageHead title="SLA" desc="SLA realizado versus contratado por cliente">
+    <PageHead title="SLA" desc="Disponibilidade realizada versus contratada por cliente, descontadas as janelas de manutenção">
       <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(d => <option key={d} value={d}>Últimos {d} dias</option>)}</select></PageHead>
     {!data ? <Loading err={err} /> : <>
       <div className="grid g3" style={{ marginBottom: 16 }}><Stat label="Clientes ativos" value={items.length} /><Stat label="Abaixo do SLA" value={below} tone={below ? 'bad' : 'ok'} /><Stat label="Dentro do SLA" value={items.length - below} tone="ok" /></div>

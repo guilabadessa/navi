@@ -35,7 +35,7 @@ export default function Routines() {
   const edit = can(me, 'routines.edit')
   const run = async (s) => { try { toast('Gerando e enviando…'); await post(`/routines/schedules/${s.id}/run`); toast('Execução concluída'); sch.reload() } catch (e) { toast(e.message, true) } }
   return <>
-    <PageHead title="Rotinas" desc="Relatórios agendados e tarefas internas do worker">
+    <PageHead title="Rotinas" desc="Relatórios agendados e tarefas automáticas da plataforma, com o resultado da última execução">
       {edit && tab === 'sch' && <button className="btn primary" onClick={() => setEd({})} disabled={!reps.data?.length}><Plus />Nova rotina</button>}</PageHead>
     <Tabs value={tab} onChange={setTab} tabs={[['sch', 'Relatórios agendados'], ['jobs', 'Rotinas do sistema']]} />
     {tab === 'sch' && <Card pad={false}>{sch.data ? <Table rows={sch.data} empty={reps.data?.length ? 'Nenhuma rotina agendada.' : 'Crie um relatório primeiro (menu Relatórios).'} cols={[
