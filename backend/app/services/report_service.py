@@ -128,8 +128,9 @@ def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dic
         events = [e for e in events if e.status != "RESOLVED"]
     if not rep.include_open:
         events = [e for e in events if e.status == "RESOLVED"]
+    from . import maintenance_service
     k = kpi_service.compute(events, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end,
-                            client.sla_target if client else None)
+                            client.sla_target if client else None, exclude=maintenance_service.exclusions(db, rep.client_id, start, end))
     return k, events, hosts, client
 
 
@@ -158,6 +159,25 @@ def summary_text(k: dict, client_name: str, period: str) -> str:
     if s["open"]:
         t += f"{s['open']} incidente(s) permanecem em aberto. "
     return t
+
+
+def compare_text(k: dict, prev: dict | None, plabel: str) -> str:
+    """Comparativo com o periodo anterior de mesma duracao + hosts reincidentes."""
+    out = []
+    if prev:
+        a, b = k["summary"], prev["summary"]
+        n = lambda v, sign=False: (f"{v:+.3f}" if sign else f"{v:.3f}").replace(".", ",")  # noqa: E731
+        da = round(a["availability"] - b["availability"], 3)
+        di = a["incidents"] - b["incidents"]
+        tend = "melhora" if da > 0 else "queda" if da < 0 else "estabilidade"
+        out.append(f"Comparado ao período anterior ({plabel}), houve {tend} de disponibilidade "
+                   f"({n(a['availability'])}% contra {n(b['availability'])}%; {n(da, True)} p.p.) e "
+                   f"{'aumento' if di > 0 else 'redução' if di < 0 else 'manutenção'} de incidentes "
+                   f"({a['incidents']} contra {b['incidents']}).")
+    rec = [h for h in k["by_host"] if h["incidents"] >= 3][:5]
+    if rec:
+        out.append("Hosts reincidentes (3 ou mais incidentes no período): " + "; ".join(f"{h['host']} ({h['incidents']})" for h in rec) + ".")
+    return " ".join(out)
 
 
 KEEP_RUNS_PER_CLIENT = 2
@@ -191,6 +211,12 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         k, events, hosts, client = build(db, rep, start, end)
         cname = client.trade_name if client else "Todos os clientes"
         plabel = period_label(start, end)
+        prev = None
+        try:
+            prev = build(db, rep, start - (end - start), start)[0]  # periodo anterior (consulta ao vivo no Zabbix)
+        except Exception:  # noqa: BLE001
+            prev = None
+        cmp_text = compare_text(k, prev, period_label(start - (end - start), start))
         MAX_ROWS = 150  # PDF legivel e rapido; resumos por host/trigger cobrem 100% dos eventos
         rows = sorted(sorted(events, key=lambda e: -(e.duration_s or 0))[:MAX_ROWS], key=lambda e: e.started_at)
         env = Environment(loader=FileSystemLoader(str(APP / "templates")), autoescape=select_autoescape(["html"]))
@@ -201,7 +227,7 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),
             s=k["summary"], k=k, kpis_on=rep.include_kpis, charts=make_charts(k) if rep.include_charts else [],
             rows=rows, total_rows=len(events), truncated=len(events) > MAX_ROWS, notes=rep.notes,
-            summary_text=summary_text(k, cname, plabel),
+            summary_text=summary_text(k, cname, plabel), cmp_text=cmp_text,
             pct=lambda v: "—" if v is None else f"{v:.3f}%".replace(".", ","),
             dur=lambda v: fmt_duration(v) if v is not None else "—", dur2=dur2,
             dt=lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—",

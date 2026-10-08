@@ -19,7 +19,25 @@ def _union(intervals: list[tuple[float, float]]) -> float:
     return total
 
 
-def compute(events: list, hosts: list[dict], start: datetime, end: datetime, sla_target: float | None = None) -> dict:
+def _subtract(iv: tuple[float, float], excl: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Remove de 'iv' os trechos cobertos por 'excl' (janelas de manutencao)."""
+    pieces = [iv]
+    for xs, xe in excl:
+        nxt = []
+        for s, e in pieces:
+            if xe <= s or xs >= e:
+                nxt.append((s, e))
+                continue
+            if xs > s:
+                nxt.append((s, xs))
+            if xe < e:
+                nxt.append((xe, e))
+        pieces = nxt
+    return [(s, e) for s, e in pieces if e > s]
+
+
+def compute(events: list, hosts: list[dict], start: datetime, end: datetime, sla_target: float | None = None,
+            exclude: list[tuple[float, float]] | None = None) -> dict:
     """events: objetos Event; hosts: [{hostid,name,ip}] universo avaliado."""
     now = datetime.now(timezone.utc)
     end_eff = min(end, now)
@@ -33,8 +51,11 @@ def compute(events: list, hosts: list[dict], start: datetime, end: datetime, sla
         e = min((ev.recovered_at or now).timestamp(), E)
         if e <= s:
             continue
-        per_host[ev.hostid or ev.host].append((s, e))
-        rows.append((ev, e - s))
+        pieces = _subtract((s, e), exclude) if exclude else [(s, e)]
+        if not pieces:
+            continue  # todo o incidente ocorreu dentro de manutencao programada
+        per_host[ev.hostid or ev.host].extend(pieces)
+        rows.append((ev, sum(b - a for a, b in pieces)))
 
     hostmap = {h["hostid"]: h for h in hosts}
     for ev in events:

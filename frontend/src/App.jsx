@@ -18,6 +18,8 @@ import NaviIA from './pages/NaviIA'
 import { UsersPage, AuditPage } from './pages/Admin'
 import Settings from './pages/Settings'
 import Palette from './Palette'
+import Portal from './pages/Portal'
+import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
 const Auth = createContext(null)
@@ -98,7 +100,11 @@ export default function App() {
   const load = () => get('/auth/me').then(m => { setCsrf(m.csrf); setMe(m) }).catch(() => setMe(null))
   useEffect(() => { load(); const h = () => setMe(null); window.addEventListener('navi:unauth', h); return () => window.removeEventListener('navi:unauth', h) }, [])
   const logout = async () => { await post('/auth/logout').catch(() => {}); setMe(null); nav('/') }
+  const loc = useLocation()
+  const onLogin = m => { setCsrf(m.csrf); setMe(m) }
+  if (loc.pathname.startsWith('/convite/')) return <Routes><Route path="/convite/:token" element={<AcceptInvite onLogin={onLogin} />} /></Routes>
   if (me === undefined) return null
-  if (!me) return <Login onLogin={m => { setCsrf(m.csrf); setMe(m) }} />
+  if (!me) return <Login onLogin={onLogin} />
+  if (me.role === 'CLIENTE') return <Auth.Provider value={me}><Portal me={me} onLogout={logout} /></Auth.Provider>
   return <Auth.Provider value={me}><Shell me={me} onLogout={logout} /></Auth.Provider>
 }

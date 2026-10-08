@@ -62,7 +62,7 @@ function SmtpTab({ edit }) {
       {edit && <Card title="Enviar e-mail de teste"><div className="row r2" style={{ marginBottom: 0 }}><Field label="DESTINATÁRIO"><input value={to} onChange={e => setTo(e.target.value)} placeholder="voce@orcati.com.br" /></Field>
         <div style={{ paddingTop: 22 }}><button className="btn" disabled={!to} onClick={async () => { try { const r = await post('/settings/smtp/test', { to }); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } }}>Enviar teste</button></div></div></Card>}
     </div>
-    <Card title="Pré-visualização do e-mail" actions={<select style={{ width: 'auto' }} value={kind} onChange={e => preview(e.target.value)}><option value="report">Relatório ao cliente</option><option value="notice">Aviso</option><option value="new_user">Acesso de novo usuário</option></select>}>
+    <Card title="Pré-visualização do e-mail" actions={<select style={{ width: 'auto' }} value={kind} onChange={e => preview(e.target.value)}><option value="report">Relatório ao cliente</option><option value="notice">Aviso</option><option value="invite">Convite de acesso</option></select>}>
       <p className="hint" style={{ marginBottom: 10 }}>Salve para ver a assinatura atualizada. Nos e-mails de clientes aparece somente o nome fantasia.</p>
       <iframe title="preview" sandbox="" srcDoc={html} style={{ width: '100%', height: 640, border: '1px solid var(--line)', borderRadius: 12, background: '#f3f5fb' }} /></Card></div>
 }

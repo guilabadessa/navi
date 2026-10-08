@@ -5,6 +5,7 @@ import subprocess
 import time as _t
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import delete, select
@@ -13,7 +14,8 @@ from . import scheduling, settings_store as S
 from .config import get_settings
 from .db import SessionLocal
 from .models import (AuditLog, Dispatch, Event, HealthCheck, JobStatus, Report, ReportRun, Schedule, SyncRun)
-from .services import delivery_service, event_service, factory, notification_service, report_service, sync_service
+from .services import (delivery_service, event_service, factory, noc_service, notification_service, report_service,
+                       sync_service)
 
 log = logging.getLogger("navi.jobs")
 JOBS = {
@@ -23,6 +25,8 @@ JOBS = {
     "dispatch_alerts": ("Envio de alertas", 10),
     "run_schedules": ("Geração/envio de relatórios agendados", 60),
     "health_checks": ("Health checks", 120),
+    "escalate": ("Escalonamento de alertas", 60),
+    "daily_digest": ("Resumo diário do NOC", 60),
     "cleanup": ("Limpeza de dados", 86400),
     "backup": ("Backup do banco NAVI", 86400),
 }
@@ -34,11 +38,13 @@ def tracked(name):
             db = SessionLocal()
             t0 = _t.time()
             job = db.get(JobStatus, name)
+            label, itv = JOBS[name]
             if job is None:
-                label, itv = JOBS[name]
                 job = JobStatus(name=name, label=label, interval_s=itv)
                 db.add(job)
                 db.commit()
+            elif job.interval_s != itv or job.label != label:  # mantem o painel em dia apos mudancas de agenda
+                job.interval_s, job.label = itv, label
             if not job.enabled:
                 db.close()
                 return
@@ -80,6 +86,21 @@ def poll_events(db):
 def dispatch_alerts(db):
     if db.scalar(select(Dispatch.id).where(Dispatch.status == "pending", Dispatch.due_at <= datetime.now(timezone.utc)).limit(1)):
         notification_service.process_due(db, factory.evolution(db))
+
+
+@tracked("escalate")
+def escalate(db):
+    noc_service.escalate(db)
+
+
+@tracked("daily_digest")
+def daily_digest(db):
+    if noc_service.digest_due(db):
+        res = noc_service.send_digest(db, factory.evolution(db))
+        now_local = datetime.now(ZoneInfo(get_settings().NAVI_TZ))
+        S.put(db, "digest.last", now_local.strftime("%Y-%m-%d"))
+        S.put(db, "digest.status", f"{now_local:%d/%m %H:%M} · {res}"[:250])
+        db.commit()
 
 
 @tracked("run_schedules")
@@ -179,7 +200,7 @@ def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
     for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
-                     ("dispatch_alerts", dispatch_alerts), ("run_schedules", run_schedules),
+                     ("dispatch_alerts", dispatch_alerts), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,
                     next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5 + 3 * list(JOBS).index(name)))

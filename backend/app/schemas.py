@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from .formats import fmt_cnpj, fmt_phone
 
-Role = Literal["ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR"]
+Role = Literal["ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR", "CLIENTE"]
 
 
 class LoginIn(BaseModel):
@@ -23,8 +23,23 @@ class UserIn(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     role: Role = "VISUALIZADOR"
     active: bool = True
-    password: str | None = Field(default=None, min_length=10, max_length=256)
-    send_email: bool = False  # envia os dados de acesso por e-mail (senha temporaria)
+    client_id: int | None = None  # obrigatorio para o perfil CLIENTE
+
+
+class AcceptInviteIn(BaseModel):
+    token: str
+    password: str = Field(min_length=10, max_length=256)
+
+    @field_validator("password")
+    @classmethod
+    def _forte(cls, v: str) -> str:
+        if not (any(c.islower() for c in v) and any(c.isupper() for c in v) and any(c.isdigit() for c in v)):
+            raise ValueError("A senha deve ter letras maiúsculas, minúsculas e números")
+        return v
+
+
+class ForgotIn(BaseModel):
+    email: EmailStr
 
 
 class ClientIn(BaseModel):
@@ -213,7 +228,7 @@ class LetterheadIn(BaseModel):
 
 
 class PreviewIn(BaseModel):
-    kind: Literal["report", "notice", "new_user"] = "report"
+    kind: Literal["report", "notice", "new_user", "invite"] = "report"
 
 
 class TestSend(BaseModel):

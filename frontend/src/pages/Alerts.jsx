@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { FlaskConical, Plus, Pencil, Trash2 } from 'lucide-react'
 import { get, post, put, del, fmtDT, SEV } from '../api'
-import { SeverityTab, MigrationTab } from './AlertsExtra'
+import { SeverityTab, MigrationTab, MaintenanceTab, NocTab } from './AlertsExtra'
 import { Card, Check, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskTarget } from '../mask'
@@ -75,7 +75,7 @@ export default function Alerts() {
     <PageHead title="Alertas" desc="Regras personalizadas, templates de mensagem e política de envio">
       {edit && tab === 'rules' && <button className="btn primary" onClick={() => setEd({})}><Plus />Nova regra</button>}
       {edit && tab === 'tpl' && <button className="btn primary" onClick={() => setTed({})}><Plus />Novo template</button>}</PageHead>
-    <Tabs value={tab} onChange={setTab} tabs={[['rules', 'Regras'], ['sev', 'Severidades'], ['tpl', 'Templates de mensagem'], ['mig', 'Migração / modo sombra']]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['rules', 'Regras'], ['sev', 'Severidades'], ['tpl', 'Templates de mensagem'], ['maint', 'Manutenção'], ['noc', 'NOC e escalonamento'], ['mig', 'Migração / modo sombra']]} />
     {tab === 'rules' && <Card pad={false}>{rules.data ? <Table rows={rules.data} empty="Nenhuma regra personalizada. Os clientes usam a configuração padrão de WhatsApp definida no cadastro." cols={[
       { h: 'Regra', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || 'Todos' }, { h: 'Host', r: r => r.host_pattern || '*' }, { h: 'Trigger', r: r => r.trigger_pattern || '*' },
       { h: 'Severidade', r: r => r.severities ? r.severities.map(s => SEV[s]).join(', ') : '≥ ' + SEV[r.min_severity] }, { h: 'Atraso', r: r => r.delay_s ? r.delay_s + 's' : 'imediato' },
@@ -83,6 +83,8 @@ export default function Alerts() {
       { h: 'Últimas 24h', r: r => { const s = r.stats_24h || {}; const t = Object.values(s).reduce((a, b) => a + b, 0); return t ? <span title={JSON.stringify(s)}><b>{s.sent || 0}</b> env.{s.failed ? <> · <span style={{ color: 'var(--crit)' }}>{s.failed} falha(s)</span></> : null}</span> : <span className="sub">sem disparos</span> } },
       { h: '', r: r => edit && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title="Enviar teste desta regra" onClick={async () => { try { const { id, created_at, client_name, stats_24h, ...b } = r; const o = await post('/alerts/test-rule', b); toast(['whatsapp', 'email', 'aviso'].filter(k => o[k]).map(k => `${k}: ${o[k].detail}`).join(' · '), !['whatsapp', 'email'].some(k => o[k]?.ok)) } catch (e) { toast(e.message, true) } }}><FlaskConical /></button><button className="btn sm" onClick={() => setEd(r)}><Pencil /></button><button className="btn sm danger" onClick={async () => { if (confirm('Excluir regra?')) { await del('/alerts/rules/' + r.id); rules.reload() } }}><Trash2 /></button></div> }]} /> : <Loading />}</Card>}
     {tab === 'sev' && <SeverityTab edit={edit} />}
+    {tab === 'maint' && <MaintenanceTab edit={edit} />}
+    {tab === 'noc' && <NocTab edit={edit} />}
     {tab === 'mig' && <MigrationTab edit={edit} />}
     {tab === 'tpl' && <Card pad={false}>{tpls.data ? <Table rows={tpls.data} cols={[{ h: 'Template', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => <Pill tone={r.kind === 'problem' ? 'bad' : 'ok'}>{r.kind === 'problem' ? 'alerta' : 'recuperação'}</Pill> }, { h: 'Padrão', r: r => r.is_default ? <Pill tone="info">padrão</Pill> : '' },
       { h: 'Prévia', r: r => <div className="trunc" style={{ maxWidth: 420 }}>{r.body.replace(/\n+/g, ' ')}</div> },

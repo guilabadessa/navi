@@ -9,7 +9,7 @@ from ..db import get_db
 from .. import settings_store
 from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, HealthCheck, JobStatus, ZbxHost
 from ..security import require
-from ..services import kpi_service
+from ..services import kpi_service, maintenance_service
 from ..util import to_dict
 from .clients import client_hosts
 
@@ -44,7 +44,8 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
         open_ev = list(db.scalars(select(Event).where(Event.status == "PROBLEM", *evf).order_by(Event.severity.desc(), Event.started_at)))
         cnt = lambda since: db.scalar(select(func.count()).select_from(Event).where(Event.started_at >= since, *evf))  # noqa: E731
         evN = list(db.scalars(select(Event).where(Event.started_at < now, (Event.recovered_at.is_(None)) | (Event.recovered_at > dN), *evf)))
-        k = kpi_service.compute(evN, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], dN, now)
+        k = kpi_service.compute(evN, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], dN, now,
+                                exclude=maintenance_service.exclusions(db, client_id, dN, now) if client_id else None)
         names = dict(db.execute(select(Client.id, Client.trade_name)).all())
         top_clients = {}
         for e in evN:
@@ -102,7 +103,8 @@ def sla(days: int = 30, db: Session = Depends(get_db), _=Depends(require("sla.vi
             hosts = client_hosts(db, c)
             evs = list(db.scalars(select(Event).where(Event.client_id == c.id, Event.started_at < now,
                                                       (Event.recovered_at.is_(None)) | (Event.recovered_at > start))))
-            k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, now, c.sla_target)
+            k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, now, c.sla_target,
+                                    exclude=maintenance_service.exclusions(db, c.id, start, now))
             s = k["summary"]
             out.append({"client_id": c.id, "client": c.trade_name, "hosts": len(hosts), "sla_target": c.sla_target,
                         "availability": s["availability"], "incidents": s["incidents"], "downtime_s": s["downtime_s"],

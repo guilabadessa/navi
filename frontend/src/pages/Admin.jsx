@@ -1,29 +1,45 @@
 import React, { useState } from 'react'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, Send, Mail } from 'lucide-react'
 import { get, post, put, fmtDT } from '../api'
 import { Card, Check, Field, Loading, Modal, PageHead, Pager, Pill, Table, useLoad, useToast } from '../ui'
 
-const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador' }
-const DESC = { ADMIN: 'Acesso total', GESTOR: 'Clientes, relatórios, alertas, dashboard', ANALISTA_NOC: 'Eventos, hosts, alertas, relatórios', VISUALIZADOR: 'Somente leitura' }
+const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador', CLIENTE: 'Cliente (portal)' }
+const DESC = { ADMIN: 'Acesso total', GESTOR: 'Clientes, relatórios, alertas, dashboard', ANALISTA_NOC: 'Eventos, hosts, alertas, relatórios', VISUALIZADOR: 'Somente leitura',
+  CLIENTE: 'Portal somente leitura: vê apenas os dados do cliente selecionado' }
 
 function UserForm({ u, onClose, onSaved }) {
-  const [x, setX] = useState({ email: '', name: '', role: 'VISUALIZADOR', active: true, password: '', send_email: !u.id, ...u }); const toast = useToast()
-  const save = async () => { try { const b = { ...x, password: x.password || null }; const r = x.id ? await put('/users/' + x.id, b) : await post('/users', b); toast('Usuário salvo' + (r.email_status ? ' · e-mail: ' + r.email_status : ''), !!(r.email_status || '').startsWith('erro')); onSaved() } catch (e) { toast(e.message, true) } }
-  return <Modal title={x.id ? 'Editar usuário' : 'Novo usuário'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
+  const [x, setX] = useState({ email: '', name: '', role: 'VISUALIZADOR', active: true, client_id: null, ...u }); const toast = useToast()
+  const clients = useLoad(() => get('/clients'), [])
+  const save = async () => {
+    try {
+      const b = { email: x.email, name: x.name, role: x.role, active: x.active, client_id: x.role === 'CLIENTE' ? (x.client_id ? +x.client_id : null) : null }
+      const r = x.id ? await put('/users/' + x.id, b) : await post('/users', b)
+      toast(x.id ? 'Usuário atualizado' : 'Convite enviado · ' + (r.email_status || ''), !!(r.email_status || '').startsWith('erro')); onSaved()
+    } catch (e) { toast(e.message, true) }
+  }
+  return <Modal title={x.id ? 'Editar usuário' : 'Convidar usuário'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button>
+    <button className="btn primary" onClick={save}><Send />{x.id ? 'Salvar' : 'Enviar convite'}</button></>}>
     <div className="row r2"><Field label="NOME"><input value={x.name} onChange={e => setX({ ...x, name: e.target.value })} /></Field><Field label="E-MAIL"><input value={x.email} disabled={!!x.id} onChange={e => setX({ ...x, email: e.target.value })} /></Field></div>
-    <div className="row r2"><Field label="PERFIL" hint={DESC[x.role]}><select value={x.role} onChange={e => setX({ ...x, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-      <Field label={x.id ? 'NOVA SENHA (opcional)' : 'SENHA INICIAL *'} hint="Mínimo de 10 caracteres. O usuário deverá trocá-la."><input type="password" autoComplete="new-password" value={x.password} onChange={e => setX({ ...x, password: e.target.value })} /></Field></div>
-    <div style={{ display: 'grid', gap: 10 }}><Check label="Usuário ativo" checked={x.active} onChange={v => setX({ ...x, active: v })} />
-      <Check label={x.id ? 'Enviar a nova senha por e-mail ao usuário' : 'Enviar os dados de acesso por e-mail ao usuário'} checked={x.send_email} onChange={v => setX({ ...x, send_email: v })} />
-      {x.send_email && <p className="hint">O e-mail usa o modelo padrão da NAVI com a senha temporária; o usuário deverá alterá-la no primeiro acesso.</p>}</div></Modal>
+    <div className="row r2"><Field label="PERFIL / PERMISSÃO" hint={DESC[x.role]}><select value={x.role} onChange={e => setX({ ...x, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+      {x.role === 'CLIENTE' ? <Field label="CLIENTE QUE ELE ACOMPANHA *" hint="Verá somente os hosts, incidentes, SLA e relatórios deste cliente."><select value={x.client_id || ''} onChange={e => setX({ ...x, client_id: e.target.value })}><option value="">Selecione…</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field> : <div />}</div>
+    {x.id ? <Check label="Usuário ativo" checked={x.active} onChange={v => setX({ ...x, active: v })} />
+      : <div className="banner info" style={{ marginBottom: 0 }}><Mail size={18} /><div className="grow">A pessoa receberá um <b>e-mail com um link pessoal</b> para criar a própria senha (válido por 72 horas). Nenhuma senha é definida ou exibida aqui.</div></div>}
+  </Modal>
 }
 
 export function UsersPage() {
-  const { data, err, reload } = useLoad(() => get('/users'), []); const [ed, setEd] = useState(null)
+  const toast = useToast(); const { data, err, reload } = useLoad(() => get('/users'), []); const [ed, setEd] = useState(null)
+  const resend = async (u) => {
+    try { const r = await post(`/users/${u.id}/invite`); toast((u.invite_pending ? 'Convite reenviado' : 'Link de redefinição enviado') + ' · ' + r.email_status, (r.email_status || '').startsWith('erro')) } catch (e) { toast(e.message, true) }
+  }
   return <>
-    <PageHead title="Usuários" desc="Contas Orca TI e perfis de acesso"><button className="btn primary" onClick={() => setEd({})}><Plus />Novo usuário</button></PageHead>
-    <Card pad={false}>{data ? <Table rows={data} cols={[{ h: 'Nome', r: r => <b>{r.name}</b> }, { h: 'E-mail', k: 'email' }, { h: 'Perfil', r: r => <Pill tone="info">{ROLES[r.role]}</Pill> }, { h: 'Último acesso', r: r => fmtDT(r.last_login) },
-      { h: 'Estado', r: r => <Pill tone={r.active ? 'ok' : 'mut'}>{r.active ? 'ativo' : 'inativo'}</Pill> }, { h: '', r: r => <button className="btn sm" onClick={() => setEd(r)}><Pencil />Editar</button> }]} /> : <Loading err={err} />}</Card>
+    <PageHead title="Usuários" desc="Convide pessoas por e-mail e defina o perfil de acesso; clientes acessam um portal somente leitura"><button className="btn primary" onClick={() => setEd({})}><Plus />Convidar usuário</button></PageHead>
+    <Card pad={false}>{data ? <Table rows={data} cols={[{ h: 'Nome', r: r => <b>{r.name}</b> }, { h: 'E-mail', k: 'email' },
+      { h: 'Perfil', r: r => <><Pill tone={r.role === 'CLIENTE' ? 'warn' : 'info'}>{ROLES[r.role]}</Pill>{r.client_name && <div className="sub">{r.client_name}</div>}</> },
+      { h: 'Último acesso', r: r => r.invite_pending ? <span className="sub">nunca acessou</span> : fmtDT(r.last_login) },
+      { h: 'Estado', r: r => !r.active ? <Pill tone="mut">inativo</Pill> : r.invite_pending ? <Pill tone="warn">convite pendente</Pill> : <Pill tone="ok">ativo</Pill> },
+      { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title={r.invite_pending ? 'Reenviar convite' : 'Enviar link para redefinir a senha'} disabled={!r.active} onClick={() => resend(r)}><Send />{r.invite_pending ? 'Reenviar' : 'Redefinir'}</button>
+        <button className="btn sm" onClick={() => setEd(r)}><Pencil />Editar</button></div> }]} /> : <Loading err={err} />}</Card>
     {ed && <UserForm u={ed} onClose={() => setEd(null)} onSaved={() => { setEd(null); reload() }} />}</>
 }
 

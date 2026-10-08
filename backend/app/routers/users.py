@@ -1,48 +1,69 @@
+from datetime import datetime, timezone
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..config import get_settings
 from ..db import get_db
-from ..models import User
+from ..models import Client, User
 from ..schemas import UserIn
-from ..security import hash_password, require
+from ..security import hash_password, make_invite_token, require
 from ..services import mailer
 from ..util import to_dict
 
 router = APIRouter(prefix="/users", tags=["users"])
-ROLE_NAMES = {"ADMIN": "Administrador", "GESTOR": "Gestor", "ANALISTA_NOC": "Analista NOC", "VISUALIZADOR": "Visualizador"}
+ROLE_NAMES = {"ADMIN": "Administrador", "GESTOR": "Gestor", "ANALISTA_NOC": "Analista NOC", "VISUALIZADOR": "Visualizador",
+              "CLIENTE": "Cliente (portal)"}
+EX = {"password_hash"}
 
 
-def _send_access(db, u: User, password: str, reset: bool) -> str:
-    """Envia os dados de acesso. Falha de e-mail nao desfaz a criacao do usuario. A senha nunca e registrada em log."""
+def invite_link(u: User) -> str:
+    return get_settings().NAVI_PUBLIC_URL.rstrip("/") + "/convite/" + make_invite_token(u)
+
+
+def send_invite(db: Session, u: User, reset: bool = False) -> str:
+    """Envia o link de definicao de senha. Falha de e-mail nao desfaz a criacao. O link nunca e registrado em log."""
+    client = db.get(Client, u.client_id) if u.client_id else None
     try:
-        mailer.send(db, "new_user", u.email, "Redefinição de acesso à NAVI — Orca TI" if reset else "Seu acesso à NAVI — Orca TI",
-                    mailer.new_user_ctx(u.name, u.email, password, ROLE_NAMES.get(u.role, u.role), reset))
+        subject = "Redefinição de acesso à NAVI" if reset else ("Convite para o portal NAVI" if client else "Convite de acesso à NAVI — Orca TI")
+        mailer.send(db, "invite", u.email, subject,
+                    mailer.invite_ctx(u.name, ROLE_NAMES.get(u.role, u.role), invite_link(u), reset, client.trade_name if client else None))
         return f"enviado para {u.email}"
     except Exception as e:  # noqa: BLE001
         return f"erro: {str(e)[:200]}"
-EX = {"password_hash"}
+
+
+def _check(db: Session, body: UserIn) -> int | None:
+    if body.role == "CLIENTE":
+        if not body.client_id or not db.get(Client, body.client_id):
+            raise HTTPException(422, "Selecione o cliente que este usuário poderá acompanhar")
+        return body.client_id
+    return None
 
 
 @router.get("")
 def list_users(db: Session = Depends(get_db), _=Depends(require("users.manage"))):
-    return [to_dict(u, EX) for u in db.scalars(select(User).order_by(User.name))]
+    names = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    return [{**to_dict(u, EX), "client_name": names.get(u.client_id)} for u in db.scalars(select(User).order_by(User.name))]
 
 
 @router.post("")
 def create_user(body: UserIn, request: Request, db: Session = Depends(get_db), me=Depends(require("users.manage"))):
-    if not body.password:
-        raise HTTPException(422, "Senha obrigatória")
     if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
         raise HTTPException(409, "E-mail já cadastrado")
-    u = User(email=body.email.lower(), name=body.name, role=body.role, active=body.active,
-             password_hash=hash_password(body.password), must_change_password=True)
+    cid = _check(db, body)
+    # senha aleatoria inutilizavel: o acesso so existe depois que a pessoa define a propria senha pelo convite
+    u = User(email=body.email.lower(), name=body.name, role=body.role, active=body.active, client_id=cid,
+             password_hash=hash_password(secrets.token_urlsafe(48)), must_change_password=False,
+             invite_pending=True, invited_at=datetime.now(timezone.utc))
     db.add(u)
     db.flush()
-    audit.log(db, request, "user_create", "user", u.id, detail={"email": u.email, "role": u.role})
+    audit.log(db, request, "user_invite", "user", u.id, detail={"email": u.email, "role": u.role, "client_id": cid})
     db.commit()
-    return {**to_dict(u, EX), "email_status": _send_access(db, u, body.password, False) if body.send_email else None}
+    return {**to_dict(u, EX), "email_status": send_invite(db, u)}
 
 
 @router.put("/{uid}")
@@ -52,9 +73,23 @@ def update_user(uid: int, body: UserIn, request: Request, db: Session = Depends(
         raise HTTPException(404)
     if u.id == me.id and (not body.active or body.role != "ADMIN"):
         raise HTTPException(400, "Você não pode remover seu próprio acesso de administrador")
+    u.client_id = _check(db, body)
     u.name, u.role, u.active = body.name, body.role, body.active
-    if body.password:
-        u.password_hash, u.must_change_password = hash_password(body.password), True
-    audit.log(db, request, "user_update", "user", u.id, detail={"role": u.role, "active": u.active, "pwd": bool(body.password)})
+    audit.log(db, request, "user_update", "user", u.id, detail={"role": u.role, "active": u.active, "client_id": u.client_id})
     db.commit()
-    return {**to_dict(u, EX), "email_status": _send_access(db, u, body.password, True) if (body.send_email and body.password) else None}
+    return to_dict(u, EX)
+
+
+@router.post("/{uid}/invite")
+def resend_invite(uid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("users.manage"))):
+    """Reenvia o convite (pendente) ou envia um link de redefinicao de senha (usuario ja ativo)."""
+    u = db.get(User, uid)
+    if not u:
+        raise HTTPException(404)
+    if not u.active:
+        raise HTTPException(400, "Usuário inativo")
+    if u.invite_pending:
+        u.invited_at = datetime.now(timezone.utc)
+    audit.log(db, request, "user_resend_invite", "user", u.id, detail={"reset": not u.invite_pending})
+    db.commit()
+    return {"email_status": send_invite(db, u, reset=not u.invite_pending)}

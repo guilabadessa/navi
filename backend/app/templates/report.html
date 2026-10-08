@@ -134,7 +134,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
   <td><div class="card ok"><div class="l">Resolvidos</div><div class="v">{{ s.resolved }}</div></div></td>
   <td><div class="card {{ 'bad' if s.open else '' }}"><div class="l">Em aberto</div><div class="v">{{ s.open }}</div></div></td>
 </tr></table>
-<div class="summary">{{ summary_text }}</div>
+<div class="summary">{{ summary_text }}{% if cmp_text %}<br><br>{{ cmp_text }}{% endif %}</div>
 {% endif %}
 
 <!-- ============ INDICADORES ============ -->

@@ -77,6 +77,8 @@ def _plain(kind: str, ctx: dict, sig: dict | None) -> str:
              f"referente ao período {ctx['period']}.\n\nAtenciosamente,")
     elif kind == "alert":
         t = ("[TESTE] " if ctx.get("test") else "") + ctx["title"] + "\n\n" + "\n".join(f"{a}: {b}" for a, b in ctx["rows"])
+    elif kind == "invite":
+        t = (f"Olá, {ctx['name']}!\n\n{ctx['intro']}\n\nPerfil: {ctx['role']}\n\nDefina sua senha neste link (válido por {ctx['hours']} horas):\n{ctx['link']}")
     elif kind == "new_user":
         t = (f"Olá, {ctx['name']}!\n\n{ctx['intro']}\n\nEndereço: {ctx['url']}\nUsuário: {ctx['email']}\n"
              f"Senha temporária: {ctx['password']}\nPerfil: {ctx['role']}\n\nAltere a senha no primeiro acesso.")
@@ -133,3 +135,16 @@ def notice_ctx(title: str, paragraphs: list[str], highlight: str | None = None, 
                button_url: str | None = None, button_label: str | None = None) -> dict:
     return {"title": title, "tag": "Aviso · NAVI", "paragraphs": paragraphs, "highlight": highlight, "greeting": greeting,
             "button_url": button_url, "button_label": button_label}
+
+
+def invite_ctx(name: str, role: str, link: str, reset: bool = False, client_name: str | None = None) -> dict:
+    from ..security import INVITE_HOURS
+    if reset:
+        intro = "Recebemos um pedido para redefinir o acesso à plataforma NAVI. Use o botão abaixo para escolher uma nova senha."
+    elif client_name:
+        intro = f"Você foi convidado(a) para acompanhar o monitoramento de {client_name} no portal da NAVI, a plataforma de inteligência do NOC da Orca TI."
+    else:
+        intro = "Você foi convidado(a) para a NAVI, a plataforma de inteligência do NOC da Orca TI. Crie sua senha para ativar o acesso."
+    return {"title": "Redefinir acesso" if reset else "Convite de acesso", "subtitle": "Navegação, Orientação e Assistência", "tag": "Acesso · NAVI",
+            "preheader": "Defina sua senha de acesso à NAVI", "name": name, "role": role, "intro": intro, "link": link,
+            "hours": INVITE_HOURS, "reset": reset}

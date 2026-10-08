@@ -30,6 +30,7 @@ PERMS = {
                      "sla.view", "whatsapp.view", "email.view", "navi.use"},
     "VISUALIZADOR": {"dashboard.view", "clients.view", "monitoring.view", "events.view", "alerts.view",
                      "reports.view", "routines.view", "sla.view", "navi.use"},
+    "CLIENTE": {"portal.view"},  # ve somente os dados do proprio cliente, pelo portal
 }
 
 
@@ -68,6 +69,30 @@ def decrypt(v: str) -> str:
         return _fernet().decrypt(v.encode()).decode()
     except InvalidToken:
         return ""
+
+
+# ---- Convites / redefinicao de senha: token assinado, expira e vale uma unica vez ------
+INVITE_HOURS = 72
+
+
+def _inv() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(get_settings().NAVI_SECRET_KEY, salt="navi-invite")
+
+
+def make_invite_token(user: User) -> str:
+    # o "carimbo" do hash atual invalida o link assim que a senha e definida
+    return _inv().dumps({"uid": user.id, "fp": user.password_hash[-12:]})
+
+
+def read_invite_token(token: str, db: Session) -> User | None:
+    try:
+        d = _inv().loads(token, max_age=INVITE_HOURS * 3600)
+    except BadSignature:
+        return None
+    u = db.get(User, d.get("uid"))
+    if not u or not u.active or u.password_hash[-12:] != d.get("fp"):
+        return None
+    return u
 
 
 # ---- Sessao (cookie assinado, HttpOnly, SameSite) + CSRF ------------------------------

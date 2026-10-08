@@ -163,14 +163,21 @@ def plan_problem(db: Session, ev: Event):
     now = datetime.now(timezone.utc)
     if client and client.maintenance_until and client.maintenance_until > now:
         return 0
+    from . import maintenance_service
+    if maintenance_service.active(db, ev.client_id, now):
+        return 0
     if client and not _in_hours(client.wa_hours, now):
         return 0
     planned: set = set()
     n = 0
+    from . import noc_service
+    nc = noc_service.cfg(db)
+    hold = nc["storm_hold_s"] if nc["storm_enabled"] else 0  # espera curta para juntar alertas simultaneos
 
     def add(channel: str, dest: str | None, rule: AlertRule | None, tpl: int | None, delay: int) -> int:
         if not dest:
             return 0
+        delay = max(delay or 0, hold)
         # evita envio duplicado ao mesmo destino (compara o numero ja normalizado / o conjunto de e-mails)
         key = (channel, normalize_target(dest) if channel == "whatsapp" else frozenset(a.lower() for a in split_addrs(dest)))
         if key in planned:
@@ -199,6 +206,9 @@ def plan_recovery(db: Session, ev: Event):
     """Cancela envios pendentes (oscilacao) e agenda a recuperacao para cada canal ja notificado."""
     client = db.get(Client, ev.client_id) if ev.client_id else None
     sent = db.scalars(select(Dispatch).where(Dispatch.event_id == ev.id, Dispatch.kind == "problem")).all()
+    from . import noc_service
+    nc = noc_service.cfg(db)
+    hold = nc["storm_hold_s"] if nc["storm_enabled"] else 0
     n = 0
     for d in sent:
         if d.status == "pending":
@@ -214,7 +224,7 @@ def plan_recovery(db: Session, ev: Event):
         rec_tpl = rule.recovery_template_id if rule else (client.wa_recovery_template_id if client else None)
         quote = (rule.quote_recovery if rule else True) and d.channel == "whatsapp"
         db.add(Dispatch(event_id=ev.id, rule_id=d.rule_id, kind="recovery", channel=d.channel, dest_jid=d.dest_jid,
-                        template_id=rec_tpl, quote=quote, due_at=datetime.now(timezone.utc)))
+                        template_id=rec_tpl, quote=quote, due_at=datetime.now(timezone.utc) + timedelta(seconds=hold)))
         n += 1
     return n
 
@@ -227,6 +237,7 @@ def email_ctx(ev: Event, client: Client | None, kind: str, test: bool = False) -
     cname = client.trade_name if client else "—"
     sev = SEVERITIES.get(ev.severity, str(ev.severity))
     rec = kind == "recovery"
+    esc = kind == "escalation"
     dur = ev.duration_s if ev.duration_s is not None else int((datetime.now(timezone.utc) - ev.started_at).total_seconds())
     rows = [("Cliente", cname), ("Host", ev.host or "—"), ("IP", ev.ip or "—"), ("Problema", ev.trigger_name or "—"), ("Item", ev.item_name or "—")]
     if ev.opdata:
@@ -235,42 +246,105 @@ def email_ctx(ev: Event, client: Client | None, kind: str, test: bool = False) -
     if rec:
         rows += [("Recuperação", fmt_dt(ev.recovered_at)), ("Indisponibilidade", fmt_duration(dur))]
     prefix = "[TESTE] " if test else ""
-    subject = (f"{prefix}[RESTABELECIDO] {cname} — {ev.host}" if rec else f"{prefix}[ALERTA {sev.upper()}] {cname} — {ev.host}")
-    ctx = {"title": ("Serviço restabelecido" if rec else f"Alerta — {sev}"), "tag": "Alerta · NAVI", "subtitle": f"{cname} · {ev.host}",
+    subject = (f"{prefix}[RESTABELECIDO] {cname} — {ev.host}" if rec else
+               f"{prefix}[ESCALONADO] {cname} — {ev.host}" if esc else f"{prefix}[ALERTA {sev.upper()}] {cname} — {ev.host}")
+    if esc:
+        rows.insert(0, ("Situação", f"Sem recuperação há {fmt_duration(dur)} — escalonado para o NOC"))
+    ctx = {"title": ("Serviço restabelecido" if rec else "Escalonamento — problema sem recuperação" if esc else f"Alerta — {sev}"), "tag": "Alerta · NAVI", "subtitle": f"{cname} · {ev.host}",
            "preheader": subject, "rows": rows, "badge": ("RESTABELECIDO" if rec else sev.upper()),
            "badge_color": "#16a34a" if rec else SEV_COLORS.get(ev.severity, "#1e73f8"), "test": test}
     return subject, ctx
 
 
+def escalation_text(ev: Event, client: Client | None) -> str:
+    dur = fmt_duration(int((datetime.now(timezone.utc) - ev.started_at).total_seconds()))
+    return (f"⏰ *ESCALONAMENTO — sem recuperação há {dur}*\n\n🏢 *Cliente:* {client.trade_name if client else '—'}\n"
+            f"🖥️ *Host:* {ev.host}\n🌐 *IP:* {ev.ip or '—'}\n⚠️ *Problema:* {ev.trigger_name}\n"
+            f"🔔 *Severidade:* {SEVERITIES.get(ev.severity, ev.severity)}\n🕐 *Início:* {fmt_dt(ev.started_at)}")
+
+
+def _fail(d: Dispatch, ev: Event | None, e: Exception, now: datetime):
+    d.error = str(e)[:1000]
+    if d.attempts >= 4:
+        d.status = "failed"
+        if ev is not None and d.kind == "problem" and d.channel == "whatsapp":
+            ev.wa_status = "failed"
+    else:
+        d.due_at = now + timedelta(seconds=30 * d.attempts)
+
+
+def _send_group(db: Session, evo, mailer, nc: dict, group: list[tuple], now: datetime):
+    """Envia UMA mensagem para varios eventos do mesmo cliente/destino (tempestade de alertas)."""
+    group = sorted(group, key=lambda x: x[1].started_at)
+    d0, ev0 = group[0]
+    client = db.get(Client, ev0.client_id)
+    from . import noc_service
+    for d, _ in group:
+        d.attempts += 1
+    try:
+        if d0.channel == "email":
+            subject, ctx = noc_service.group_email(d0.kind, client, group, get_settings().NAVI_TZ)
+            mailer.send(db, "alert", d0.dest_jid, subject, ctx)
+            text, mid = subject, None
+        else:
+            text = noc_service.group_text(d0.kind, client, group, get_settings().NAVI_TZ)
+            mid = evo.message_id(evo.send_text(d0.dest_jid, text))
+        for d, ev in group:
+            d.status, d.sent_at, d.message_id, d.text = "sent", datetime.now(timezone.utc), mid, text
+            d.error = f"Agrupado com {len(group)} alertas"
+            if d.channel == "whatsapp":
+                if d.kind == "problem":
+                    ev.wa_message_id, ev.wa_sent_at, ev.wa_status = mid, d.sent_at, "sent"
+                else:
+                    ev.wa_status = "recovered"
+    except Exception as e:  # noqa: BLE001
+        for d, ev in group:
+            _fail(d, ev, e, now)
+
+
 def process_due(db: Session, evo, limit: int = 20) -> int:
     """Envia despachos vencidos (WhatsApp ou e-mail). Retorna a quantidade processada."""
-    from . import mailer
+    from . import mailer, noc_service
     from .. import settings_store
     shadow = settings_store.get(db, "alerts.shadow") == "1"
+    nc = noc_service.cfg(db)
     now = datetime.now(timezone.utc)
     rows = db.scalars(select(Dispatch).where(Dispatch.status == "pending", Dispatch.due_at <= now)
-                      .order_by(Dispatch.due_at).limit(limit).with_for_update(skip_locked=True)).all()
+                      .order_by(Dispatch.due_at).limit(100 if nc["storm_enabled"] else limit).with_for_update(skip_locked=True)).all()
     done = 0
+    items: list[tuple] = []
     for d in rows:
         ev = db.get(Event, d.event_id)
-        client = db.get(Client, ev.client_id) if ev and ev.client_id else None
         if not ev:
             d.status, d.error = "skipped", "Evento removido"
-            continue
-        if d.kind == "problem" and ev.status == "RESOLVED":
+            done += 1
+        elif d.kind in ("problem", "escalation") and ev.status == "RESOLVED":
             d.status, d.error = "skipped", "Evento já recuperado"
-            continue
-        if shadow:
+            done += 1
+        elif shadow:
             d.status, d.error = "skipped", "Modo sombra: registrado, não enviado"
             done += 1
+        else:
+            items.append((d, ev))
+    db.commit()
+    if nc["storm_enabled"]:
+        groups, items = noc_service.pick_groups(items, nc["storm_threshold"])
+        for g in groups:
+            _send_group(db, evo, mailer, nc, g, now)
+            done += len(g)
             db.commit()
-            continue
+    for d, ev in items:
+        client = db.get(Client, ev.client_id) if ev.client_id else None
         d.attempts += 1
         try:
             if d.channel == "email":
                 subject, ctx = email_ctx(ev, client, d.kind)
                 mailer.send(db, "alert", d.dest_jid, subject, ctx)
                 d.text = subject
+                d.status, d.sent_at, d.error = "sent", datetime.now(timezone.utc), None
+            elif d.kind == "escalation":
+                d.text = escalation_text(ev, client)
+                d.message_id = evo.message_id(evo.send_text(d.dest_jid, d.text))
                 d.status, d.sent_at, d.error = "sent", datetime.now(timezone.utc), None
             else:
                 tpl = _template(db, d.template_id, d.kind)
@@ -289,13 +363,7 @@ def process_due(db: Session, evo, limit: int = 20) -> int:
                 else:
                     ev.wa_status = "recovered"
         except Exception as e:  # noqa: BLE001
-            d.error = str(e)[:1000]
-            if d.attempts >= 4:
-                d.status = "failed"
-                if d.kind == "problem" and d.channel == "whatsapp":
-                    ev.wa_status = "failed"
-            else:
-                d.due_at = now + timedelta(seconds=30 * d.attempts)
+            _fail(d, ev, e, now)
         done += 1
         db.commit()
     return done
@@ -369,7 +437,17 @@ def explain(db: Session, ev: Event) -> dict:
         add("Manutenção", False, f"Cliente em manutenção até {fmt_dt(client.maintenance_until)}.")
         blocked = True
     elif client:
-        add("Manutenção", True, "Fora de manutenção.")
+        w = None
+        try:
+            from . import maintenance_service
+            w = maintenance_service.active(db, client.id, now)
+        except Exception:  # noqa: BLE001
+            pass
+        if w:
+            add("Manutenção", False, f"Janela de manutenção programada até {fmt_dt(w[1])}.")
+            blocked = True
+        else:
+            add("Manutenção", True, "Fora de manutenção.")
     if client and client.wa_hours:
         ok = _in_hours(client.wa_hours, ev.created_at)
         add("Horário", ok, f"Janela de envio: {client.wa_hours}.")

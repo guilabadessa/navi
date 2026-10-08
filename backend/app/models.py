@@ -11,7 +11,7 @@ def now():
     return datetime.now(timezone.utc)
 
 
-ROLES = ("ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR")
+ROLES = ("ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR", "CLIENTE")
 SEVERITIES = {0: "Não classificado", 1: "Informação", 2: "Atenção", 3: "Média", 4: "Alta", 5: "Desastre"}
 
 
@@ -24,6 +24,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="VISUALIZADOR")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)  # perfil CLIENTE
+    invite_pending: Mapped[bool] = mapped_column(Boolean, default=False)  # convite enviado e ainda nao aceito
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -188,6 +191,23 @@ class MessageTemplate(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class MaintenanceWindow(Base):
+    """Janela de manutencao: suprime alertas e descontada do SLA. 'once' (inicio/fim) ou 'weekly' (dias + hora + duracao)."""
+    __tablename__ = "maintenance_windows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)  # vazio = todos
+    kind: Mapped[str] = mapped_column(String(8), default="once")  # once | weekly
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    weekdays: Mapped[list | None] = mapped_column(JSON)  # 0=segunda ... 6=domingo
+    start_time: Mapped[str | None] = mapped_column(String(5))  # HH:MM (horario local)
+    duration_min: Mapped[int | None] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class SeverityRule(Base):
     """Reclassifica a severidade de eventos (ex.: triggers SD-WAN 'Nao classificado' tratadas como Alta)."""
     __tablename__ = "severity_rules"
@@ -229,7 +249,7 @@ class Dispatch(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
     rule_id: Mapped[int | None] = mapped_column(Integer)
-    kind: Mapped[str] = mapped_column(String(16))  # problem | recovery
+    kind: Mapped[str] = mapped_column(String(16))  # problem | recovery | escalation
     channel: Mapped[str] = mapped_column(String(16), default="whatsapp")  # whatsapp | email
     dest_jid: Mapped[str] = mapped_column(String(512))  # JID/numero (whatsapp) ou enderecos separados por virgula (email)
     template_id: Mapped[int | None] = mapped_column(Integer)

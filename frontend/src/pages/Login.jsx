@@ -11,11 +11,15 @@ const FEATS = [
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('')
-  const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [show, setShow] = useState(false); const [caps, setCaps] = useState(false)
+  const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [show, setShow] = useState(false); const [caps, setCaps] = useState(false); const [forgot, setForgot] = useState(false); const [sent, setSent] = useState(false)
   const dark = document.documentElement.dataset.theme === 'dark'
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('')
     try { onLogin(await post('/auth/login', { email: email.trim(), password })) } catch (x) { setErr(x.message) } finally { setBusy(false) }
+  }
+  const sendForgot = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('')
+    try { await post('/auth/forgot', { email: email.trim() }); setSent(true) } catch (x) { setErr(x.message) } finally { setBusy(false) }
   }
   return <div className="login">
     <div className="art">
@@ -29,7 +33,15 @@ export default function Login({ onLogin }) {
       <div style={{ fontSize: 13, color: '#8fa8ee' }}>© {new Date().getFullYear()} Orca TI · Operação de TI e Infraestrutura</div>
     </div>
     <div className="form">
-      <div className="box"><form onSubmit={submit}>
+      <div className="box">{forgot ? <form onSubmit={sendForgot}>
+        <img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
+        <h2>Redefinir senha</h2><p className="sub" style={{ marginBottom: 22 }}>Informe seu e-mail. Se ele estiver cadastrado, você receberá um link para criar uma nova senha.</p>
+        {sent ? <div className="banner info" style={{ marginBottom: 16 }}><div className="grow">Pronto! Se o e-mail existir, o link foi enviado. Verifique sua caixa de entrada (e o spam).</div></div> : <>
+          <div className="row"><div><label className="f">E-MAIL</label><input type="email" autoFocus required value={email} onChange={e => setEmail(e.target.value)} /></div></div>
+          {err && <div className="errbox" role="alert">{err}</div>}
+          <button className="btn primary" style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 16 }} disabled={busy}>{busy ? 'Enviando…' : 'Enviar link'}</button></>}
+        <div style={{ textAlign: 'center', marginTop: 16 }}><a href="#" onClick={e => { e.preventDefault(); setForgot(false); setSent(false); setErr('') }}>← Voltar ao login</a></div>
+      </form> : <form onSubmit={submit}>
         <img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 34, marginBottom: 24 }} />
         <h2>Acessar a plataforma</h2><p className="sub" style={{ marginBottom: 22 }}>Entre com as credenciais fornecidas pela Orca TI.</p>
         <div className="row"><div><label className="f">E-MAIL</label>
@@ -41,8 +53,9 @@ export default function Login({ onLogin }) {
           {caps && <div className="caps">Caps Lock está ativado</div>}</div></div>
         {err && <div className="errbox" role="alert">{err}</div>}
         <button className="btn primary" style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 16 }} disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
-        <div className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', marginTop: 16 }}><Lock size={13} />Conexão segura · esqueceu a senha? Fale com o administrador do NOC.</div>
-      </form></div>
+        <div style={{ textAlign: 'center', marginTop: 14 }}><a href="#" onClick={e => { e.preventDefault(); setForgot(true); setErr('') }}>Esqueci minha senha</a></div>
+        <div className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}><Lock size={13} />Conexão segura</div>
+      </form>}</div>
       <div className="foot">NAVI · Plataforma de inteligência operacional</div>
     </div></div>
 }
