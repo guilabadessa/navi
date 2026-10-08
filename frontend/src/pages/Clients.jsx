@@ -3,7 +3,8 @@ import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
 import Coverage from './Coverage'
 import PortalAccess from './PortalAccess'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
+import Portal from './Portal'
 import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
@@ -42,7 +43,7 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos']]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={cnpjHint(c.cnpj)}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => setC({ ...c, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
@@ -71,6 +72,7 @@ function ClientForm({ initial, onClose, onSaved }) {
         <Field label="HORÁRIO DE ATENDIMENTO"><input value={c.service_hours || ''} onChange={set('service_hours')} placeholder="24x7 / Seg-Sex 8h-18h" /></Field></div>
       <Field label="E-MAILS PARA RELATÓRIOS" hint="Separe por vírgula"><textarea value={c.report_emails || ''} onChange={set('report_emails')} /></Field>
       {c.id && <div style={{ marginTop: 14 }}><label className="f">LOGO DO CLIENTE</label><input type="file" accept="image/*" onChange={async e => { try { await upload(`/clients/${c.id}/logo`, e.target.files[0]); toast('Logo enviada') } catch (x) { toast(x.message, true) } }} /></div>}</>}
+    {tab === 'portal' && c.id && <PortalAccess client={c} />}
     {tab === 'contatos' && <>
       {c.contacts.map((x, i) => <div className="row r4" key={i}><input placeholder="Nome" value={x.name || ''} onChange={e => setContact(i, 'name', e.target.value)} /><input placeholder="Função" value={x.role || ''} onChange={e => setContact(i, 'role', e.target.value)} />
         <input placeholder="E-mail" value={x.email || ''} onChange={e => setContact(i, 'email', e.target.value)} /><div style={{ display: 'flex', gap: 6 }}><input placeholder="(00) 00000-0000" value={x.phone || ''} onChange={e => setContact(i, 'phone', maskPhone(e.target.value))} />
@@ -80,7 +82,7 @@ function ClientForm({ initial, onClose, onSaved }) {
 }
 
 export function Clients() {
-  const toast = useToast(); const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [sp] = useSearchParams()
+  const toast = useToast(); const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [sp] = useSearchParams(); const [portalFor, setPortalFor] = useState(null)
   const { data, err, reload } = useLoad(() => get('/clients' + (q ? '?q=' + encodeURIComponent(q) : '')), [q])
   const open = async (id) => setEdit(await get('/clients/' + id))
   return <>
@@ -92,15 +94,17 @@ export function Clients() {
       { h: 'Cliente', r: r => <><b>{r.trade_name}</b><div className="sub">{r.legal_name}</div></> }, { h: 'CNPJ', k: 'cnpj' }, { h: 'Cidade', r: r => [r.city, r.state].filter(Boolean).join('/') },
       { h: 'Host Groups', k: 'group_count' }, { h: 'SLA', r: r => fmtPct(r.sla_target) },
       { h: 'WhatsApp', r: r => r.wa_enabled ? <Pill tone="ok">ativo</Pill> : <Pill>desligado</Pill> },
+      { h: 'Portal', r: r => can(me, 'clients.edit') ? <button className="btn sm" title="Usuários do cliente com acesso ao portal" onClick={e => { e.stopPropagation(); setPortalFor(r) }}><Users size={14} />{r.portal_users || 0}</button> : (r.portal_users || 0) },
       { h: 'Em aberto', r: r => r.open_events ? <Pill tone="bad">{r.open_events}</Pill> : <Pill tone="ok">0</Pill> },
       { h: 'Status', r: r => <Pill tone={r.status === 'ativo' ? 'info' : 'mut'}>{r.status}</Pill> },
       { h: '', r: r => can(me, 'clients.edit') && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={e => { e.stopPropagation(); open(r.id) }}><Pencil />Editar</button>
         <button className="btn sm danger" title="Excluir cliente" onClick={async e => { e.stopPropagation(); if (await deleteClient(r, toast)) reload() }}><Trash2 /></button></div> }]} /> : <Loading err={err} />}</Card>
+    {portalFor && <Modal wide title={`Acesso ao portal · ${portalFor.trade_name}`} onClose={() => { setPortalFor(null); reload() }}><PortalAccess client={portalFor} bare /></Modal>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }
 
 export function ClientDetail() {
-  const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
+  const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [preview, setPreview] = useState(false); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
   const { data: d, err, reload } = useLoad(() => get(`/clients/${id}/dashboard?days=${days}`), [id, days], 30000)
   if (!d) return <Loading err={err} />
   const s = d.kpis.summary; const c = d.client
@@ -110,6 +114,7 @@ export function ClientDetail() {
       <Link className="btn" to="/clientes">← Clientes</Link>
       <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
+      <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.sla_met === false ? 'bad' : 'ok'} desc={`SLA contratado ${fmtPct(c.sla_target)} · ${s.sla_met === false ? 'não atingido' : 'atingido'}`} />
@@ -117,6 +122,14 @@ export function ClientDetail() {
       <Stat label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
       <Stat label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
     </div>
+    {(d.backup?.enabled || d.endpoints?.enabled) && <div className="grid g2" style={{ marginBottom: 16 }}>
+      {d.backup?.enabled && <Card title="Backup (Acronis)" actions={<Link className="btn sm" to="/protecao">Abrir painel</Link>}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>{Object.entries(d.backup.counts).map(([k, v]) => <Pill key={k} tone={k === 'ok' ? 'ok' : k === 'sem dados' || k === 'ignorado' ? 'mut' : 'bad'}>{v} {k === 'ok' ? 'em dia' : k}</Pill>)}</div>
+        {d.backup.alerts.length ? d.backup.alerts.slice(0, 5).map(a => <div key={a.id} className="sub" style={{ padding: '3px 0' }}><SevBadge n={a.severity} /> <b>{a.host}</b> — {a.trigger_name}</div>) : <div className="sub">✅ Nenhum problema de backup.</div>}</Card>}
+      {d.endpoints?.enabled && <Card title="Estações (FortiClient EMS)" actions={<Link className="btn sm" to="/protecao">Abrir painel</Link>}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>{Object.entries(d.endpoints.counts).map(([k, v]) => <Pill key={k} tone={k === 'online' ? 'ok' : k === 'offline' || k === 'ignorado' ? 'mut' : 'warn'}>{v} {k}</Pill>)}</div>
+        {d.endpoints.alerts.length ? d.endpoints.alerts.slice(0, 5).map(a => <div key={a.id} className="sub" style={{ padding: '3px 0' }}><SevBadge n={a.severity} /> <b>{a.host}</b> — {a.trigger_name}</div>) : <div className="sub">✅ Nenhum problema nas estações.</div>}</Card>}
+    </div>}
     <div className="grid g-2-1" style={{ marginBottom: 16 }}>
       <Card title="Incidentes por dia"><div style={{ height: 230 }}><ResponsiveContainer><BarChart data={dd}><CartesianGrid vertical={false} stroke="#eef1f8" /><XAxis dataKey="d" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>
       <Card title="Configuração de alertas"><div className="kv"><b>WhatsApp</b><span>{c.wa_enabled ? 'ativo' : 'desligado'}</span><b>Grupo</b><span className="mono" style={{ fontSize: 13 }}>{c.whatsapp_group_jid || '—'}</span>
@@ -129,5 +142,6 @@ export function ClientDetail() {
       <Card title="Histórico recente" pad={false}><Table rows={d.history.slice(0, 15)} cols={[{ h: 'Host', k: 'host' }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s) }, { h: '', r: r => <StatusBadge s={r.status} /> }]} /></Card>
     </div>
     {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
+    {preview && <Modal wide title={`Portal de ${c.trade_name} (pré-visualização)`} onClose={() => setPreview(false)}><div className="portal-embed"><Portal clientId={c.id} embedded /></div></Modal>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }

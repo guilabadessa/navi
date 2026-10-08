@@ -5,22 +5,32 @@ import { download, get, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
 import { Card, Loading, Pill, SevBadge, Stat, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { getTheme, toggleTheme } from '../theme'
 
-// Portal do cliente: somente leitura, restrito ao proprio cliente (o servidor garante o isolamento)
-export default function Portal({ me, onLogout }) {
+const TYPES = { machine: 'Servidor', database: 'Banco de dados', mailbox: 'E-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }
+const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ? ['warn', 'com alerta'] : h.available === 1 ? ['ok', 'disponível'] : ['mut', 'desconhecido']
+
+// Portal do cliente: somente leitura, restrito ao proprio cliente (o servidor garante o isolamento).
+// "embedded"/clientId = pre-visualizacao pela equipe Orca (mostra exatamente o que o cliente ve).
+export default function Portal({ me, onLogout, clientId, embedded }) {
   const toast = useToast(); const [days, setDays] = useState(30); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
-  const { data: d, err } = useLoad(() => get('/portal/overview?days=' + days), [days], 30000)
+  const [grp, setGrp] = useState(''); const [hq, setHq] = useState('')
+  const { data: d, err } = useLoad(() => get(`/portal/overview?days=${days}${clientId ? '&client_id=' + clientId : ''}`), [days, clientId], 30000)
   const dark = theme === 'dark'
   const s = d?.summary
   const byDay = d ? Object.entries(d.by_day).map(([k, v]) => ({ d: k.slice(5).split('-').reverse().join('/'), v })) : []
-  return <div style={{ minHeight: '100vh' }}>
-    <div className="top" style={{ position: 'sticky' }}>
+  const hosts = d ? d.hosts.filter(h => (!grp || h.groups.includes(grp)) && (!hq || (h.name + ' ' + (h.ip || '')).toLowerCase().includes(hq.toLowerCase()))) : []
+  const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
+  const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`], ['grp', `Grupos (${d.groups.length})`],
+    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios']] : []
+  return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
+    {!embedded && <div className="top" style={{ position: 'sticky' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src={dark ? '/navi/brand/branco.png' : '/navi/brand/azul.png'} alt="Orca TI" style={{ height: 30 }} />
         <div><h1 style={{ fontSize: 19, lineHeight: 1.1 }}>{d ? d.client.name : 'Portal do cliente'}</h1><div className="sub" style={{ fontSize: 12.5 }}>Monitoramento · NAVI by Orca TI</div></div></div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
         <button className="iconbtn" title="Tema" onClick={() => setTheme(toggleTheme())}>{dark ? <Sun /> : <Moon />}</button>
-        <button className="btn sm" onClick={onLogout}><LogOut />Sair</button></div></div>
-    <div className="content" style={{ margin: '0 auto' }}>
+        <button className="btn sm" onClick={onLogout}><LogOut />Sair</button></div></div>}
+    <div className={embedded ? '' : 'content'} style={{ margin: '0 auto' }}>
+      {embedded && <div className="bar"><b style={{ fontSize: 18 }}>{d?.client.name}</b><div className="grow" /><select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select></div>}
       {!d ? <Loading err={err} /> : <>
         {d.active.length > 0
           ? <div className="banner bad"><div className="grow"><b>{d.active.length} problema(s) em andamento.</b> Nossa equipe já está acompanhando.</div></div>
@@ -32,7 +42,7 @@ export default function Portal({ me, onLogout }) {
           <Stat label="Indisponibilidade total" value={fmtDur(s.downtime_s)} desc={`${s.hosts_affected} de ${s.hosts_total} host(s) afetado(s)`} />
           <Stat label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />
         </div>
-        <div className="tabs">{[['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', 'Hosts'], ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+        <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {tab === 'geral' && <>
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
@@ -41,20 +51,29 @@ export default function Portal({ me, onLogout }) {
             { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
         {tab === 'inc' && <Card pad={false}><Table rows={d.history} empty="Nenhum incidente no período." cols={[{ h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <b>{r.host}</b> },
           { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s), cls: 'mono' }]} /></Card>}
-        {tab === 'hosts' && <Card pad={false}><Table rows={d.by_host} empty="Sem hosts." cols={[{ h: 'Host', r: r => <b>{r.host}</b> }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponibilidade', r: r => fmtDur(r.downtime_s) }, { h: 'Disponibilidade', r: r => fmtPct(r.availability, 3) }]} /></Card>}
+        {tab === 'hosts' && <>
+          <div className="bar"><div className="grow"><input placeholder="Buscar host ou IP…" value={hq} onChange={e => setHq(e.target.value)} /></div>
+            <select value={grp} onChange={e => setGrp(e.target.value)}><option value="">Todos os grupos</option>{d.groups.map(g => <option key={g.name}>{g.name}</option>)}</select></div>
+          <Card pad={false}><Table rows={hosts} empty="Nenhum host." cols={[
+            { h: 'Estado', r: r => { const [t, l] = hostState(r); return <Pill tone={t}>{l}</Pill> } }, { h: 'Host', r: r => <b>{r.name}</b> }, { h: 'IP', k: 'ip', cls: 'mono' },
+            { h: 'Grupos', r: r => r.groups.map(g => <span className="chip" key={g}>{g}</span>) }, { h: 'Incidentes', k: 'incidents' },
+            { h: 'Indisponibilidade', r: r => fmtDur(r.downtime_s) }, { h: 'Disponibilidade', r: r => r.availability == null ? '—' : fmtPct(r.availability, 3) }]} /></Card></>}
+        {tab === 'grp' && <div className="grid g3">{d.groups.length ? d.groups.map(g => <div className="card cardlink" key={g.name} style={{ padding: 18 }} onClick={() => { setGrp(g.name); setTab('hosts') }}>
+          <h3>{g.name}</h3><div className="sub" style={{ margin: '6px 0 10px' }}>{g.hosts} host(s)</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{g.down > 0 ? <Pill tone="bad">{g.down} indisponível(is)</Pill> : <Pill tone="ok">tudo disponível</Pill>}{g.open > 0 && <Pill tone="warn">{g.open} alerta(s)</Pill>}<Pill tone="mut">{g.incidents} incidente(s) em {days}d</Pill></div></div>)
+          : <div className="empty">Nenhum grupo vinculado a este cliente.</div>}</div>}
         {tab === 'bkp' && d.backup && <>
           {d.backup.alerts.length > 0 && <Card title="Atenção no backup" pad={false} style={{ marginBottom: 16 }}><Table rows={d.backup.alerts} cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Situação', k: 'trigger_name' }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
           <Card title={`Itens protegidos (${d.backup.assets.length})`} pad={false}><Table rows={d.backup.assets} empty="Nenhum item de backup." cols={[
             { h: 'Situação', r: r => <Pill tone={r.status === 'ok' ? 'ok' : r.status === 'sem dados' ? 'mut' : r.status === 'offline' ? 'warn' : 'bad'}>{r.status === 'ok' ? 'protegido' : r.status}</Pill> },
-            { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => ({ machine: 'Servidor', database: 'Banco de dados', mailbox: 'E-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }[r.type] || r.type) },
-            { h: 'Último backup com sucesso', r: r => fmtDT(r.last_success_at) }]} /></Card></>}
+            { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => TYPES[r.type] || r.type }, { h: 'Último backup com sucesso', r: r => fmtDT(r.last_success_at) }]} /></Card></>}
         {tab === 'eps' && d.endpoints && <Card title={`Estações protegidas (${d.endpoints.assets.length})`} pad={false}><Table rows={d.endpoints.assets} empty="Nenhuma estação." cols={[
           { h: 'Situação', r: r => <Pill tone={r.status === 'online' ? 'ok' : r.status === 'offline' ? 'mut' : 'warn'}>{r.status}</Pill> }, { h: 'Estação', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
           { h: 'Sistema', r: r => <span className="sub">{r.os}</span> }, { h: 'Último contato', r: r => fmtDT(r.last_contact) }]} /></Card>}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },
-          { h: '', r: r => <button className="btn sm" onClick={() => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))}><Download />Baixar PDF</button> }]} /></Card>}
+          { h: '', r: r => <button className="btn sm" onClick={() => dl(r)}><Download />Baixar PDF</button> }]} /></Card>}
       </>}
-      <div className="sub" style={{ textAlign: 'center', marginTop: 28, fontSize: 12.5 }}>Dados em tempo real do monitoramento · {me.email}</div>
+      {!embedded && <div className="sub" style={{ textAlign: 'center', marginTop: 28, fontSize: 12.5 }}>Dados em tempo real do monitoramento · {me?.email}</div>}
     </div></div>
 }

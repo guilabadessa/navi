@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from .. import settings_store
-from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, HealthCheck, JobStatus, ZbxHost
+from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, ExtAsset, ExtTenant, HealthCheck, JobStatus, ZbxHost
 from ..security import require
 from ..services import kpi_service, maintenance_service
 from ..util import to_dict
@@ -93,6 +93,42 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
             "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return _cached(f"dash{client_id}-{days}", 20, build)
+
+
+@router.get("/dashboard/clients-health")
+def clients_health(db: Session = Depends(get_db), _=Depends(require("dashboard.view"))):
+    """Uma linha por cliente: infraestrutura, backup e endpoints lado a lado (visao unica do NOC)."""
+    def build():
+        from ..services import protection_service as P
+        from .protection import asset_status
+        now = datetime.now(timezone.utc)
+        pc = P.cfg(db)
+        rows = {}
+        for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
+            rows[c.id] = {"client_id": c.id, "client": c.trade_name, "hosts": 0, "hosts_down": 0, "infra": 0, "infra_worst": -1, "backup": 0, "backup_worst": -1,
+                          "backup_items": 0, "backup_bad": 0, "endpoint": 0, "endpoint_worst": -1, "endpoint_items": 0, "endpoint_bad": 0, "has_backup": False, "has_ems": False}
+        for c in db.scalars(select(Client).where(Client.status == "ativo")):
+            hs = client_hosts(db, c)
+            rows[c.id]["hosts"], rows[c.id]["hosts_down"] = len(hs), sum(1 for h in hs if h.available == 2)
+        for e in db.scalars(select(Event).where(Event.status == "PROBLEM", Event.client_id.in_(list(rows) or [0]))):
+            r = rows[e.client_id]
+            key = {"infra": "infra", "backup": "backup", "endpoint": "endpoint"}.get(e.kind, "infra")
+            r[key] += 1
+            r[key + "_worst"] = max(r[key + "_worst"], e.severity or 0)
+        tens = {t.id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.client_id.is_not(None)))}
+        for a in db.scalars(select(ExtAsset).where(ExtAsset.active.is_(True), ExtAsset.ignored.is_(False), ExtAsset.ext_tenant_id.in_(list(tens) or [0]))):
+            t = tens[a.ext_tenant_id]
+            r = rows.get(t.client_id)
+            if not r:
+                continue
+            if a.source == "acronis":
+                r["has_backup"], r["backup_items"] = True, r["backup_items"] + 1
+                r["backup_bad"] += asset_status(a, pc, now) in ("falha", "sem backup", "offline")
+            else:
+                r["has_ems"], r["endpoint_items"] = True, r["endpoint_items"] + 1
+                r["endpoint_bad"] += P.ems_status(a, pc["ems_offline_days"], now) in ("sem contato", "antivírus off", "assinaturas", "quarentena", "atenção")
+        return {"items": sorted(rows.values(), key=lambda r: -(max(r["infra_worst"], r["backup_worst"], r["endpoint_worst"]) * 100 + r["infra"] + r["backup"] + r["endpoint"]))}
+    return _cached("clients-health", 30, build)
 
 
 @router.get("/sla")

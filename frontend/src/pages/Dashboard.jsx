@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [cl, setCl] = useState(ls('cl', '')); const [days, setDays] = useState(ls('days', '30'))
   const clients = useLoad(() => get('/clients'), [])
   const { data: d, err, reload } = useLoad(() => get(`/dashboard?days=${days}${cl ? '&client_id=' + cl : ''}`), [cl, days], 20000)
+  const health = useLoad(() => get('/dashboard/clients-health'), [], 30000)
   if (!d) return <Loading err={err} />
   const evs = (extra = '') => nav(`/eventos?days=${days}${cl ? '&client_id=' + cl : ''}${extra}`)
   const byDay = Object.entries(d.by_day).map(([k, v]) => ({ d: k.slice(5).split('-').reverse().join('/'), v }))
@@ -67,6 +68,12 @@ export default function Dashboard() {
       </Card>
     </div>
 
+    {!cl && health.data && health.data.items.length > 0 && <Card title="Saúde por cliente" pad={false} style={{ marginBottom: 16 }}>
+      <Table rows={health.data.items} onRow={r => nav('/clientes/' + r.client_id)} cols={[{ h: 'Cliente', r: r => <b>{r.client}</b> },
+        { h: 'Infraestrutura', r: r => r.infra ? <Pill tone={r.infra_worst >= 4 ? 'bad' : 'warn'}>{r.infra} problema(s)</Pill> : <Pill tone="ok">{r.hosts_down ? r.hosts_down + ' host(s) fora' : 'ok'}</Pill> },
+        { h: 'Backup', r: r => !r.has_backup ? <span className="sub">—</span> : r.backup || r.backup_bad ? <Pill tone={r.backup_worst >= 4 || r.backup_bad ? 'bad' : 'warn'}>{r.backup || r.backup_bad} problema(s)</Pill> : <Pill tone="ok">{r.backup_items} ok</Pill> },
+        { h: 'Estações', r: r => !r.has_ems ? <span className="sub">—</span> : r.endpoint || r.endpoint_bad ? <Pill tone={r.endpoint_worst >= 4 ? 'bad' : 'warn'}>{r.endpoint || r.endpoint_bad} atenção</Pill> : <Pill tone="ok">{r.endpoint_items} ok</Pill> },
+        { h: 'Hosts', k: 'hosts' }]} /></Card>}
     <Card title={`Problemas ativos agora (${d.problems_active})`} pad={false} style={{ marginBottom: 16 }}
       actions={<button className="btn sm" onClick={() => evs('&status=PROBLEM')}>Ver todos</button>}>
       <Table rows={d.live} onRow={r => nav(`/eventos?status=PROBLEM&q=${encodeURIComponent(r.host || '')}`)} empty="🎉 Nenhum problema ativo no momento." cols={[

@@ -4,7 +4,7 @@ import { get, post, del, fmtDT } from '../api'
 import { Card, Field, Loading, Modal, Pill, Table, useLoad, useToast } from '../ui'
 
 // Pessoas do cliente com acesso ao portal (somente leitura, restrito ao proprio cliente)
-export default function PortalAccess({ client }) {
+export default function PortalAccess({ client, bare }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get(`/clients/${client.id}/portal-users`), [client.id])
   const [inv, setInv] = useState(null); const [busy, setBusy] = useState(false)
   const send = async () => {

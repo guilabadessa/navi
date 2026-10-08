@@ -27,7 +27,7 @@ class Boundary extends React.Component {
 }
 afterEach(cleanup)
 
-const ROUTES = ['/', '/clientes', '/clientes/2', '/clientes?cobertura=1', '/monitoramento', '/eventos', '/eventos?kind=backup&days=', '/protecao', '/alertas', '/relatorios', '/rotinas', '/sla', '/whatsapp', '/email', '/navi-ia', '/usuarios', '/auditoria', '/configuracoes']
+const ROUTES = ['/', '/clientes', '/configuracoes?x=1', '/clientes/2', '/clientes?cobertura=1', '/monitoramento', '/eventos', '/eventos?kind=backup&days=', '/protecao', '/alertas', '/relatorios', '/rotinas', '/sla', '/whatsapp', '/email', '/navi-ia', '/usuarios', '/auditoria', '/configuracoes']
 describe('telas', () => {
   for (const path of ROUTES) {
     it(path, async () => {
@@ -38,7 +38,7 @@ describe('telas', () => {
       // navega pelas abas e abre os formularios (Novo/Nova/Convidar/Editar) procurando erros de renderizacao
       const check = async (what) => { await new Promise(r => setTimeout(r, 350)); const b = container.querySelector('#boom'); if (b) throw new Error('ERRO DE RENDER em ' + path + ' apos ' + what + ':\n' + b.textContent) }
       for (const tab of [...container.querySelectorAll('.tabs button')]) { fireEvent.click(tab); await check('aba ' + tab.textContent) }
-      for (const btn of [...container.querySelectorAll('button')].filter(b => /^(Novo|Nova|Convidar|Editar|Testar)/.test(b.textContent.trim()) && !/Testar/.test(b.textContent))) {
+      for (const btn of [...container.querySelectorAll('button')].filter(b => /^(Novo|Nova|Convidar|Editar|Testar|Ver portal)/.test(b.textContent.trim()) && !/Testar/.test(b.textContent) && !/Excluir/.test(b.textContent))) {
         fireEvent.click(btn); await check('botao ' + btn.textContent.trim())
         const x = container.querySelector('.modal .hd button, .drawer button'); if (x) fireEvent.click(x)
       }

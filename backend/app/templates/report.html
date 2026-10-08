@@ -172,6 +172,13 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 {% for b in backup.rows %}<tr><td>{{ b.name }}</td><td>{{ b.type }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
 {% endif %}
 
+{% if endpoints %}
+<div class="sec"><table><tr><td class="n"></td><td class="t">Estações (antivírus / FortiClient)<small>situação atual</small></td></tr></table></div>
+<div class="summary">{{ endpoints.total }} estação(ões) monitorada(s); {{ endpoints.online }} online agora{% if endpoints.problems %}; {{ endpoints.problems }} requer(em) atenção (sem contato prolongado, antivírus desativado ou desatualizado){% endif %}.</div>
+<table class="data"><thead><tr><th>Estação</th><th>Usuário</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
+{% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
+{% endif %}
+
 {% if notes %}<div class="sec"><table><tr><td class="n"></td><td class="t">Observações</td></tr></table></div><div class="summary">{{ notes }}</div>{% endif %}
 {% if lh.text %}<p class="note" style="margin-top:9mm">{{ lh.text }}</p>{% endif %}
 </body></html>

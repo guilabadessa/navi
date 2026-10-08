@@ -9,12 +9,18 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..db import get_db
-from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User
-from ..security import require
+from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
+from ..security import current_user, has_perm, require
 from ..services import kpi_service, maintenance_service
 from .clients import client_hosts
 
 router = APIRouter(prefix="/portal", tags=["portal"])
+
+
+def require_any_portal(user: User = Depends(current_user)) -> User:
+    if not (has_perm(user.role, "portal.view") or has_perm(user.role, "clients.view")):
+        raise HTTPException(403, "Sem permissão")
+    return user
 
 
 def _client(db: Session, user: User) -> Client:
@@ -31,9 +37,22 @@ def _ev(e: Event) -> dict:
             "duration_s": e.duration_s}
 
 
+def _client_for(db: Session, user: User, client_id: int | None) -> Client:
+    """Usuario CLIENTE: sempre o proprio cliente. Equipe (clients.view): pode pre-visualizar o portal de qualquer cliente."""
+    from ..security import has_perm
+    if client_id and user.role != "CLIENTE":
+        if not has_perm(user.role, "clients.view"):
+            raise HTTPException(403, "Sem permissão")
+        c = db.get(Client, client_id)
+        if not c:
+            raise HTTPException(404)
+        return c
+    return _client(db, user)
+
+
 @router.get("/overview")
-def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends(require("portal.view"))):
-    c = _client(db, user)
+def overview(days: int = 30, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
+    c = _client_for(db, user, client_id)
     days = max(1, min(days, 90))
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
@@ -49,6 +68,27 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
         for a, b in maintenance_service.expand(w, now, now + timedelta(days=30)):
             if b > now:
                 upcoming.append({"name": w.name, "start": a.isoformat(), "end": b.isoformat()})
+    # somente os grupos/hosts vinculados a ESTE cliente (um host em grupos de outros clientes nao expoe esses grupos)
+    my_gids = {g.zbx_groupid: g.name for g in c.groups}
+    gname = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup).where(ZbxHostGroup.groupid.in_(list(my_gids) or ["-"])))}
+    by_h = {h["hostid"]: h for h in k["by_host"]}
+    open_by_host: dict[str, int] = {}
+    for e in evs:
+        if e.status == "PROBLEM":
+            open_by_host[e.hostid] = open_by_host.get(e.hostid, 0) + 1
+    explicit = {x.zbx_hostid for x in c.hosts}
+    host_rows = []
+    for h in sorted(hosts, key=lambda x: (x.name or "").lower()):
+        gids = [g for g in (h.group_ids or []) if g in my_gids]
+        st = by_h.get(h.hostid, {})
+        host_rows.append({"hostid": h.hostid, "name": h.name, "ip": h.ip, "available": h.available, "groups": [gname.get(g, my_gids[g]) for g in gids],
+                          "incidents": st.get("incidents", 0), "downtime_s": st.get("downtime_s", 0), "availability": st.get("availability"),
+                          "open": open_by_host.get(h.hostid, 0)})
+    group_rows = []
+    for gid, name in sorted(my_gids.items(), key=lambda x: x[1].lower()):
+        members = [r for r in host_rows if name in r["groups"]]
+        group_rows.append({"name": gname.get(gid, name), "hosts": len(members), "down": sum(1 for r in members if r["available"] == 2),
+                           "open": sum(r["open"] for r in members), "incidents": sum(r["incidents"] for r in members)})
     tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == c.id, ExtTenant.source == "acronis")))
     from .protection import asset_status
     from ..services import protection_service as P
@@ -69,7 +109,8 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
         "client": {"name": c.trade_name, "sla_target": c.sla_target},
         "summary": k["summary"], "by_day": k["by_day"], "by_severity": k["by_severity"],
         "by_host": [{"host": h["host"], "incidents": h["incidents"], "downtime_s": h["downtime_s"], "availability": h["availability"]} for h in k["by_host"][:15]],
-        "hosts": [{"name": h.name, "ip": h.ip, "available": h.available} for h in hosts],
+        "hosts": host_rows,
+        "groups": group_rows,
         "active": [_ev(e) for e in evs if e.status == "PROBLEM"],
         "history": [_ev(e) for e in evs[:80]],
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
@@ -80,9 +121,9 @@ def overview(days: int = 30, db: Session = Depends(get_db), user: User = Depends
 
 
 @router.get("/reports/{rid}/download")
-def download(rid: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require("portal.view"))):
-    c = _client(db, user)
+def download(rid: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
     run = db.get(ReportRun, rid)
+    c = _client_for(db, user, run.client_id if (run and user.role != "CLIENTE") else None)
     if not run or run.client_id != c.id or not run.file_path or not Path(run.file_path).exists():
         raise HTTPException(404, "Arquivo não encontrado")
     audit.log(db, request, "portal_report_download", "report_run", rid)

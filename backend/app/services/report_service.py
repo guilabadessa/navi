@@ -185,6 +185,28 @@ def backup_section(db: Session, client_id: int | None, z) -> dict | None:
     return {"rows": rows[:120], "total": len(rows), "ok": sum(1 for r in rows if r["ok"]), "problems": sum(1 for r in rows if not r["ok"])}
 
 
+def endpoint_section(db: Session, client_id: int | None, z) -> dict | None:
+    """Situacao atual das estacoes (FortiClient EMS) do cliente; None se nao houver site associado."""
+    if not client_id:
+        return None
+    from ..models import ExtAsset, ExtTenant
+    from . import protection_service as P
+    tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == client_id, ExtTenant.source == "ems")))
+    if not tids:
+        return None
+    days, now = P.cfg(db)["ems_offline_days"], datetime.now(timezone.utc)
+    rows = []
+    for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
+        st = P.ems_status(a, days, now)
+        rows.append({"name": a.name, "user": (a.meta or {}).get("user") or "—", "status": st, "ok": st in ("online", "offline"),
+                     "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—"})
+    if not rows:
+        return None
+    attention = [r for r in rows if not r["ok"]]
+    return {"total": len(rows), "online": sum(1 for r in rows if r["status"] == "online"), "problems": len(attention),
+            "rows": (attention + [r for r in rows if r["ok"]])[:80]}
+
+
 def compare_text(k: dict, prev: dict | None, plabel: str) -> str:
     """Comparativo com o periodo anterior de mesma duracao + hosts reincidentes."""
     out = []
@@ -246,7 +268,8 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         env = Environment(loader=FileSystemLoader(str(APP / "templates")), autoescape=select_autoescape(["html"]))
         z = tz()
         backup = backup_section(db, rep.client_id, z)
-        html = env.get_template("report.html").render(backup=backup,
+        endpoints = endpoint_section(db, rep.client_id, z)
+        html = env.get_template("report.html").render(backup=backup, endpoints=endpoints,
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
             client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),

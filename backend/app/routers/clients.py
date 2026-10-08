@@ -11,7 +11,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..formats import try_phone
 from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
-                      User, ZbxHost, ZbxHostGroup)
+                      User, ZbxHost, ZbxHostGroup, ExtAsset, ExtTenant)
 from pydantic import BaseModel, EmailStr, Field
 
 from ..schemas import ClientIn
@@ -71,10 +71,11 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
         stmt = stmt.where(Client.trade_name.ilike(f"%{q}%") | Client.cnpj.ilike(f"%{q}%"))
     open_by = dict(db.execute(select(Event.client_id, func.count()).where(Event.status == "PROBLEM")
                               .group_by(Event.client_id)).all())
+    pu = dict(db.execute(select(User.client_id, func.count()).where(User.role == "CLIENTE").group_by(User.client_id)).all())
     out = []
     for c in db.scalars(stmt):
         d = to_dict(c)
-        d["group_count"], d["open_events"] = len(c.groups), open_by.get(c.id, 0)
+        d["group_count"], d["open_events"], d["portal_users"] = len(c.groups), open_by.get(c.id, 0), pu.get(c.id, 0)
         out.append(d)
     return out
 
@@ -203,7 +204,27 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
                             exclude=maintenance_service.exclusions(db, cid, start, end))
     active = [to_dict(e) for e in evs if e.status == "PROBLEM"]
     links = [h for h in hosts if any(w in (h.name or "").lower() for w in ("link", "wan", "vpn", "fortigate", "fw"))]
-    return {"client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
+    from ..services import protection_service as P
+    from .protection import asset_status
+    pc, nowx = P.cfg(db), datetime.now(timezone.utc)
+
+    def prot(source, status_fn):
+        tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == cid, ExtTenant.source == source)))
+        if not tids:
+            return {"enabled": False}
+        assets = list(db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False))))
+        counts: dict = {}
+        for a in assets:
+            st = status_fn(a)
+            counts[st] = counts.get(st, 0) + 1
+        kind = "backup" if source == "acronis" else "endpoint"
+        alerts = [{"id": e.id, "host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
+                  for e in db.scalars(select(Event).where(Event.kind == kind, Event.status == "PROBLEM", Event.client_id == cid).order_by(Event.severity.desc()))]
+        return {"enabled": True, "total": len(assets), "counts": counts, "alerts": alerts}
+
+    backup = prot("acronis", lambda a: asset_status(a, pc, nowx))
+    endpoints = prot("ems", lambda a: P.ems_status(a, pc["ems_offline_days"], nowx))
+    return {"backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
             "available": h.available, "status": h.status} for h in hosts], "active_events": active,
             "history": [to_dict(e) for e in evs[:100]], "links": len(links),
             "reports": [to_dict(r, {"kpis"}) for r in db.scalars(select(ReportRun).where(ReportRun.client_id == cid)

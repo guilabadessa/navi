@@ -3,6 +3,7 @@ import { get, post, put, del, upload, fmtDT } from '../api'
 import { Card, Check, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
+import ProtectionConfig from './ProtectionConfig'
 
 function Save({ onClick, test, busy }) { return <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>{test && <button className="btn" onClick={test}>Testar conexão</button>}<button className="btn primary" disabled={busy} onClick={onClick}>Salvar</button></div> }
 
@@ -101,7 +102,7 @@ function WebhookTab({ edit }) {
 export default function Settings() {
   const me = useAuth(); const [tab, setTab] = useState('zbx'); const edit = can(me, 'settings.edit')
   return <>
-    <PageHead title="Configurações" desc="Integrações, papel timbrado e webhook" />
-    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['smtp', 'E-mail (SMTP)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
-    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
+    <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS), papel timbrado e webhook" />
+    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
+    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
 }
