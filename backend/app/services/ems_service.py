@@ -22,7 +22,12 @@ class EmsService:
     def _signin(self):
         """Login com usuario e senha (alternativa a chave de API); a sessao fica nos cookies do cliente HTTP."""
         r = self.http.post(f"{self.base}/api/v1/auth/signin", json={"name": self.user, "password": self.password})
-        if r.status_code != 200 or '"retval": 0' not in r.text.replace('"retval":0', '"retval": 0'):
+        ok = False
+        try:
+            ok = r.status_code == 200 and int(r.json().get("result", {}).get("retval", 0)) > 0  # retval 1 = "Login successful."
+        except Exception:  # noqa: BLE001
+            pass
+        if not ok:
             raise EmsError(f"EMS recusou o usuário/senha (HTTP {r.status_code}: {r.text[:120]})")
         self._signed = True
 
