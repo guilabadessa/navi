@@ -188,6 +188,19 @@ class MessageTemplate(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class SeverityRule(Base):
+    """Reclassifica a severidade de eventos (ex.: triggers SD-WAN 'Nao classificado' tratadas como Alta)."""
+    __tablename__ = "severity_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    host_pattern: Mapped[str | None] = mapped_column(String(255))
+    trigger_pattern: Mapped[str | None] = mapped_column(String(255))
+    from_max: Mapped[int] = mapped_column(Integer, default=0)  # so reclassifica se a severidade original for <= este valor
+    severity: Mapped[int] = mapped_column(Integer, default=4)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class AlertRule(Base):
     __tablename__ = "alert_rules"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Client, ClientHost, ClientHostGroup, Event, ZbxHost, ZbxHostGroup
 from . import notification_service as N
+from . import severity_service
 from .zabbix_service import ZabbixService
 
 BACKFILL_DAYS = 90
@@ -69,6 +70,7 @@ def upsert_problem(db: Session, d: dict, alert: bool = True) -> tuple[Event, boo
     ev.itemid = d.get("itemid") or ev.itemid
     ev.item_name = d.get("item_name") or ev.item_name
     ev.severity = int(d.get("severity") if d.get("severity") is not None else ev.severity or 0)
+    ev.severity = severity_service.effective(severity_service.rules(db), ev.host, ev.trigger_name, ev.severity)
     ev.tags = d.get("tags") or ev.tags
     ev.opdata = d.get("opdata") or ev.opdata
     ev.group_ids, ev.group_names = gids, gnames

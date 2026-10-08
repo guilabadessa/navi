@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
+import Coverage from './Coverage'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Pencil } from 'lucide-react'
 import { get, post, put, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
@@ -65,12 +66,13 @@ function ClientForm({ initial, onClose, onSaved }) {
 }
 
 export function Clients() {
-  const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null)
+  const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [sp] = useSearchParams()
   const { data, err, reload } = useLoad(() => get('/clients' + (q ? '?q=' + encodeURIComponent(q) : '')), [q])
   const open = async (id) => setEdit(await get('/clients/' + id))
   return <>
     <PageHead title="Clientes" desc="Cadastro de clientes e associação aos Host Groups do Zabbix">
       {can(me, 'clients.edit') && <button className="btn primary" onClick={() => setEdit({})}><Plus />Novo cliente</button>}</PageHead>
+    {data && can(me, 'clients.edit') && <Coverage clients={data} open={sp.has('cobertura')} onChanged={reload} />}
     <div className="bar"><div className="grow"><input placeholder="Buscar por nome ou CNPJ…" value={q} onChange={e => setQ(e.target.value)} /></div></div>
     <Card pad={false}>{data ? <Table rows={data} onRow={r => nav('/clientes/' + r.id)} cols={[
       { h: 'Cliente', r: r => <><b>{r.trade_name}</b><div className="sub">{r.legal_name}</div></> }, { h: 'CNPJ', k: 'cnpj' }, { h: 'Cidade', r: r => [r.city, r.state].filter(Boolean).join('/') },

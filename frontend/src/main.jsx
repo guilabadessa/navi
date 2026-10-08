@@ -5,6 +5,9 @@ import './fonts.css'
 import './styles.css'
 import App from './App'
 import { ToastProvider } from './ui'
+import { applyTheme, getTv, tvMode } from './theme'
+
+applyTheme(); tvMode(getTv())
 
 createRoot(document.getElementById('root')).render(
   <BrowserRouter basename="/navi"><ToastProvider><App /></ToastProvider></BrowserRouter>)

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
-  Settings as Cog, ShieldCheck, Sparkles, Timer, Users as UsersIcon } from 'lucide-react'
+  Search, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
 import Login from './pages/Login'
@@ -17,6 +17,8 @@ import { WhatsApp, Email } from './pages/Channels'
 import NaviIA from './pages/NaviIA'
 import { UsersPage, AuditPage } from './pages/Admin'
 import Settings from './pages/Settings'
+import Palette from './Palette'
+import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
 const Auth = createContext(null)
 export const useAuth = () => useContext(Auth)
@@ -47,7 +49,8 @@ function StatusPills() {
 }
 
 function Shell({ me, onLogout }) {
-  const loc = useLocation()
+  const loc = useLocation(); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
+  useEffect(() => { const h = e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPal(p => !p) } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [])
   const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
   return <div className="app">
     <aside className="side">
@@ -58,14 +61,20 @@ function Shell({ me, onLogout }) {
         <div style={{ marginTop: 8 }}><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
     </aside>
     <div className="main">
-      <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1><StatusPills /></div>
+      <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="searchbtn" onClick={() => setPal(true)}><Search size={16} />Buscar… <span className="kbd" style={{ marginLeft: 'auto' }}>Ctrl K</span></button>
+          <StatusPills />
+          <button className="iconbtn" title={tv ? 'Sair do modo NOC (tela cheia)' : 'Modo NOC (esconde o menu)'} onClick={() => { tvMode(!tv); setTv(!tv) }}><Tv /></button>
+          <button className="iconbtn" title="Alternar tema claro/escuro" onClick={() => setTheme(toggleTheme())}>{theme === 'dark' ? <Sun /> : <Moon />}</button></div></div>
+      {pal && <Palette onClose={() => setPal(false)} />}
       <div className="content">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/clientes" element={<Clients />} />
           <Route path="/clientes/:id" element={<ClientDetail />} />
           <Route path="/monitoramento" element={<Monitoring />} />
-          <Route path="/eventos" element={<Events />} />
+          <Route path="/eventos" element={<Events key={loc.search} />} />
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/rotinas" element={<Routines />} />

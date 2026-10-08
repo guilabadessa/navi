@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,7 +18,14 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 @router.get("/rules")
 def rules(db: Session = Depends(get_db), _=Depends(require("alerts.view"))):
     names = dict(db.execute(select(Client.id, Client.trade_name)).all())
-    return [{**to_dict(r), "client_name": names.get(r.client_id)} for r in db.scalars(select(AlertRule).order_by(AlertRule.name))]
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    hits = {(r, s): n for r, s, n in db.execute(select(Dispatch.rule_id, Dispatch.status, func.count()).where(Dispatch.created_at >= since)
+                                                 .group_by(Dispatch.rule_id, Dispatch.status)).all()}
+    out = []
+    for r in db.scalars(select(AlertRule).order_by(AlertRule.name)):
+        st = {s: n for (rid, s), n in hits.items() if rid == r.id}
+        out.append({**to_dict(r), "client_name": names.get(r.client_id), "stats_24h": st})
+    return out
 
 
 @router.post("/rules")

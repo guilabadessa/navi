@@ -245,6 +245,8 @@ def email_ctx(ev: Event, client: Client | None, kind: str, test: bool = False) -
 def process_due(db: Session, evo, limit: int = 20) -> int:
     """Envia despachos vencidos (WhatsApp ou e-mail). Retorna a quantidade processada."""
     from . import mailer
+    from .. import settings_store
+    shadow = settings_store.get(db, "alerts.shadow") == "1"
     now = datetime.now(timezone.utc)
     rows = db.scalars(select(Dispatch).where(Dispatch.status == "pending", Dispatch.due_at <= now)
                       .order_by(Dispatch.due_at).limit(limit).with_for_update(skip_locked=True)).all()
@@ -257,6 +259,11 @@ def process_due(db: Session, evo, limit: int = 20) -> int:
             continue
         if d.kind == "problem" and ev.status == "RESOLVED":
             d.status, d.error = "skipped", "Evento já recuperado"
+            continue
+        if shadow:
+            d.status, d.error = "skipped", "Modo sombra: registrado, não enviado"
+            done += 1
+            db.commit()
             continue
         d.attempts += 1
         try:

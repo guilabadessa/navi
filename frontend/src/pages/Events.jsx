@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { get, put, fmtDT, fmtDur, SEV } from '../api'
+import { Download, Bookmark } from 'lucide-react'
+import { get, put, download, fmtDT, fmtDur, SEV } from '../api'
 import { Card, Drawer, Loading, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 
@@ -31,19 +32,38 @@ function Detail({ id, onClose }) {
   </>}</Drawer>
 }
 
+const SAVED = 'navi.events.saved'
+const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || '[]') } catch { return [] } }
+
 export default function Events() {
-  const [sp] = useSearchParams(); const [status, setStatus] = useState(sp.get('status') || ''); const [q, setQ] = useState(''); const [sev, setSev] = useState(''); const [page, setPage] = useState(1)
-  const [days, setDays] = useState('7'); const [sel, setSel] = useState(null); const [cl, setCl] = useState('')
+  const [sp] = useSearchParams()
+  const [status, setStatus] = useState(sp.get('status') || ''); const [q, setQ] = useState(sp.get('q') || ''); const [sev, setSev] = useState(sp.get('min_severity') || ''); const [page, setPage] = useState(1)
+  const [days, setDays] = useState(sp.has('days') ? sp.get('days') : '7'); const [sel, setSel] = useState(null); const [cl, setCl] = useState(sp.get('client_id') || '')
+  const [saved, setSaved] = useState(loadSaved()); const toast = useToast()
   const clients = useLoad(() => get('/clients'), [])
   const since = days ? new Date(Date.now() - days * 864e5).toISOString() : ''
-  const { data, err } = useLoad(() => get(`/events?page=${page}&size=50&status=${status}&q=${encodeURIComponent(q)}${sev !== '' ? '&min_severity=' + sev : ''}${cl ? '&client_id=' + cl : ''}${since ? '&since=' + encodeURIComponent(since) : ''}`), [page, status, q, sev, days, cl], 15000)
+  const qs = `status=${status}&q=${encodeURIComponent(q)}${sev !== '' ? '&min_severity=' + sev : ''}${cl ? '&client_id=' + cl : ''}${since ? '&since=' + encodeURIComponent(since) : ''}`
+  const { data, err } = useLoad(() => get(`/events?page=${page}&size=50&${qs}`), [page, status, q, sev, days, cl], 15000)
+  const apply = (f) => { setStatus(f.status); setQ(f.q); setSev(f.sev); setCl(f.cl); setDays(f.days); setPage(1) }
+  const saveFilter = () => {
+    const name = prompt('Nome do filtro salvo (ex.: Links caídos):'); if (!name) return
+    const l = [...saved.filter(x => x.name !== name), { name, status, q, sev, cl, days }]
+    setSaved(l); try { localStorage.setItem(SAVED, JSON.stringify(l)) } catch { /* ignore */ }; toast('Filtro salvo')
+  }
+  const rmFilter = (name) => { const l = saved.filter(x => x.name !== name); setSaved(l); try { localStorage.setItem(SAVED, JSON.stringify(l)) } catch { /* ignore */ } }
+  const clear = () => apply({ status: '', q: '', sev: '', cl: '', days: '7' })
+  const dirty = status || q || sev !== '' || cl || days !== '7'
   return <>
-    <PageHead title="Eventos e Incidentes" desc="PROBLEM e RESOLVED relacionados pelo Event ID do Zabbix" />
+    <PageHead title="Eventos e Incidentes" desc="PROBLEM e RESOLVED relacionados pelo Event ID do Zabbix">
+      <button className="btn" onClick={saveFilter}><Bookmark />Salvar filtro</button>
+      <button className="btn" onClick={() => download(`/events-export?${qs}`, 'eventos-navi.csv').catch(e => toast(e.message, true))}><Download />Exportar CSV</button></PageHead>
     <div className="bar"><div className="grow"><input placeholder="Buscar host, IP, trigger ou item…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>
       <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">Todos</option><option value="PROBLEM">Em aberto</option><option value="RESOLVED">Resolvidos</option></select>
       <select value={sev} onChange={e => { setSev(e.target.value); setPage(1) }}><option value="">Qualquer severidade</option>{SEV.map((s, i) => <option key={i} value={i}>≥ {s}</option>)}</select>
       <select value={cl} onChange={e => { setCl(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
-      <select value={days} onChange={e => { setDays(e.target.value); setPage(1) }}><option value="1">Últimas 24h</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="">Tudo</option></select></div>
+      <select value={days} onChange={e => { setDays(e.target.value); setPage(1) }}><option value="1">Últimas 24h</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="">Tudo</option></select>
+      {dirty && <button className="btn sm" onClick={clear}>Limpar filtros</button>}</div>
+    {saved.length > 0 && <div style={{ marginBottom: 14 }}><span className="sub">Filtros salvos: </span>{saved.map(f => <span key={f.name} className="chip" style={{ cursor: 'pointer' }} onClick={() => apply(f)}>{f.name} <span title="Remover" onClick={e => { e.stopPropagation(); rmFilter(f.name) }}>✕</span></span>)}</div>}
     <Card pad={false}>{data ? <><Table rows={data.items} onRow={r => setSel(r.id)} cols={[
       { h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <b>{r.host}</b> }, { h: 'IP', k: 'ip', cls: 'mono' },
       { h: 'Trigger', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) },
