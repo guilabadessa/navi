@@ -53,6 +53,8 @@ class ClientIn(BaseModel):
     maintenance_until: datetime | None = None
     wa_problem_template_id: int | None = None
     wa_recovery_template_id: int | None = None
+    mail_enabled: bool = False
+    alert_emails: str | None = None
     group_ids: list[str] = []
     host_ids: list[str] = []
     contacts: list[dict] = []
@@ -89,7 +91,15 @@ class RuleIn(BaseModel):
     problem_template_id: int | None = None
     recovery_template_id: int | None = None
     quote_recovery: bool = True
+    notify_whatsapp: bool = True
+    notify_email: bool = False
+    email_to: str | None = None
     enabled: bool = True
+
+
+class RuleTestIn(RuleIn):
+    to_whatsapp: str | None = None  # sobrescreve o destino so no teste
+    to_email: str | None = None
 
 
 class TemplateIn(BaseModel):

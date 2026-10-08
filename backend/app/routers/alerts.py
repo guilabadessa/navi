@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..db import get_db
 from ..models import AlertRule, Client, Dispatch, Event, MessageTemplate
-from ..schemas import RuleIn, TemplateIn, TestSend
+from ..schemas import RuleIn, RuleTestIn, TemplateIn, TestSend
 from ..security import require
 from ..services import factory, notification_service as N
 from ..util import to_dict
@@ -123,6 +123,17 @@ def dispatches(status: str | None = None, page: int = 1, size: int = 50, db: Ses
     items = [{**to_dict(d), "host": evs[d.event_id].host if d.event_id in evs else None,
               "trigger": evs[d.event_id].trigger_name if d.event_id in evs else None} for d in rows]
     return {"total": total, "items": items}
+
+
+@router.post("/test-rule")
+def test_rule(body: RuleTestIn, request: Request, db: Session = Depends(get_db), _=Depends(require("alerts.edit"))):
+    """Envia um alerta de TESTE pelos canais da regra (aceita regra ainda nao salva)."""
+    data = body.model_dump(exclude={"to_whatsapp", "to_email"})
+    rule = AlertRule(**data)
+    res = N.test_rule(db, factory.evolution(db), rule, body.to_whatsapp or None, body.to_email or None)
+    audit.log(db, request, "alert_rule_test", "alert_rule", detail={"name": body.name, "result": {k: v.get("ok") for k, v in res.items() if isinstance(v, dict) and "ok" in v}})
+    db.commit()
+    return res
 
 
 @router.get("/diagnose/{event_id}")

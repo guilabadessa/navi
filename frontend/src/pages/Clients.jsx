@@ -5,7 +5,7 @@ import { Plus, Pencil } from 'lucide-react'
 import { get, post, put, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
-import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
+import { maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
 
 const blank = { trade_name: '', legal_name: '', cnpj: '', state_registration: '', address: '', city: '', state: '', contact_name: '', email: '', phone: '',
   whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', sla_target: 99.5, service_hours: '', status: 'ativo', wa_enabled: false,
@@ -27,7 +27,7 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas WhatsApp'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos']]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos']]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={cnpjHint(c.cnpj)}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => setC({ ...c, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
@@ -39,14 +39,16 @@ function ClientForm({ initial, onClose, onSaved }) {
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
         options={groups.map(g => ({ value: g.groupid, label: g.name, sub: g.clients.length ? 'em uso: ' + g.clients.join(', ') : g.host_count + ' host(s)' }))} /> : <Loading />}</>}
     {tab === 'wa' && <>
-      <div className="row"><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} /></div>
-      <div className="row r2"><Field label="GRUPO WHATSAPP (JID)" hint="Formato 1203630…@g.us"><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
+      <div className="row" style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} />
+        <Check label="Enviar alertas deste cliente por e-mail" checked={c.mail_enabled} onChange={v => setC({ ...c, mail_enabled: v })} /></div>
+      <div className="row"><Field label="E-MAILS DE ALERTA" hint="Separe por vírgula. Vazio = usa os e-mails de relatório ou o e-mail do cliente."><input value={c.alert_emails || ''} onChange={set('alert_emails')} placeholder="noc@cliente.com.br, ti@cliente.com.br" disabled={!c.mail_enabled} /></Field></div>
+      <div className="row r2"><Field label="GRUPO WHATSAPP (JID)" hint="Formato 1203630…@g.us. Sem grupo, usa o celular abaixo."><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
         <Field label="WHATSAPP DO CLIENTE"><input inputMode="tel" value={c.whatsapp || ''} onChange={e => setC({ ...c, whatsapp: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
-      <div className="row r4"><Field label="SEVERIDADE MÍNIMA"><select value={c.wa_min_severity} onChange={set('wa_min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
+      <div className="row r4"><Field label="SEVERIDADE MÍNIMA (WhatsApp e e-mail)"><select value={c.wa_min_severity} onChange={set('wa_min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
         <Field label="ATRASO ANTES DO ENVIO"><select value={c.wa_delay_s} onChange={set('wa_delay_s')}>{[[0, 'Imediato'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="HORÁRIO (vazio = 24x7)" hint="ex.: 08:00-18:00"><input value={c.wa_hours || ''} onChange={set('wa_hours')} /></Field>
         <Field label="EM MANUTENÇÃO ATÉ"><input type="datetime-local" value={(c.maintenance_until || '').slice(0, 16)} onChange={e => setC({ ...c, maintenance_until: e.target.value ? new Date(e.target.value).toISOString() : null })} /></Field></div>
-      <div className="row"><Check label="Enviar mensagem de recuperação (RESOLVED)" checked={c.wa_send_recovery} onChange={v => setC({ ...c, wa_send_recovery: v })} /></div>
+      <div className="row"><Check label="Enviar aviso de recuperação (RESOLVED)" checked={c.wa_send_recovery} onChange={v => setC({ ...c, wa_send_recovery: v })} /></div>
       <div className="row r2"><Field label="TEMPLATE DE ALERTA"><select value={c.wa_problem_template_id || ''} onChange={e => setC({ ...c, wa_problem_template_id: e.target.value ? Number(e.target.value) : null })}><option value="">Padrão</option>{(tpls || []).filter(t => t.kind === 'problem').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
         <Field label="TEMPLATE DE RECUPERAÇÃO"><select value={c.wa_recovery_template_id || ''} onChange={e => setC({ ...c, wa_recovery_template_id: e.target.value ? Number(e.target.value) : null })}><option value="">Padrão</option>{(tpls || []).filter(t => t.kind === 'recovery').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field></div></>}
     {tab === 'rel' && <>

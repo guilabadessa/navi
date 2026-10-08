@@ -1,0 +1,11 @@
+{% extends "email/layout.html" %}
+{% block content %}
+{% if test %}<p style="margin:0 0 16px;padding:10px 14px;background:#fff7e6;border-left:4px solid #e0a800;border-radius:0 8px 8px 0;font-size:13.5px;color:#7a5b00;"><b>🧪 Mensagem de teste</b> — este alerta não representa um incidente real.</p>{% endif %}
+<p style="margin:0 0 16px;"><span style="display:inline-block;padding:5px 14px;border-radius:99px;font-size:12.5px;font-weight:700;letter-spacing:.06em;color:#ffffff;background:{{ badge_color }};">{{ badge }}</span></p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e3e8f4;border-radius:10px;background:#f8f9fd;margin:0 0 6px;">
+{% for label, value in rows %}
+  <tr><td style="padding:11px 16px;{{ 'border-top:1px solid #e3e8f4;' if not loop.first }}font-size:12.5px;color:#667090;width:30%;vertical-align:top;">{{ label }}</td>
+      <td style="padding:11px 16px;{{ 'border-top:1px solid #e3e8f4;' if not loop.first }}font-weight:600;color:#1b2033;">{{ value }}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

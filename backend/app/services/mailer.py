@@ -75,6 +75,8 @@ def _plain(kind: str, ctx: dict, sig: dict | None) -> str:
     if kind == "report":
         t = (f"Prezados,\n\nSegue em anexo o relatório de disponibilidade e SLA de {ctx['client_name']}, "
              f"referente ao período {ctx['period']}.\n\nAtenciosamente,")
+    elif kind == "alert":
+        t = ("[TESTE] " if ctx.get("test") else "") + ctx["title"] + "\n\n" + "\n".join(f"{a}: {b}" for a, b in ctx["rows"])
     elif kind == "new_user":
         t = (f"Olá, {ctx['name']}!\n\n{ctx['intro']}\n\nEndereço: {ctx['url']}\nUsuário: {ctx['email']}\n"
              f"Senha temporária: {ctx['password']}\nPerfil: {ctx['role']}\n\nAltere a senha no primeiro acesso.")

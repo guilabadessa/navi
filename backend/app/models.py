@@ -81,6 +81,8 @@ class Client(Base):
     maintenance_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     wa_problem_template_id: Mapped[int | None] = mapped_column(Integer)
     wa_recovery_template_id: Mapped[int | None] = mapped_column(Integer)
+    mail_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # alertas por e-mail (usa mesma severidade/atraso/horario)
+    alert_emails: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -202,6 +204,9 @@ class AlertRule(Base):
     problem_template_id: Mapped[int | None] = mapped_column(Integer)
     recovery_template_id: Mapped[int | None] = mapped_column(Integer)
     quote_recovery: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_whatsapp: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_to: Mapped[str | None] = mapped_column(Text)  # vazio = e-mails de alerta do cliente do evento
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -212,7 +217,8 @@ class Dispatch(Base):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
     rule_id: Mapped[int | None] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(16))  # problem | recovery
-    dest_jid: Mapped[str] = mapped_column(String(128))
+    channel: Mapped[str] = mapped_column(String(16), default="whatsapp")  # whatsapp | email
+    dest_jid: Mapped[str] = mapped_column(String(512))  # JID/numero (whatsapp) ou enderecos separados por virgula (email)
     template_id: Mapped[int | None] = mapped_column(Integer)
     quote: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)

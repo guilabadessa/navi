@@ -3,6 +3,7 @@ import { get, post, fmtDT } from '../api'
 import { Card, Field, Loading, PageHead, Pager, Pill, Stat, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { Link } from 'react-router-dom'
+import { maskTarget } from '../mask'
 
 export function WhatsApp() {
   const me = useAuth(); const toast = useToast(); const [page, setPage] = useState(1); const [st, setSt] = useState(''); const [to, setTo] = useState(''); const [text, setText] = useState('Teste de envio — NAVI Orca TI ✅')
@@ -16,7 +17,7 @@ export function WhatsApp() {
       <Stat label="Conexão Evolution" value={evo ? (evo.ok ? 'Conectada' : 'Com problema') : '—'} tone={evo ? (evo.ok ? 'ok' : 'bad') : ''} desc={evo?.detail} />
       <Stat label="Mensagens (página)" value={data ? data.total : '—'} desc="total no filtro atual" />
       <Stat label="Falhas" value={data ? data.items.filter(i => i.status === 'failed').length : '—'} tone="warn" desc="na página atual" /></div>
-    {can(me, 'alerts.edit') && <Card title="Enviar mensagem de teste" style={{ marginBottom: 16 }}><div className="row r3" style={{ marginBottom: 0 }}><Field label="DESTINO (número ou JID do grupo)"><input value={to} onChange={e => setTo(e.target.value)} placeholder="120363406164560822@g.us" /></Field>
+    {can(me, 'alerts.edit') && <Card title="Enviar mensagem de teste" style={{ marginBottom: 16 }}><div className="row r3" style={{ marginBottom: 0 }}><Field label="DESTINO (número ou JID do grupo)"><input value={to} onChange={e => setTo(maskTarget(e.target.value))} placeholder="(14) 99999-9999 ou 1203…@g.us" /></Field>
       <Field label="MENSAGEM"><input value={text} onChange={e => setText(e.target.value)} /></Field><div style={{ paddingTop: 22 }}><button className="btn primary" disabled={!to} onClick={test}>Enviar teste</button></div></div></Card>}
     <div className="bar"><select value={st} onChange={e => { setSt(e.target.value); setPage(1) }}><option value="">Todos os status</option><option value="pending">Pendentes</option><option value="sent">Enviados</option><option value="failed">Falhas</option><option value="skipped">Ignorados</option></select></div>
     <Card pad={false}>{data ? <><Table rows={data.items} empty="Nenhuma mensagem registrada ainda." cols={[
