@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Plus, Pencil, Send, Mail } from 'lucide-react'
-import { get, post, put, fmtDT } from '../api'
+import { Plus, Pencil, Send, Mail, Trash2 } from 'lucide-react'
+import { get, post, put, del, fmtDT } from '../api'
 import { Card, Check, Field, Loading, Modal, PageHead, Pager, Pill, Table, useLoad, useToast } from '../ui'
 
 const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador', CLIENTE: 'Cliente (portal)' }
@@ -32,6 +32,10 @@ export function UsersPage() {
   const resend = async (u) => {
     try { const r = await post(`/users/${u.id}/invite`); toast((u.invite_pending ? 'Convite reenviado' : 'Link de redefinição enviado') + ' · ' + r.email_status, (r.email_status || '').startsWith('erro')) } catch (e) { toast(e.message, true) }
   }
+  const remove = async (u) => {
+    if (!confirm(`Excluir o usuário ${u.name} (${u.email})? Ele perde o acesso imediatamente. O histórico de auditoria é mantido.`)) return
+    try { await del('/users/' + u.id); toast('Usuário excluído'); reload() } catch (e) { toast(e.message, true) }
+  }
   return <>
     <PageHead title="Usuários" desc="Convide pessoas por e-mail e defina o perfil de acesso; clientes acessam um portal somente leitura"><button className="btn primary" onClick={() => setEd({})}><Plus />Convidar usuário</button></PageHead>
     <Card pad={false}>{data ? <Table rows={data} cols={[{ h: 'Nome', r: r => <b>{r.name}</b> }, { h: 'E-mail', k: 'email' },
@@ -39,7 +43,8 @@ export function UsersPage() {
       { h: 'Último acesso', r: r => r.invite_pending ? <span className="sub">nunca acessou</span> : fmtDT(r.last_login) },
       { h: 'Estado', r: r => !r.active ? <Pill tone="mut">inativo</Pill> : r.invite_pending ? <Pill tone="warn">convite pendente</Pill> : <Pill tone="ok">ativo</Pill> },
       { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title={r.invite_pending ? 'Reenviar convite' : 'Enviar link para redefinir a senha'} disabled={!r.active} onClick={() => resend(r)}><Send />{r.invite_pending ? 'Reenviar' : 'Redefinir'}</button>
-        <button className="btn sm" onClick={() => setEd(r)}><Pencil />Editar</button></div> }]} /> : <Loading err={err} />}</Card>
+        <button className="btn sm" onClick={() => setEd(r)}><Pencil />Editar</button>
+        <button className="btn sm danger" title="Excluir usuário" onClick={() => remove(r)}><Trash2 /></button></div> }]} /> : <Loading err={err} />}</Card>
     {ed && <UserForm u={ed} onClose={() => setEd(null)} onSaved={() => { setEd(null); reload() }} />}</>
 }
 

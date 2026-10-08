@@ -103,11 +103,29 @@ def update_report(rid: int, body: ReportIn, request: Request, db: Session = Depe
     return to_dict(r)
 
 
+@router.delete("/runs/{rid}")
+def delete_run(rid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("reports.edit"))):
+    run = db.get(ReportRun, rid)
+    if not run:
+        raise HTTPException(404)
+    if run.file_path:
+        Path(run.file_path).unlink(missing_ok=True)
+    db.delete(run)
+    audit.log(db, request, "report_run_delete", "report_run", rid)
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{rid}")
 def delete_report(rid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("reports.edit"))):
+    """Exclui a definicao, as rotinas ligadas a ela e os PDFs ja gerados."""
     r = db.get(Report, rid)
     if not r:
         raise HTTPException(404)
+    for run in db.scalars(select(ReportRun).where(ReportRun.report_id == rid)):
+        if run.file_path:
+            Path(run.file_path).unlink(missing_ok=True)
+        db.delete(run)
     db.delete(r)
     audit.log(db, request, "report_delete", "report", rid)
     db.commit()

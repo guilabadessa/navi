@@ -2,32 +2,45 @@ import React, { useState } from 'react'
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
 import Coverage from './Coverage'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Plus, Pencil } from 'lucide-react'
-import { get, post, put, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
+
+export async function deleteClient(c, toast) {
+  try {
+    const i = await get(`/clients/${c.id}/impact`)
+    const itens = [[i.reports, 'relatório(s) e rotina(s)'], [i.pdfs, 'PDF(s) gerado(s)'], [i.rules, 'regra(s) de alerta'], [i.windows, 'janela(s) de manutenção'], [i.portal_users, 'usuário(s) do portal']]
+      .filter(([n]) => n).map(([n, l]) => `• ${n} ${l}`).join('\n')
+    const ok = confirm(`Excluir DEFINITIVAMENTE o cliente "${c.trade_name}"?\n\nSerão removidos junto:\n${itens || '• nenhum item vinculado'}\n\nOs ${i.events} evento(s) do histórico permanecem, apenas sem cliente. O Zabbix não é alterado.\n\nEsta ação não pode ser desfeita.`)
+    if (!ok) return false
+    await del('/clients/' + c.id); toast('Cliente excluído'); return true
+  } catch (e) { toast(e.message, true); return false }
+}
 
 const blank = { trade_name: '', legal_name: '', cnpj: '', state_registration: '', address: '', city: '', state: '', contact_name: '', email: '', phone: '',
   whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', sla_target: 99.5, service_hours: '', status: 'ativo', wa_enabled: false,
   wa_min_severity: 3, wa_delay_s: 0, wa_send_recovery: true, wa_hours: '', group_ids: [], host_ids: [], contacts: [] }
 
 function ClientForm({ initial, onClose, onSaved }) {
-  const [c, setC] = useState({ ...blank, ...initial }); const [tab, setTab] = useState('dados'); const toast = useToast()
+  const [c, setC] = useState({ ...blank, ...initial }); const [tab, setTab] = useState('dados'); const toast = useToast(); const [busy, setBusy] = useState(false)
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data: tpls } = useLoad(() => get('/alerts/templates'), [])
   const set = (k) => (e) => setC({ ...c, [k]: e && e.target ? e.target.value : e })
   const save = async () => {
+    if (busy) return
+    setBusy(true)
     try {
       const body = { ...c, sla_target: Number(c.sla_target), wa_delay_s: Number(c.wa_delay_s), wa_min_severity: Number(c.wa_min_severity),
         maintenance_until: c.maintenance_until || null }
       const r = c.id ? await put('/clients/' + c.id, body) : await post('/clients', body)
       toast('Cliente salvo'); onSaved(r)
-    } catch (e) { toast(e.message, true) }
+    } catch (e) { toast(e.message, true); setBusy(false) }
   }
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
-    footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
+    footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
     <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos']]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
@@ -66,7 +79,7 @@ function ClientForm({ initial, onClose, onSaved }) {
 }
 
 export function Clients() {
-  const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [sp] = useSearchParams()
+  const toast = useToast(); const me = useAuth(); const nav = useNavigate(); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [sp] = useSearchParams()
   const { data, err, reload } = useLoad(() => get('/clients' + (q ? '?q=' + encodeURIComponent(q) : '')), [q])
   const open = async (id) => setEdit(await get('/clients/' + id))
   return <>
@@ -80,12 +93,13 @@ export function Clients() {
       { h: 'WhatsApp', r: r => r.wa_enabled ? <Pill tone="ok">ativo</Pill> : <Pill>desligado</Pill> },
       { h: 'Em aberto', r: r => r.open_events ? <Pill tone="bad">{r.open_events}</Pill> : <Pill tone="ok">0</Pill> },
       { h: 'Status', r: r => <Pill tone={r.status === 'ativo' ? 'info' : 'mut'}>{r.status}</Pill> },
-      { h: '', r: r => can(me, 'clients.edit') && <button className="btn sm" onClick={e => { e.stopPropagation(); open(r.id) }}><Pencil />Editar</button> }]} /> : <Loading err={err} />}</Card>
+      { h: '', r: r => can(me, 'clients.edit') && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={e => { e.stopPropagation(); open(r.id) }}><Pencil />Editar</button>
+        <button className="btn sm danger" title="Excluir cliente" onClick={async e => { e.stopPropagation(); if (await deleteClient(r, toast)) reload() }}><Trash2 /></button></div> }]} /> : <Loading err={err} />}</Card>
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }
 
 export function ClientDetail() {
-  const { id } = useParams(); const me = useAuth(); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
+  const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
   const { data: d, err, reload } = useLoad(() => get(`/clients/${id}/dashboard?days=${days}`), [id, days], 30000)
   if (!d) return <Loading err={err} />
   const s = d.kpis.summary; const c = d.client
@@ -94,7 +108,8 @@ export function ClientDetail() {
     <PageHead title={c.trade_name} desc={[c.legal_name, c.cnpj].filter(Boolean).join(' · ')}>
       <Link className="btn" to="/clientes">← Clientes</Link>
       <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
-      {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}</PageHead>
+      {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
+      {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.sla_met === false ? 'bad' : 'ok'} desc={`SLA contratado ${fmtPct(c.sla_target)} · ${s.sla_met === false ? 'não atingido' : 'atingido'}`} />
       <Stat label="Incidentes" value={s.incidents} desc={`${s.resolved} resolvidos · ${s.open} em aberto`} tone={s.open ? 'warn' : ''} />

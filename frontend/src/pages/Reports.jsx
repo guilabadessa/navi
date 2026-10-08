@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Download, Eye, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send } from 'lucide-react'
+import { Download, Eye, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send, Trash2 } from 'lucide-react'
 import { api, get, post, put, del, download, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pager, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
@@ -76,6 +76,14 @@ export default function Reports() {
   const edit = can(me, 'reports.edit'), send = can(me, 'reports.send')
   const resend = async (run, kind) => { const to = kind === 'wa' ? prompt('JID do destino WhatsApp (ou "client"):', 'client') : prompt('E-mail(s) destino (ou "client"):', 'client'); if (!to) return
     try { const r = await post(`/reports/runs/${run.id}/send`, kind === 'wa' ? { wa_dest: to } : { email_to: to }); toast(kind === 'wa' ? 'WhatsApp: ' + r.wa_status : 'E-mail: ' + r.email_status); runs.reload() } catch (e) { toast(e.message, true) } }
+  const removeDef = async (r) => {
+    if (!confirm(`Excluir o relatório "${r.name}"?\n\nSerão removidos também as rotinas agendadas dele e os PDFs já gerados (${r.runs || 0}). Esta ação não pode ser desfeita.`)) return
+    try { await del('/reports/' + r.id); toast('Relatório excluído'); reps.reload(); runs.reload() } catch (e) { toast(e.message, true) }
+  }
+  const removeRun = async (run) => {
+    if (!confirm('Excluir este PDF do histórico? O arquivo será apagado.')) return
+    try { await del('/reports/runs/' + run.id); toast('PDF excluído'); runs.reload() } catch (e) { toast(e.message, true) }
+  }
   return <>
     <PageHead title="Relatórios" desc="Relatórios executivos e técnicos de disponibilidade e SLA em PDF · dados consultados ao vivo no Zabbix · guardamos os 2 PDFs mais recentes por cliente">
       {edit && <button className="btn primary" onClick={() => setEd({})}><Plus />Novo relatório</button>}</PageHead>
@@ -83,13 +91,13 @@ export default function Reports() {
     {tab === 'def' && <Card pad={false}>{reps.data ? <Table rows={reps.data} empty="Nenhum relatório criado ainda." cols={[
       { h: 'Relatório', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || '—' }, { h: 'Filtros', r: r => `${r.host_ids?.length || 0} hosts · ${r.group_ids?.length || 0} grupos` },
       { h: 'Gerações', k: 'runs' }, { h: 'Última', r: r => fmtDT(r.last_run) },
-      { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}>{edit && <button className="btn sm primary" onClick={() => setGen(r)}><FilePlus2 />Gerar</button>}{edit && <button className="btn sm" onClick={() => setEd(r)}><Pencil /></button>}</div> }]} /> : <Loading />}</Card>}
+      { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}>{edit && <button className="btn sm primary" onClick={() => setGen(r)}><FilePlus2 />Gerar</button>}{edit && <button className="btn sm" onClick={() => setEd(r)}><Pencil /></button>}{edit && <button className="btn sm danger" title="Excluir relatório" onClick={() => removeDef(r)}><Trash2 /></button>}</div> }]} /> : <Loading />}</Card>}
     {tab === 'hist' && <Card pad={false}>{runs.data ? <><Table rows={runs.data.items} empty="Nenhum PDF gerado." cols={[
       { h: 'Gerado em', r: r => fmtDT(r.generated_at) }, { h: 'Relatório', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || '—' }, { h: 'Período', r: r => `${fmtDT(r.period_start).slice(0, 10)} → ${fmtDT(r.period_end).slice(0, 10)}` },
       { h: 'Disp.', r: r => r.kpis ? fmtPct(r.kpis.availability, 3) : '—' }, { h: 'Por', r: r => r.generated_by },
       { h: 'Status', r: r => <Pill tone={r.status === 'ok' ? 'ok' : 'bad'}>{r.status}</Pill> }, { h: 'WhatsApp', r: r => <span className="sub">{r.wa_status || '—'}</span> }, { h: 'E-mail', r: r => <span className="sub">{r.email_status ? r.email_status.slice(0, 28) : '—'}</span> },
-      { h: '', r: r => r.status === 'ok' && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title="Baixar" onClick={() => download(`/reports/runs/${r.id}/download`, `relatorio_${r.id}.pdf`)}><Download /></button>
-        {send && <><button className="btn sm" title="Reenviar WhatsApp" onClick={() => resend(r, 'wa')}><MessageCircle /></button><button className="btn sm" title="Reenviar e-mail" onClick={() => resend(r, 'em')}><Mail /></button></>}</div> }]} />
+      { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}>{r.status === 'ok' && <button className="btn sm" title="Baixar" onClick={() => download(`/reports/runs/${r.id}/download`, `relatorio_${r.id}.pdf`)}><Download /></button>}
+        {r.status === 'ok' && send && <><button className="btn sm" title="Reenviar WhatsApp" onClick={() => resend(r, 'wa')}><MessageCircle /></button><button className="btn sm" title="Reenviar e-mail" onClick={() => resend(r, 'em')}><Mail /></button></>}{edit && <button className="btn sm danger" title="Excluir PDF" onClick={() => removeRun(r)}><Trash2 /></button>}</div> }]} />
       <div style={{ padding: '0 16px 12px' }}><Pager page={page} size={25} total={runs.data.total} onPage={setPage} /></div></> : <Loading />}</Card>}
     {ed && clients.data && <ReportForm r={ed} clients={clients.data} onClose={() => setEd(null)} onSaved={() => { setEd(null); reps.reload() }} />}
     {gen && <GenerateModal r={gen} onClose={() => setGen(null)} onDone={() => { setGen(null); reps.reload(); runs.reload(); setTab('hist') }} />}</>

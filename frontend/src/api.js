@@ -2,7 +2,19 @@ const BASE = '/navi/api'
 let csrf = ''
 export const setCsrf = (t) => { csrf = t || '' }
 
-export async function api(path, { method = 'GET', body, raw } = {}) {
+// Evita envio duplicado: um clique duplo em "Salvar" reaproveita a requisicao que ja esta em andamento
+const inflight = new Map()
+export function api(path, opts = {}) {
+  const method = opts.method || 'GET'
+  if (method === 'GET' || opts.raw) return doApi(path, opts)
+  const key = method + ' ' + path + ' ' + JSON.stringify(opts.body ?? null)
+  if (inflight.has(key)) return inflight.get(key)
+  const p = doApi(path, opts).finally(() => inflight.delete(key))
+  inflight.set(key, p)
+  return p
+}
+
+async function doApi(path, { method = 'GET', body, raw } = {}) {
   const opt = { method, credentials: 'same-origin', headers: {} }
   if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body) }
   if (method !== 'GET') opt.headers['X-CSRF-Token'] = csrf

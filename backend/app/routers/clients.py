@@ -10,8 +10,8 @@ from .. import audit
 from ..config import get_settings
 from ..db import get_db
 from ..formats import try_phone
-from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, Report, ReportRun,
-                      ZbxHost, ZbxHostGroup)
+from ..models import (AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
+                      User, ZbxHost, ZbxHostGroup)
 from ..schemas import ClientIn
 from ..security import require
 from ..services import event_service
@@ -47,6 +47,21 @@ def _apply(db: Session, c: Client, b: ClientIn):
                   for x in b.contacts if x.get("name")]
 
 
+def _digits(v: str | None) -> str:
+    return "".join(ch for ch in (v or "") if ch.isdigit())
+
+
+def _dupe_check(db: Session, name: str, cnpj: str | None, exclude_id: int | None = None):
+    """Impede cadastro duplicado (ex.: duplo clique em Salvar): mesmo nome ou mesmo CNPJ."""
+    for o in db.scalars(select(Client)):
+        if o.id == exclude_id:
+            continue
+        if (o.trade_name or "").strip().lower() == (name or "").strip().lower():
+            raise HTTPException(409, f"Já existe um cliente com este nome ({o.trade_name}).")
+        if _digits(cnpj) and _digits(o.cnpj) == _digits(cnpj):
+            raise HTTPException(409, f"Já existe um cliente com este CNPJ ({o.trade_name}).")
+
+
 @router.get("")
 def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(require("clients.view"))):
     stmt = select(Client).order_by(Client.trade_name)
@@ -64,6 +79,7 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
 
 @router.post("")
 def create(body: ClientIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    _dupe_check(db, body.trade_name, body.cnpj)
     c = Client()
     _apply(db, c, body)
     db.add(c)
@@ -87,6 +103,7 @@ def update(cid: int, body: ClientIn, request: Request, db: Session = Depends(get
     c = db.get(Client, cid)
     if not c:
         raise HTTPException(404)
+    _dupe_check(db, body.trade_name, body.cnpj, cid)
     _apply(db, c, body)
     audit.log(db, request, "client_update", "client", c.id, detail={"name": c.trade_name})
     db.commit()
@@ -94,15 +111,50 @@ def update(cid: int, body: ClientIn, request: Request, db: Session = Depends(get
     return _full(db, c)
 
 
+def _impact(db: Session, cid: int) -> dict:
+    rep_ids = list(db.scalars(select(Report.id).where(Report.client_id == cid)))
+    runs = db.scalars(select(ReportRun).where((ReportRun.client_id == cid) | (ReportRun.report_id.in_(rep_ids)) if rep_ids else (ReportRun.client_id == cid))).all()
+    return {"reports": len(rep_ids), "pdfs": len(runs), "rules": db.scalar(select(func.count()).select_from(AlertRule).where(AlertRule.client_id == cid)),
+            "events": db.scalar(select(func.count()).select_from(Event).where(Event.client_id == cid)),
+            "portal_users": db.scalar(select(func.count()).select_from(User).where(User.client_id == cid, User.role == "CLIENTE")),
+            "windows": db.scalar(select(func.count()).select_from(MaintenanceWindow).where(MaintenanceWindow.client_id == cid))}
+
+
+@router.get("/{cid}/impact")
+def impact(cid: int, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    return _impact(db, cid)
+
+
 @router.delete("/{cid}")
-def deactivate(cid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+def delete_client(cid: int, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    """Exclui o cliente e o que depende dele (relatorios, PDFs, rotinas, regras, janelas, usuarios do portal).
+    Os eventos ficam no historico, apenas sem cliente. O Zabbix nao e alterado."""
     c = db.get(Client, cid)
     if not c:
         raise HTTPException(404)
-    c.status = "inativo"  # nunca apaga historico
-    audit.log(db, request, "client_deactivate", "client", c.id)
+    info = _impact(db, cid)
+    rep_ids = list(db.scalars(select(Report.id).where(Report.client_id == cid)))
+    runs = db.scalars(select(ReportRun).where((ReportRun.client_id == cid) | (ReportRun.report_id.in_(rep_ids)) if rep_ids else (ReportRun.client_id == cid))).all()
+    for r in runs:
+        if r.file_path:
+            Path(r.file_path).unlink(missing_ok=True)
+        db.delete(r)
+    for r in db.scalars(select(Report).where(Report.client_id == cid)):
+        db.delete(r)  # rotinas (schedules) saem por cascata
+    for u in db.scalars(select(User).where(User.client_id == cid, User.role == "CLIENTE")):
+        db.delete(u)
+    for e in db.scalars(select(Event).where(Event.client_id == cid)):
+        e.client_id = None
+    logo = Path(c.logo_path) if c.logo_path else None
+    name = c.trade_name
+    db.delete(c)
+    audit.log(db, request, "client_delete", "client", cid, detail={"name": name, **info})
     db.commit()
-    return {"ok": True}
+    if logo:
+        logo.unlink(missing_ok=True)
+    return {"ok": True, **info}
 
 
 @router.post("/{cid}/logo")

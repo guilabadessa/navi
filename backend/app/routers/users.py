@@ -93,3 +93,19 @@ def resend_invite(uid: int, request: Request, db: Session = Depends(get_db), _=D
     audit.log(db, request, "user_resend_invite", "user", u.id, detail={"reset": not u.invite_pending})
     db.commit()
     return {"email_status": send_invite(db, u, reset=not u.invite_pending)}
+
+
+@router.delete("/{uid}")
+def delete_user(uid: int, request: Request, db: Session = Depends(get_db), me=Depends(require("users.manage"))):
+    u = db.get(User, uid)
+    if not u:
+        raise HTTPException(404)
+    if u.id == me.id:
+        raise HTTPException(400, "Você não pode excluir o seu próprio usuário")
+    if u.role == "ADMIN" and u.active and (db.scalar(select(func.count()).select_from(User).where(User.role == "ADMIN", User.active.is_(True))) or 0) <= 1:
+        raise HTTPException(400, "Não é possível excluir o último administrador ativo")
+    email = u.email
+    db.delete(u)
+    audit.log(db, request, "user_delete", "user", uid, detail={"email": email})
+    db.commit()
+    return {"ok": True}
