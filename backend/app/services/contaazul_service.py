@@ -58,7 +58,7 @@ class ContaAzul:
             exp = 0
         return tok if tok and time.time() < exp - 90 else ""
 
-    def authorize_url(self, state: str = "navi") -> str:
+    def authorize_url(self, state: str) -> str:
         from urllib.parse import urlencode
         q = urlencode({"response_type": "code", "client_id": self.cid, "redirect_uri": self.redirect, "state": state, "scope": SCOPE}, safe="/:")
         return f"{AUTH}?{q}"

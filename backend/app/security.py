@@ -116,6 +116,18 @@ def read_invite_token(token: str, db: Session) -> User | None:
     return u
 
 
+def make_oauth_state(user_id: int) -> str:
+    """'state' do OAuth: prova que o retorno do login externo foi iniciado por um administrador da NAVI (vale 15 min)."""
+    return URLSafeTimedSerializer(get_settings().NAVI_SECRET_KEY, salt="navi-oauth").dumps({"uid": user_id, "n": secrets.token_urlsafe(6)})
+
+
+def read_oauth_state(state: str) -> int | None:
+    try:
+        return URLSafeTimedSerializer(get_settings().NAVI_SECRET_KEY, salt="navi-oauth").loads(state, max_age=900).get("uid")
+    except BadSignature:
+        return None
+
+
 # ---- Sessao (cookie assinado, HttpOnly, SameSite) + CSRF ------------------------------
 def _ser() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(get_settings().NAVI_SECRET_KEY, salt="navi-session")

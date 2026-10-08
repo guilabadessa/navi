@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..models import Client, ExtTenant, FinDoc, User
-from ..security import current_user, require, user_has
+from ..security import current_user, make_oauth_state, read_oauth_state, require, user_has
 from ..services import finance_service as F
 from ..services.contaazul_service import ContaAzul, ContaAzulError, DEFAULT_REDIRECT, digits
 from .portal import _client_for
@@ -18,11 +18,11 @@ from .portal import _client_for
 router = APIRouter(tags=["finance"])
 
 
-def _cfg(db: Session) -> dict:
+def _cfg(db: Session, uid: int | None = None) -> dict:
     ca = ContaAzul(db)
     return {"client_id": ca.cid, "secret_set": bool(ca.secret), "redirect_uri": ca.redirect, "enabled": S.get(db, "contaazul.enabled") == "1",
             "authorized": ca.authorized, "auth_error": bool(S.get(db, "contaazul.auth_error")), "last_sync": S.get(db, "contaazul.last_sync") or None,
-            "authorize_url": ca.authorize_url() if ca.configured else None}
+            "authorize_url": ca.authorize_url(make_oauth_state(uid)) if (ca.configured and uid) else None}
 
 
 class CfgIn(BaseModel):
@@ -41,8 +41,8 @@ class LinkIn(BaseModel):
 
 
 @router.get("/finance/config")
-def config(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
-    return _cfg(db)
+def config(db: Session = Depends(get_db), me=Depends(require("settings.view"))):
+    return _cfg(db, me.id)
 
 
 @router.put("/finance/config")
@@ -54,7 +54,7 @@ def config_put(body: CfgIn, request: Request, db: Session = Depends(get_db), me=
         S.put(db, "contaazul.client_secret", body.client_secret.strip(), me.email)
     audit.log(db, request, "settings_contaazul", "settings", detail={"client_id": body.client_id, "secret_changed": bool(body.client_secret), "enabled": body.enabled})
     db.commit()
-    return _cfg(db)
+    return _cfg(db, me.id)
 
 
 @router.post("/finance/authorize")
@@ -73,19 +73,22 @@ def authorize(body: CodeIn, request: Request, db: Session = Depends(get_db), me=
 
 
 @router.get("/finance/callback")
-def callback(request: Request, code: str = "", error: str = "", db: Session = Depends(get_db), me=Depends(require("settings.edit"))):
-    """Retorno do login do Conta Azul (URL de redirecionamento do aplicativo): troca o codigo pelos tokens."""
+def callback(request: Request, code: str = "", state: str = "", error: str = "", db: Session = Depends(get_db)):
+    """Retorno do login do Conta Azul. Nao depende do cookie de sessao (vem de outro site): o 'state' assinado
+    prova que o fluxo foi iniciado por um administrador com permissao de configurar."""
+    uid = read_oauth_state(state) if state else None
+    admin = db.get(User, uid) if uid else None
     ok = False
-    if code and not error:
+    if admin and admin.active and user_has(admin, "settings.edit") and code and not error:
         try:
             ContaAzul(db).exchange_code(code)
             ok = True
         except ContaAzulError:
             ok = False
-    audit.log(db, request, "contaazul_authorize", "settings", result="ok" if ok else "falha", detail={"via": "callback"})
+    audit.log(db, request, "contaazul_authorize", "settings", result="ok" if ok else "falha", detail={"via": "callback", "state_valido": bool(admin)})
     db.commit()
     return HTMLResponse(f"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=\"1;url=/cliente/configuracoes?ca={'ok' if ok else 'erro'}\">"
-                        f"<body style=\"font-family:sans-serif;padding:40px\">{'Conta Azul autorizado. Redirecionando…' if ok else 'Não foi possível autorizar. Redirecionando…'}</body>")
+                        f"<body style=\"font-family:sans-serif;padding:40px\">{'Conta Azul autorizado. Redirecionando…' if ok else 'Não foi possível autorizar (código expirado ou inválido). Redirecionando…'}</body>")
 
 
 @router.post("/finance/test")

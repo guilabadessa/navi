@@ -101,7 +101,7 @@ function WebhookTab({ edit }) {
 }
 
 export default function Settings() {
-  const me = useAuth(); const [tab, setTab] = useState('zbx'); const edit = can(me, 'settings.edit')
+  const me = useAuth(); const caq = new URLSearchParams(window.location.search).get('ca'); const toast = useToast(); const [tab, setTab] = useState(caq ? 'ca' : 'zbx'); useEffect(() => { if (caq) toast(caq === 'ok' ? 'Conta Azul autorizado com sucesso' : 'Não foi possível autorizar o Conta Azul. Gere um novo código e tente de novo.', caq !== 'ok') }, []); const edit = can(me, 'settings.edit')
   return <>
     <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS, Conta Azul), papel timbrado e webhook" />
     <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
