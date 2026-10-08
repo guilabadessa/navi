@@ -1,11 +1,38 @@
 """Integracao com a Evolution API (WhatsApp). Nada de WhatsApp fica no gerador de relatorios."""
 import base64
+import re
 
 import httpx
 
 
 class EvolutionError(Exception):
     pass
+
+
+def normalize_target(v: str) -> str:
+    """Grupo (JID/ID longo) permanece; telefone brasileiro (10/11 digitos) ganha o codigo do pais 55."""
+    v = (v or "").strip()
+    if "@" in v:
+        return v
+    if re.fullmatch(r"\d+-\d+", v):  # id de grupo antigo
+        return v + "@g.us"
+    d = re.sub(r"\D", "", v)
+    if len(d) >= 15:  # ids de grupo (ex.: 120363...)
+        return d + "@g.us"
+    if len(d) in (10, 11):
+        d = "55" + d
+    return d
+
+
+def _br_alternative(number: str) -> str | None:
+    """Variacao do 9o digito (celulares BR): 55+DDD+9+8 digitos <-> 55+DDD+8 digitos."""
+    if "@" in number or not number.startswith("55"):
+        return None
+    if len(number) == 13:
+        return number[:4] + number[5:]
+    if len(number) == 12:
+        return number[:4] + "9" + number[4:]
+    return None
 
 
 class EvolutionService:
@@ -33,20 +60,33 @@ class EvolutionService:
     def message_id(resp: dict) -> str | None:
         return ((resp.get("key") or {}).get("id")) or resp.get("messageId") or resp.get("id")
 
+    def _send(self, path: str, number: str, payload: dict) -> dict:
+        """Envia normalizando o destino; se o numero nao existir no WhatsApp, tenta a variacao do 9o digito."""
+        number = normalize_target(number)
+        try:
+            return self._post(path, {**payload, "number": number})
+        except EvolutionError as e:
+            alt = _br_alternative(number) if '"exists":false' in str(e).replace(" ", "") else None
+            if not alt:
+                raise
+            return self._post(path, {**payload, "number": alt})
+
     def send_text(self, number: str, text: str, quoted_id: str | None = None, quoted_text: str | None = None) -> dict:
-        payload = {"number": number, "text": text}
+        payload = {"text": text}
         if quoted_id:
-            payload["quoted"] = {"key": {"id": quoted_id, "remoteJid": number, "fromMe": True},
-                                 "message": {"conversation": quoted_text or ""}}
+            jid = normalize_target(number)
+            jid = jid if "@" in jid else f"{jid}@s.whatsapp.net"
+            q = {**payload, "quoted": {"key": {"id": quoted_id, "remoteJid": jid, "fromMe": True},
+                                       "message": {"conversation": quoted_text or ""}}}
             try:
-                return self._post("/message/sendText", payload)
+                return self._send("/message/sendText", number, q)
             except EvolutionError:
-                payload.pop("quoted")  # fallback: envia sem resposta
-        return self._post("/message/sendText", payload)
+                pass  # fallback: envia sem resposta
+        return self._send("/message/sendText", number, payload)
 
     def send_document(self, number: str, pdf_bytes: bytes, filename: str, caption: str = "") -> dict:
-        return self._post("/message/sendMedia", {
-            "number": number, "mediatype": "document", "mimetype": "application/pdf", "caption": caption,
+        return self._send("/message/sendMedia", number, {
+            "mediatype": "document", "mimetype": "application/pdf", "caption": caption,
             "fileName": filename, "media": base64.b64encode(pdf_bytes).decode()})
 
     def status(self) -> dict:

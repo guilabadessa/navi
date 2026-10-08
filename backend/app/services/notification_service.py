@@ -141,7 +141,7 @@ def plan_problem(db: Session, ev: Event):
                 continue
         elif ev.severity < r.min_severity:
             continue
-        dest = r.dest_jid or (client.whatsapp_group_jid if client else None)
+        dest = r.dest_jid or ((client.whatsapp_group_jid or client.whatsapp) if client else None)
         if not dest or (dest, "problem") in planned:
             continue
         if client and not _in_hours(client.wa_hours, now):
@@ -150,9 +150,9 @@ def plan_problem(db: Session, ev: Event):
         db.add(Dispatch(event_id=ev.id, rule_id=r.id, kind="problem", dest_jid=dest, template_id=r.problem_template_id,
                         due_at=now + timedelta(seconds=r.delay_s or 0)))
         n += 1
-    if not n and client and client.wa_enabled and client.whatsapp_group_jid and ev.severity >= client.wa_min_severity \
+    if not n and client and client.wa_enabled and (client.whatsapp_group_jid or client.whatsapp) and ev.severity >= client.wa_min_severity \
             and _in_hours(client.wa_hours, now):
-        db.add(Dispatch(event_id=ev.id, rule_id=None, kind="problem", dest_jid=client.whatsapp_group_jid,
+        db.add(Dispatch(event_id=ev.id, rule_id=None, kind="problem", dest_jid=client.whatsapp_group_jid or client.whatsapp,
                         template_id=client.wa_problem_template_id, due_at=now + timedelta(seconds=client.wa_delay_s or 0)))
         n += 1
     return n

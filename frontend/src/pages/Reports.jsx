@@ -60,8 +60,9 @@ function GenerateModal({ r, onClose, onDone }) {
       <div style={{ display: 'flex', gap: 8 }}><button className="btn" onClick={view}><Eye />Visualizar</button><button className="btn primary" onClick={() => download(`/reports/runs/${run.id}/download`, `${(run.name || 'relatorio').replace(/\s+/g, '_')}.pdf`)}><Download />Baixar PDF</button></div></div>
     <h3 style={{ margin: '22px 0 10px' }}>Enviar o relatório</h3>
     <p className="hint" style={{ marginBottom: 12 }}>Nada foi enviado ainda. Confira o PDF e confirme os destinos para enviar.</p>
-    <div className="row r2"><div><Check label="WhatsApp" checked={wa} onChange={setWa} /><input style={{ marginTop: 6 }} disabled={!wa} value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="JID do grupo (1203…@g.us) ou número" />
-        {dest?.wa_missing && <div className="hint" style={{ color: 'var(--orange)' }}>⚠ O cliente não tem grupo WhatsApp cadastrado — informe o destino aqui ou cadastre em Clientes.</div>}</div>
+    <div className="row r2"><div><Check label="WhatsApp" checked={wa} onChange={setWa} /><input style={{ marginTop: 6 }} disabled={!wa} value={waTo} onChange={e => setWaTo(e.target.value)} placeholder="Grupo (1203…@g.us) ou celular com DDD" />
+        <div className="hint">{dest?.wa_kind === 'grupo' ? '✔ Usando o grupo WhatsApp do cliente.' : dest?.wa_kind === 'celular' ? '✔ Cliente sem grupo — usando o celular cadastrado.' : ''} Para celular informe DDD + número (o 55 é adicionado automaticamente); para grupo use o JID terminado em @g.us.</div>
+        {dest?.wa_missing && <div className="hint" style={{ color: 'var(--orange)' }}>⚠ O cliente não tem grupo nem celular WhatsApp cadastrado — informe o destino aqui ou cadastre em Clientes.</div>}</div>
       <div><Check label="E-mail" checked={em} onChange={setEm} /><input style={{ marginTop: 6 }} disabled={!em} value={emTo} onChange={e => setEmTo(e.target.value)} placeholder="email1@dominio.com, email2@dominio.com" />
         {dest?.email_missing && <div className="hint" style={{ color: 'var(--orange)' }}>⚠ O cliente não tem e-mail de relatório cadastrado — informe aqui.</div>}</div></div>
     <button className="btn primary" disabled={sending || (!(wa && waTo) && !(em && emTo))} onClick={send}><Send />{sending ? 'Enviando…' : 'Confirmar envio'}</button>

@@ -144,6 +144,8 @@ def poll(db: Session, z: ZabbixService, backfill: bool = False) -> dict:
                 "acknowledged": b.get("acknowledged"), "source": "api"}, alert=not first)
             if created:
                 new += 1
+            elif _dt(b["clock"]) and ev.source == "webhook":
+                ev.started_at = _dt(b["clock"])  # horario oficial do Zabbix substitui o horario de recebimento
             if b.get("r_eventid") not in (None, "0", 0):
                 ev.r_eventid = b["r_eventid"]
         db.commit()

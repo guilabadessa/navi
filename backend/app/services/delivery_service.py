@@ -19,10 +19,10 @@ def deliver(db: Session, run: ReportRun, rep: Report, wa_dest: str | None = None
     # None = canal nao solicitado (nao envia); sem fallback para padroes do relatorio
     wa = wa_dest
     wa_requested = bool(wa)
-    if wa == "client":  # atalho: grupo WhatsApp cadastrado no cliente
-        wa = client.whatsapp_group_jid if client else None
+    if wa == "client":  # atalho: grupo do cliente; se nao houver, o celular cadastrado
+        wa = (client.whatsapp_group_jid or client.whatsapp) if client else None
     if wa_requested and not wa:
-        run.wa_status = "não enviado: cliente sem grupo WhatsApp cadastrado"
+        run.wa_status = "não enviado: cliente sem grupo nem celular WhatsApp cadastrado"
     if wa:
         try:
             factory.evolution(db).send_document(wa, data, fname, caption=f"📊 *{rep.name}*\n🏢 {cname}\n📅 {plabel}")
