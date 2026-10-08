@@ -19,7 +19,7 @@ log = logging.getLogger("navi.jobs")
 JOBS = {
     # name: (label, interval_s)
     "sync_inventory": ("Sincronização Zabbix (grupos e hosts)", 600),
-    "poll_events": ("Processamento de eventos", 60),
+    "poll_events": ("Processamento de eventos", 30),
     "dispatch_alerts": ("Envio de alertas", 10),
     "run_schedules": ("Geração/envio de relatórios agendados", 60),
     "health_checks": ("Health checks", 120),

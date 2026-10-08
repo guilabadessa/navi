@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }}</title></head>
+<body style="margin:0;padding:0;background:#f3f5fb;font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#1b2033;">
+<span style="display:none;max-height:0;overflow:hidden;opacity:0;">{{ preheader or title }}</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5fb;padding:28px 12px;"><tr><td align="center">
+ <table role="presentation" width="620" cellpadding="0" cellspacing="0" style="width:100%;max-width:620px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e3e8f4;text-align:left;">
+  <tr><td style="padding:22px 32px 18px;border-bottom:4px solid #071a5a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td align="left"><img src="{{ logo_src }}" alt="Orca TI" height="34" style="display:block;height:34px;border:0;"></td>
+      <td align="right" style="font-size:11px;letter-spacing:.14em;color:#1e73f8;font-weight:700;text-transform:uppercase;">{{ tag or 'NAVI · NOC Orca TI' }}</td>
+    </tr></table></td></tr>
+  <tr><td style="padding:30px 32px 8px;">
+    <h1 style="margin:0 0 6px;font-size:22px;line-height:1.25;color:#071a5a;">{{ title }}</h1>
+    {% if subtitle %}<p style="margin:0 0 4px;font-size:14px;color:#667090;">{{ subtitle }}</p>{% endif %}
+  </td></tr>
+  <tr><td style="padding:10px 32px 26px;font-size:15px;line-height:1.6;color:#1b2033;">
+    {% block content %}{% endblock %}
+  </td></tr>
+  {% if signature %}
+  <tr><td style="padding:0 32px 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid #e3e8f4;padding-top:18px;font-size:14px;line-height:1.55;color:#1b2033;">
+    {% if signature.mode == 'image' and signature_src %}<img src="{{ signature_src }}" alt="Assinatura" style="display:block;max-width:100%;height:auto;border:0;">
+    {% else %}{{ signature.html|safe }}{% endif %}
+  </td></tr></table></td></tr>
+  {% endif %}
+  <tr><td style="background:#f8f9fd;padding:16px 32px;font-size:12px;line-height:1.5;color:#8791b0;border-top:1px solid #e3e8f4;">
+    Mensagem automática enviada pela plataforma <b style="color:#071a5a;">NAVI</b> — Navegação, Orientação e Assistência · Orca TI<br>
+    <a href="https://orcati.com.br" style="color:#1e73f8;text-decoration:none;">orcati.com.br</a>
+  </td></tr>
+ </table>
+</td></tr></table></body></html>

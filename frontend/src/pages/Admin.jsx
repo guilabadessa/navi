@@ -7,13 +7,15 @@ const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analist
 const DESC = { ADMIN: 'Acesso total', GESTOR: 'Clientes, relatórios, alertas, dashboard', ANALISTA_NOC: 'Eventos, hosts, alertas, relatórios', VISUALIZADOR: 'Somente leitura' }
 
 function UserForm({ u, onClose, onSaved }) {
-  const [x, setX] = useState({ email: '', name: '', role: 'VISUALIZADOR', active: true, password: '', ...u }); const toast = useToast()
-  const save = async () => { try { const b = { ...x, password: x.password || null }; x.id ? await put('/users/' + x.id, b) : await post('/users', b); toast('Usuário salvo'); onSaved() } catch (e) { toast(e.message, true) } }
+  const [x, setX] = useState({ email: '', name: '', role: 'VISUALIZADOR', active: true, password: '', send_email: !u.id, ...u }); const toast = useToast()
+  const save = async () => { try { const b = { ...x, password: x.password || null }; const r = x.id ? await put('/users/' + x.id, b) : await post('/users', b); toast('Usuário salvo' + (r.email_status ? ' · e-mail: ' + r.email_status : ''), !!(r.email_status || '').startsWith('erro')); onSaved() } catch (e) { toast(e.message, true) } }
   return <Modal title={x.id ? 'Editar usuário' : 'Novo usuário'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
     <div className="row r2"><Field label="NOME"><input value={x.name} onChange={e => setX({ ...x, name: e.target.value })} /></Field><Field label="E-MAIL"><input value={x.email} disabled={!!x.id} onChange={e => setX({ ...x, email: e.target.value })} /></Field></div>
     <div className="row r2"><Field label="PERFIL" hint={DESC[x.role]}><select value={x.role} onChange={e => setX({ ...x, role: e.target.value })}>{Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
       <Field label={x.id ? 'NOVA SENHA (opcional)' : 'SENHA INICIAL *'} hint="Mínimo de 10 caracteres. O usuário deverá trocá-la."><input type="password" autoComplete="new-password" value={x.password} onChange={e => setX({ ...x, password: e.target.value })} /></Field></div>
-    <Check label="Usuário ativo" checked={x.active} onChange={v => setX({ ...x, active: v })} /></Modal>
+    <div style={{ display: 'grid', gap: 10 }}><Check label="Usuário ativo" checked={x.active} onChange={v => setX({ ...x, active: v })} />
+      <Check label={x.id ? 'Enviar a nova senha por e-mail ao usuário' : 'Enviar os dados de acesso por e-mail ao usuário'} checked={x.send_email} onChange={v => setX({ ...x, send_email: v })} />
+      {x.send_email && <p className="hint">O e-mail usa o modelo padrão da NAVI com a senha temporária; o usuário deverá alterá-la no primeiro acesso.</p>}</div></Modal>
 }
 
 export function UsersPage() {

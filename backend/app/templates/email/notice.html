@@ -1,0 +1,7 @@
+{% extends "email/layout.html" %}
+{% block content %}
+{% if greeting %}<p style="margin:0 0 14px;">{{ greeting }}</p>{% endif %}
+{% for p in paragraphs %}<p style="margin:0 0 14px;">{{ p }}</p>{% endfor %}
+{% if highlight %}<div style="margin:6px 0 16px;padding:14px 18px;border-left:4px solid #1e73f8;background:#f3f7ff;border-radius:0 8px 8px 0;color:#071a5a;font-weight:600;">{{ highlight }}</div>{% endif %}
+{% if button_url %}<p style="margin:22px 0 6px;"><a href="{{ button_url }}" style="display:inline-block;background:#1e73f8;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:10px;">{{ button_label or 'Abrir' }}</a></p>{% endif %}
+{% endblock %}

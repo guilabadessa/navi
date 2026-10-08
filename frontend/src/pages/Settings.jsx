@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { get, post, put, fmtDT } from '../api'
-import { Card, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } from '../ui'
+import { get, post, put, del, upload, fmtDT } from '../api'
+import { Card, Check, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
 
@@ -36,13 +36,35 @@ function EvoTab({ edit }) {
 }
 
 function SmtpTab({ edit }) {
-  const toast = useToast(); const { data, reload } = useLoad(() => get('/settings/smtp'), []); const [f, setF] = useState({ host: '', port: 587, user: '', from: '', password: '' })
-  useEffect(() => { if (data) setF(x => ({ ...x, host: data.host, port: data.port, user: data.user, from: data.from })) }, [data])
+  const toast = useToast(); const { data, reload } = useLoad(() => get('/settings/smtp'), [])
+  const [f, setF] = useState({ host: '', port: 587, user: '', from: '', from_name: '', password: '', sig_enabled: false, sig_mode: 'text', sig_text: '' })
+  const [kind, setKind] = useState('report'); const [html, setHtml] = useState(''); const [imgv, setImgv] = useState(0); const [to, setTo] = useState('')
+  useEffect(() => { if (data) setF(x => ({ ...x, host: data.host, port: data.port, user: data.user, from: data.from, from_name: data.from_name, sig_enabled: data.sig_enabled, sig_mode: data.sig_mode, sig_text: data.sig_text || '' })) }, [data])
+  const preview = async (k = kind) => { try { setKind(k); setHtml((await post('/settings/smtp/preview', { kind: k })).html) } catch (e) { toast(e.message, true) } }
+  useEffect(() => { if (data) preview(kind) }, [data]) // eslint-disable-line
   if (!data) return <Loading />
-  return <Card title="SMTP"><div className="row r3"><Field label="SERVIDOR"><input value={f.host} onChange={e => setF({ ...f, host: e.target.value })} /></Field><Field label="PORTA"><input type="number" value={f.port} onChange={e => setF({ ...f, port: +e.target.value })} /></Field><Field label="USUÁRIO"><input value={f.user} onChange={e => setF({ ...f, user: e.target.value })} /></Field></div>
-    <div className="row r2"><Field label="REMETENTE (From)"><input value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></Field><Field label="SENHA" hint={data.password_set ? 'Configurada (oculta).' : 'Não configurada.'}><input type="password" autoComplete="off" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></Field></div>
-    {edit && <Save onClick={async () => { try { await put('/settings/smtp', { ...f, password: f.password || null }); setF({ ...f, password: '' }); toast('Salvo'); reload() } catch (e) { toast(e.message, true) } }} />}
-    <p className="hint">Para testar o envio use o menu E-mail.</p></Card>
+  const save = async () => { try { await put('/settings/smtp', { ...f, password: f.password || null }); setF({ ...f, password: '' }); toast('Salvo'); await reload(); preview() } catch (e) { toast(e.message, true) } }
+  return <div className="grid g2" style={{ alignItems: 'start' }}>
+    <div style={{ display: 'grid', gap: 16 }}>
+      <Card title="Servidor SMTP"><div className="row r3"><Field label="SERVIDOR"><input value={f.host} onChange={e => setF({ ...f, host: e.target.value })} /></Field><Field label="PORTA"><input type="number" value={f.port} onChange={e => setF({ ...f, port: +e.target.value })} /></Field><Field label="USUÁRIO"><input value={f.user} onChange={e => setF({ ...f, user: e.target.value })} /></Field></div>
+        <div className="row r3"><Field label="REMETENTE (E-MAIL)"><input value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></Field><Field label="NOME DO REMETENTE"><input value={f.from_name} onChange={e => setF({ ...f, from_name: e.target.value })} placeholder="NOC Orca TI" /></Field>
+          <Field label="SENHA" hint={data.password_set ? 'Configurada (oculta).' : 'Não configurada.'}><input type="password" autoComplete="off" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></Field></div></Card>
+      <Card title="Assinatura de e-mail">
+        <div className="row"><Check label="Anexar assinatura em todos os e-mails da NAVI (relatórios, avisos, acessos de usuários)" checked={f.sig_enabled} onChange={v => setF({ ...f, sig_enabled: v })} /></div>
+        <div className="row" style={{ display: 'flex', gap: 22 }}>{[['text', 'Assinatura em texto'], ['image', 'Assinatura como imagem']].map(([k, l]) => <label key={k} className="check"><input type="radio" name="sig" checked={f.sig_mode === k} onChange={() => setF({ ...f, sig_mode: k })} />{l}</label>)}</div>
+        {f.sig_mode === 'text' && <Field label="TEXTO DA ASSINATURA" hint="A primeira linha fica em destaque. Ex.: nome, cargo, telefone e site em linhas separadas."><textarea style={{ minHeight: 120 }} value={f.sig_text} onChange={e => setF({ ...f, sig_text: e.target.value })} placeholder={'NOC Orca TI\nCentral de Monitoramento\n(14) 0000-0000 · orcati.com.br'} /></Field>}
+        {f.sig_mode === 'image' && <div>
+          {data.sig_image ? <div style={{ border: '1px dashed #cdd5ea', borderRadius: 12, padding: 14, marginBottom: 10, background: '#fff' }}><img key={imgv} src={`/navi/api/settings/smtp/signature-image?v=${imgv}`} alt="Assinatura" style={{ maxWidth: '100%', maxHeight: 160 }} /></div> : <p className="hint" style={{ marginBottom: 8 }}>Nenhuma imagem enviada.</p>}
+          {edit && <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{ maxWidth: 300 }} onChange={async e => { const file = e.target.files[0]; if (!file) return; try { await upload('/settings/smtp/signature-image', file); toast('Imagem enviada'); setImgv(v => v + 1); await reload(); preview() } catch (x) { toast(x.message, true) } e.target.value = '' }} />
+            {data.sig_image && <button className="btn sm danger" onClick={async () => { await del('/settings/smtp/signature-image'); setImgv(v => v + 1); await reload(); preview() }}>Remover imagem</button>}</div>}
+          <p className="hint">PNG, JPG, GIF ou WEBP até 1,5 MB (largura ajustada para 640 px automaticamente).</p></div>}
+        {edit && <div style={{ marginTop: 12 }}><button className="btn primary" onClick={save}>Salvar configurações</button></div>}</Card>
+      {edit && <Card title="Enviar e-mail de teste"><div className="row r2" style={{ marginBottom: 0 }}><Field label="DESTINATÁRIO"><input value={to} onChange={e => setTo(e.target.value)} placeholder="voce@orcati.com.br" /></Field>
+        <div style={{ paddingTop: 22 }}><button className="btn" disabled={!to} onClick={async () => { try { const r = await post('/settings/smtp/test', { to }); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } }}>Enviar teste</button></div></div></Card>}
+    </div>
+    <Card title="Pré-visualização do e-mail" actions={<select style={{ width: 'auto' }} value={kind} onChange={e => preview(e.target.value)}><option value="report">Relatório ao cliente</option><option value="notice">Aviso</option><option value="new_user">Acesso de novo usuário</option></select>}>
+      <p className="hint" style={{ marginBottom: 10 }}>Salve para ver a assinatura atualizada. Nos e-mails de clientes aparece somente o nome fantasia.</p>
+      <iframe title="preview" sandbox="" srcDoc={html} style={{ width: '100%', height: 640, border: '1px solid var(--line)', borderRadius: 12, background: '#f3f5fb' }} /></Card></div>
 }
 
 function LetterTab({ edit }) {

@@ -19,6 +19,11 @@ PostgreSQL 16 (172.16.31.208, db `navi`, SSL)  <── SQLAlchemy/Alembic
   logs: 5 dias.
 - Relatório em duas etapas: **gerar → baixar/visualizar → confirmar envio** (WhatsApp/e-mail só enviam após confirmação).
 
+## E-mails
+Modelo único (identidade Orca TI, `backend/app/templates/email/`) para relatório, avisos e acesso de novos usuários. Nos e-mails de cliente aparece
+somente o **nome fantasia**. A assinatura (texto ou imagem) é configurável em Configurações → E-mail (SMTP) e vale para todos os envios.
+Alertas por WhatsApp usam apenas o que está marcado no cadastro do cliente (o webhook do Zabbix é opcional e não é necessário: `docs/zabbix-webhook.md`).
+
 ## Comandos
 ```bash
 cd /opt/noc

@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from ..models import Client, Report, ReportRun, Schedule
-from . import factory
+from . import factory, mailer
 from .email_service import split_addrs
 from .report_service import period_label
 
@@ -38,10 +38,9 @@ def deliver(db: Session, run: ReportRun, rep: Report, wa_dest: str | None = None
         run.email_status = "não enviado: cliente sem e-mail de relatório cadastrado"
     if to:
         subj = (subject or "Relatório de Disponibilidade — {CLIENTE} — {PERIODO}").replace("{CLIENTE}", cname).replace("{PERIODO}", plabel)
-        body = (f"Prezados,\n\nSegue em anexo o relatório \"{rep.name}\" de {cname}, referente ao período {plabel}.\n\n"
-                f"Atenciosamente,\nNOC Orca TI")
         try:
-            factory.email(db).send(to, subj, body, split_addrs(cc), split_addrs(bcc), [(fname, data, "application/pdf")])
+            ctx = mailer.report_ctx(cname, plabel, rep.name, fname, run.kpis)
+            mailer.send(db, "report", to, subj, ctx, cc, bcc, [(fname, data, "application/pdf")])
             run.email_status = f"enviado para {', '.join(to)}"
         except Exception as e:  # noqa: BLE001
             run.email_status = f"erro: {str(e)[:200]}"

@@ -17,4 +17,4 @@ def evolution(db: Session) -> EvolutionService:
 
 def email(db: Session) -> EmailService:
     return EmailService(S.get(db, "smtp.host"), int(S.get(db, "smtp.port", "587") or 587), S.get(db, "smtp.user"),
-                        S.get(db, "smtp.password"), S.get(db, "smtp.from"))
+                        S.get(db, "smtp.password"), S.get(db, "smtp.from"), S.get(db, "smtp.from_name", "NOC Orca TI"))

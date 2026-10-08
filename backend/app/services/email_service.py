@@ -1,6 +1,7 @@
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.utils import formataddr
 
 
 class EmailError(Exception):
@@ -14,8 +15,9 @@ def split_addrs(v: str | None) -> list[str]:
 
 
 class EmailService:
-    def __init__(self, host: str, port: int, user: str, password: str, sender: str):
+    def __init__(self, host: str, port: int, user: str, password: str, sender: str, sender_name: str = ""):
         self.host, self.port, self.user, self.password, self.sender = host, int(port or 587), user, password, sender
+        self.sender_name = sender_name
 
     def _connect(self):
         if not self.host:
@@ -40,16 +42,24 @@ class EmailService:
         s.quit()
 
     def send(self, to: list[str], subject: str, body: str, cc: list[str] | None = None, bcc: list[str] | None = None,
-             attachments: list[tuple[str, bytes, str]] | None = None, html: str | None = None):
+             attachments: list[tuple[str, bytes, str]] | None = None, html: str | None = None,
+             inline: list[tuple[str, bytes, str]] | None = None):
         if not to:
             raise EmailError("Sem destinatários")
         msg = EmailMessage()
-        msg["From"], msg["To"], msg["Subject"] = self.sender or self.user, ", ".join(to), subject
+        addr = self.sender or self.user
+        msg["From"] = formataddr((self.sender_name, addr)) if self.sender_name else addr
+        msg["To"], msg["Subject"] = ", ".join(to), subject
         if cc:
             msg["Cc"] = ", ".join(cc)
         msg.set_content(body)
         if html:
             msg.add_alternative(html, subtype="html")
+            if inline:  # imagens embutidas (logo/assinatura) referenciadas por cid:
+                part = msg.get_body(preferencelist=("html",))
+                for cid, data, mime in inline:
+                    main, sub = mime.split("/", 1)
+                    part.add_related(data, maintype=main, subtype=sub, cid=f"<{cid}>")
         for name, data, mime in attachments or []:
             main, sub = mime.split("/", 1)
             msg.add_attachment(data, maintype=main, subtype=sub, filename=name)

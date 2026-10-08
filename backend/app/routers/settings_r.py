@@ -1,15 +1,18 @@
 import json
 
-from fastapi import APIRouter, Depends, Request
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..models import HealthCheck
-from ..schemas import EvolutionSettingsIn, LetterheadIn, SmtpSettingsIn, TestSend
+from ..schemas import EvolutionSettingsIn, LetterheadIn, PreviewIn, SmtpSettingsIn, TestSend
 from ..security import require
-from ..services import factory
+from ..services import factory, mailer
 from ..services.email_service import split_addrs
 from ..services.report_service import letterhead
 
@@ -51,8 +54,11 @@ def evo_test(request: Request, db: Session = Depends(get_db), _=Depends(require(
 
 @router.get("/smtp")
 def smtp(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
+    sig_img = S.get(db, "smtp.sig_image")
     return {"host": S.get(db, "smtp.host"), "port": int(S.get(db, "smtp.port", "587") or 587), "user": S.get(db, "smtp.user"),
-            "from": S.get(db, "smtp.from"), "password_set": bool(S.get(db, "smtp.password"))}
+            "from": S.get(db, "smtp.from"), "from_name": S.get(db, "smtp.from_name", "NOC Orca TI"), "password_set": bool(S.get(db, "smtp.password")),
+            "sig_enabled": S.get(db, "smtp.sig_enabled") == "1", "sig_mode": S.get(db, "smtp.sig_mode") or "text",
+            "sig_text": S.get(db, "smtp.sig_text"), "sig_image": bool(sig_img and Path(sig_img).exists())}
 
 
 @router.put("/smtp")
@@ -61,17 +67,69 @@ def smtp_put(body: SmtpSettingsIn, request: Request, db: Session = Depends(get_d
     S.put(db, "smtp.port", str(body.port), me.email)
     S.put(db, "smtp.user", body.user or "", me.email)
     S.put(db, "smtp.from", body.from_ or "", me.email)
+    S.put(db, "smtp.from_name", body.from_name or "", me.email)
+    S.put(db, "smtp.sig_enabled", "1" if body.sig_enabled else "0", me.email)
+    S.put(db, "smtp.sig_mode", body.sig_mode, me.email)
+    S.put(db, "smtp.sig_text", body.sig_text or "", me.email)
     if body.password:
         S.put(db, "smtp.password", body.password, me.email)
-    audit.log(db, request, "settings_smtp", "settings", detail={"host": body.host, "port": body.port, "pwd_changed": bool(body.password)})
+    audit.log(db, request, "settings_smtp", "settings", detail={"host": body.host, "port": body.port, "pwd_changed": bool(body.password),
+                                                              "signature": body.sig_enabled and body.sig_mode})
     db.commit()
     return {"ok": True}
+
+
+@router.post("/smtp/signature-image")
+async def sig_upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), me=Depends(require("settings.edit"))):
+    data = await file.read()
+    try:
+        path = mailer.save_signature_image(data)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    S.put(db, "smtp.sig_image", path, me.email)
+    audit.log(db, request, "settings_signature_image", "settings")
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/smtp/signature-image")
+def sig_delete(request: Request, db: Session = Depends(get_db), me=Depends(require("settings.edit"))):
+    p = S.get(db, "smtp.sig_image")
+    if p:
+        Path(p).unlink(missing_ok=True)
+    S.put(db, "smtp.sig_image", "", me.email)
+    audit.log(db, request, "settings_signature_image_delete", "settings")
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/smtp/signature-image")
+def sig_get(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
+    p = S.get(db, "smtp.sig_image")
+    if not p or not Path(p).exists():
+        raise HTTPException(404)
+    return FileResponse(p, media_type="image/png", headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/smtp/preview")
+def smtp_preview(body: PreviewIn, db: Session = Depends(get_db), _=Depends(require("settings.view"))):
+    ctxs = {
+        "report": mailer.report_ctx("Cliente Exemplo", "01/09/2026 a 30/09/2026", "SLA Mensal", "SLA_Mensal.pdf",
+                                    {"availability": 99.742, "incidents": 7, "sla_met": True}),
+        "notice": mailer.notice_ctx("Aviso de manutenção programada", ["Informamos que será realizada uma manutenção programada no ambiente, sem previsão de indisponibilidade."],
+                                    highlight="Sábado, 10/10 · 22:00 às 23:30", greeting="Prezados,"),
+        "new_user": mailer.new_user_ctx("Maria Souza", "maria.souza@orcati.com.br", "Temp-4821-xQ", "Analista NOC"),
+    }
+    html, _t, _i = mailer.build(db, body.kind, ctxs[body.kind], preview=True)
+    return {"html": html}
 
 
 @router.post("/smtp/test")
 def smtp_test(body: TestSend, request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
     try:
-        factory.email(db).send(split_addrs(body.to), "Teste de e-mail — NAVI", "Se você recebeu esta mensagem, o SMTP da NAVI está funcionando.")
+        mailer.send(db, "notice", body.to, "Teste de e-mail — NAVI",
+                    mailer.notice_ctx("Teste de envio", ["Se você recebeu esta mensagem, o SMTP da NAVI está configurado corretamente."],
+                                      highlight="SMTP autenticado com sucesso ✔", greeting="Olá!"))
         res = {"ok": True, "detail": "E-mail de teste enviado"}
     except Exception as e:  # noqa: BLE001
         res = {"ok": False, "detail": str(e)}

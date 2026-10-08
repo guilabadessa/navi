@@ -1,0 +1,16 @@
+{% extends "email/layout.html" %}
+{% block content %}
+<p style="margin:0 0 14px;">Prezados,</p>
+<p style="margin:0 0 18px;">Segue em anexo o relatório de disponibilidade e SLA de <b>{{ client_name }}</b>, referente ao período <b>{{ period }}</b>.</p>
+{% if kpis %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border:1px solid #e3e8f4;border-radius:10px;background:#f8f9fd;"><tr>
+  <td width="34%" style="padding:16px 18px;border-right:1px solid #e3e8f4;"><div style="font-size:11px;letter-spacing:.1em;color:#667090;text-transform:uppercase;font-weight:700;">Disponibilidade</div><div style="font-size:24px;font-weight:700;color:#071a5a;margin-top:4px;">{{ kpis.availability }}</div></td>
+  <td width="33%" style="padding:16px 18px;border-right:1px solid #e3e8f4;"><div style="font-size:11px;letter-spacing:.1em;color:#667090;text-transform:uppercase;font-weight:700;">Incidentes</div><div style="font-size:24px;font-weight:700;color:#071a5a;margin-top:4px;">{{ kpis.incidents }}</div></td>
+  <td width="33%" style="padding:16px 18px;"><div style="font-size:11px;letter-spacing:.1em;color:#667090;text-transform:uppercase;font-weight:700;">SLA</div>
+    <div style="margin-top:8px;"><span style="display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;color:#fff;background:{{ '#16a34a' if kpis.sla_met else ('#bd1723' if kpis.sla_met is not none else '#8791b0') }};">{{ 'ATINGIDO' if kpis.sla_met else ('NÃO ATINGIDO' if kpis.sla_met is not none else 'N/D') }}</span></div></td>
+</tr></table>
+{% endif %}
+<p style="margin:0 0 6px;">O detalhamento completo, com indicadores e eventos do período, está no PDF anexo <span style="color:#667090;">({{ filename }})</span>.</p>
+<p style="margin:18px 0 0;">Em caso de dúvidas, estamos à disposição.</p>
+<p style="margin:14px 0 0;">Atenciosamente,<br><b style="color:#071a5a;">NOC Orca TI</b></p>
+{% endblock %}

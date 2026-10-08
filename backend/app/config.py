@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     NAVI_ADMIN_EMAIL: str = "admin@example.com"
     NAVI_ADMIN_INITIAL_PASSWORD: str = ""
     NAVI_BASE_PATH: str = "/navi"
+    NAVI_PUBLIC_URL: str = "https://sonar.orcati.com.br/navi/"
     NAVI_COOKIE_SECURE: bool = True
     NAVI_SESSION_HOURS: int = 12
     NAVI_TZ: str = "America/Sao_Paulo"

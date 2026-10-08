@@ -24,6 +24,7 @@ class UserIn(BaseModel):
     role: Role = "VISUALIZADOR"
     active: bool = True
     password: str | None = Field(default=None, min_length=10, max_length=256)
+    send_email: bool = False  # envia os dados de acesso por e-mail (senha temporaria)
 
 
 class ClientIn(BaseModel):
@@ -176,6 +177,10 @@ class SmtpSettingsIn(BaseModel):
     user: str | None = Field(default=None, max_length=255)
     password: str | None = None
     from_: str | None = Field(default=None, alias="from", max_length=255)
+    from_name: str | None = Field(default=None, max_length=120)
+    sig_enabled: bool = False
+    sig_mode: Literal["text", "image"] = "text"
+    sig_text: str | None = Field(default=None, max_length=1500)
 
 
 class LetterheadIn(BaseModel):
@@ -195,6 +200,10 @@ class LetterheadIn(BaseModel):
     phone: str | None = Field(default=None, max_length=64)
     site: str | None = Field(default=None, max_length=255)
     text: str | None = Field(default=None, max_length=1000)
+
+
+class PreviewIn(BaseModel):
+    kind: Literal["report", "notice", "new_user"] = "report"
 
 
 class TestSend(BaseModel):
