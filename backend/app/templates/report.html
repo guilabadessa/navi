@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<style>
+@font-face{font-family:Exo;font-weight:600;src:url("file://{{ assets }}/fonts/Exo-600.ttf")}
+@font-face{font-family:Exo;font-weight:700;src:url("file://{{ assets }}/fonts/Exo-700.ttf")}
+@font-face{font-family:Afacad;font-weight:400;src:url("file://{{ assets }}/fonts/Afacad-400.ttf")}
+@font-face{font-family:Afacad;font-weight:600;src:url("file://{{ assets }}/fonts/Afacad-600.ttf")}
+@font-face{font-family:Afacad;font-weight:700;src:url("file://{{ assets }}/fonts/Afacad-700.ttf")}
+:root{--navy:#071a5a;--blue:#1e73f8;--ink:#191919;--mut:#6d6e76;--line:#e3e7f1;--bg:#f4f6fb}
+@page{size:A4;margin:26mm 14mm 20mm 14mm;
+ @top-left{content:element(hdr)} @bottom-left{content:element(ftr)}
+ @bottom-right{content:"Página " counter(page) " de " counter(pages);font:9pt Afacad;color:#6d6e76}}
+@page:first{margin-top:14mm}
+body{font-family:Afacad,sans-serif;color:var(--ink);font-size:10.5pt;line-height:1.35}
+h1,h2,h3{font-family:Exo,sans-serif;color:var(--navy);margin:0}
+#hdr{position:running(hdr);display:flex;align-items:center;justify-content:space-between;width:182mm;border-bottom:2px solid var(--blue);padding-bottom:3mm}
+#hdr img{height:9mm}#hdr .t{font:600 9pt Exo;color:var(--navy);text-align:right}
+#ftr{position:running(ftr);font-size:8pt;color:var(--mut);width:140mm}
+.cover{background:var(--navy);color:#fff;border-radius:3mm;padding:12mm 12mm 10mm;margin-bottom:8mm}
+.cover img{height:15mm;margin-bottom:8mm}
+.cover h1{color:#fff;font-size:22pt;line-height:1.1}
+.cover .sub{color:#b9c8ff;margin-top:2mm;font-size:11pt}
+.cover .meta{margin-top:8mm;font-size:10pt}.cover .meta div{display:inline-block;vertical-align:top;margin-right:9mm}
+.cover .meta b{display:block;font:600 8.5pt Exo;color:#8fb3ff;text-transform:uppercase;letter-spacing:.05em}
+h2{font-size:14pt;margin:7mm 0 3mm;padding-left:3mm;border-left:3px solid var(--blue)}
+.cards{display:flex;flex-wrap:wrap;gap:3mm}
+.card{flex:1 1 40mm;background:var(--bg);border:1px solid var(--line);border-radius:2.5mm;padding:3.5mm 4mm}
+.card .v{font:700 17pt Exo;color:var(--navy)} .card .l{font-size:8.5pt;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.card.ok .v{color:#16a34a}.card.bad .v{color:#bd1723}
+.sum{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:2mm;padding:4mm 5mm;margin-top:3mm}
+table{width:100%;border-collapse:collapse;font-size:8.8pt;margin-top:2mm}
+th{background:var(--navy);color:#fff;text-align:left;padding:2mm 2.2mm;font:600 8.2pt Exo}
+td{padding:1.8mm 2.2mm;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:#f9fafd}
+.sev{display:inline-block;padding:.4mm 2mm;border-radius:5mm;color:#fff;font-size:8pt;font-weight:600}
+.s0{background:#97aab3}.s1{background:#7499ff}.s2{background:#e0a800}.s3{background:#f08a24}.s4{background:#e45959}.s5{background:#bd1723}
+.charts img{width:100%;margin-top:2mm;border:1px solid var(--line);border-radius:2mm}
+.pb{page-break-before:always}.small{font-size:8.5pt;color:var(--mut)}
+.badge{padding:1mm 3mm;border-radius:5mm;font:600 9pt Exo;color:#fff}.badge.ok{background:#16a34a}.badge.bad{background:#bd1723}
+</style></head><body>
+<div id="hdr"><img src="file://{{ assets }}/brand/azul.png"><div class="t">{{ report_name }}<br><span style="font:400 8pt Afacad;color:#6d6e76">{{ client_name }} · {{ period_label }}</span></div></div>
+<div id="ftr">{{ lh.company }}{% if lh.cnpj %} · CNPJ {{ lh.cnpj }}{% endif %}{% if lh.address %} · {{ lh.address }}{% endif %}{% if lh.phone %} · {{ lh.phone }}{% endif %}{% if lh.site %} · {{ lh.site }}{% endif %}</div>
+
+<div class="cover">
+  <img src="file://{{ assets }}/brand/branco.png">
+  <h1>Relatório de Disponibilidade e SLA</h1>
+  <div class="sub">{{ client_name }}</div>
+  <div class="meta">
+    <div><b>Período</b>{{ period_label }}</div>
+    {% if cnpj %}<div><b>CNPJ</b>{{ cnpj }}</div>{% endif %}
+    <div><b>Gerado em</b>{{ generated_at }}</div>
+    <div><b>Plataforma</b>NAVI · Orca TI</div>
+  </div>
+</div>
+
+<h2>Visão Executiva</h2>
+{% if kpis_on %}
+<div class="cards">
+  <div class="card {{ 'ok' if s.sla_met else ('bad' if s.sla_met is not none else '') }}"><div class="v">{{ pct(s.availability) }}</div><div class="l">Disponibilidade geral</div></div>
+  <div class="card"><div class="v">{{ dur(s.downtime_s) }}</div><div class="l">Indisponibilidade total</div></div>
+  <div class="card"><div class="v">{{ s.incidents }}</div><div class="l">Incidentes</div></div>
+  <div class="card"><div class="v">{{ s.hosts_affected }}<span style="font-size:11pt;color:#6d6e76"> / {{ s.hosts_total }}</span></div><div class="l">Hosts afetados</div></div>
+  <div class="card"><div class="v">{{ dur(s.mttr_s) }}</div><div class="l">MTTR</div></div>
+  <div class="card"><div class="v">{{ dur(s.mtbf_s) }}</div><div class="l">MTBF</div></div>
+  <div class="card"><div class="v">{{ dur(s.avg_duration_s) }}</div><div class="l">Duração média</div></div>
+  <div class="card"><div class="v">{{ dur(s.max_duration_s) }}</div><div class="l">Maior indisponibilidade</div></div>
+  <div class="card"><div class="v">{{ s.resolved }} / {{ s.open }}</div><div class="l">Resolvidos / Em aberto</div></div>
+  <div class="card"><div class="v">{{ pct(s.sla_target) if s.sla_target is not none else '—' }}</div><div class="l">SLA contratado</div></div>
+</div>
+<div class="sum">
+  <b>SLA {% if s.sla_met is none %}não definido{% elif s.sla_met %}<span class="badge ok">ATINGIDO</span>{% else %}<span class="badge bad">NÃO ATINGIDO</span>{% endif %}</b>
+  — SLA realizado de <b>{{ pct(s.sla_actual) }}</b>{% if s.sla_target is not none %} frente a <b>{{ pct(s.sla_target) }}</b> contratado{% endif %}.<br>
+  {{ summary_text }}
+</div>
+{% endif %}
+{% if charts %}
+<h2>Indicadores</h2><div class="charts">{% for c in charts %}<img src="data:image/png;base64,{{ c }}">{% endfor %}</div>
+{% endif %}
+
+<div class="pb"></div>
+<h2>Detalhamento Técnico — Resumo por Host</h2>
+<table><tr><th>Host</th><th>IP</th><th>Incid.</th><th>Indisponib.</th><th>Disponib.</th></tr>
+{% for h in k.by_host if h.incidents or loop.index <= 30 %}<tr><td>{{ h.host }}</td><td>{{ h.ip or '—' }}</td><td>{{ h.incidents }}</td><td>{{ dur(h.downtime_s) }}</td><td>{{ pct(h.availability) }}</td></tr>{% endfor %}</table>
+
+<h2>Detalhamento Técnico — Eventos</h2>
+<table><tr><th>Host</th><th>IP</th><th>Trigger</th><th>Item</th><th>Sev.</th><th>Início</th><th>Recuperação</th><th>Duração</th></tr>
+{% for e in rows %}<tr><td>{{ e.host }}</td><td>{{ e.ip or '—' }}</td><td>{{ e.trigger_name }}</td><td>{{ e.item_name or '—' }}</td>
+<td><span class="sev s{{ e.severity }}">{{ sevname(e.severity) }}</span></td><td>{{ dt(e.started_at) }}</td><td>{{ dt(e.recovered_at) if e.recovered_at else 'EM ABERTO' }}</td><td>{{ dur(e.duration_s) }}</td></tr>
+{% else %}<tr><td colspan="8" style="text-align:center;color:#6d6e76;padding:6mm">Nenhum evento no período e filtros selecionados.</td></tr>{% endfor %}</table>
+{% if truncated %}<p class="small">Exibindo os {{ rows|length }} primeiros eventos de {{ total_rows }}.</p>{% endif %}
+
+<h2>Ocorrências por Trigger</h2>
+<table><tr><th>Trigger</th><th>Ocorrências</th><th>Tempo total indisponível</th></tr>
+{% for t in k.by_trigger %}<tr><td>{{ t.key }}</td><td>{{ t.incidents }}</td><td>{{ dur(t.downtime_s) }}</td></tr>{% endfor %}</table>
+
+{% if notes %}<h2>Observações</h2><div class="sum">{{ notes }}</div>{% endif %}
+{% if lh.text %}<p class="small" style="margin-top:8mm">{{ lh.text }}</p>{% endif %}
+</body></html>

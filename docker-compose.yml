@@ -1,0 +1,35 @@
+name: navi
+x-common: &common
+  build: .
+  image: navi:latest
+  env_file: .env
+  environment:
+    NAVI_STORAGE: /data/storage
+    TZ: America/Sao_Paulo
+  volumes:
+    - ./storage:/data/storage
+    - ./backups/navi-db:/data/backups
+  extra_hosts:
+    - "sonar.orcati.com.br:host-gateway"   # acessa o Zabbix local pelo DNS publico (TLS valido)
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}   # logs pequenos, retencao curta
+
+services:
+  api:
+    <<: *common
+    command: ["api"]
+    ports:
+      - "127.0.0.1:8100:8100"     # exposto apenas via Apache (/navi)
+    mem_limit: 700m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8100/navi/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *common
+    command: ["worker"]
+    mem_limit: 900m
+    depends_on: [api]

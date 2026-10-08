@@ -1,0 +1,95 @@
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Activity, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
+  Settings as Cog, ShieldCheck, Sparkles, Timer, Users as UsersIcon } from 'lucide-react'
+import { get, post, setCsrf } from './api'
+import { useToast } from './ui'
+import Login from './pages/Login'
+import Dashboard from './pages/Dashboard'
+import { Clients, ClientDetail } from './pages/Clients'
+import Monitoring from './pages/Monitoring'
+import Events from './pages/Events'
+import Alerts from './pages/Alerts'
+import Reports from './pages/Reports'
+import Routines from './pages/Routines'
+import SLA from './pages/SLA'
+import { WhatsApp, Email } from './pages/Channels'
+import NaviIA from './pages/NaviIA'
+import { UsersPage, AuditPage } from './pages/Admin'
+import Settings from './pages/Settings'
+
+const Auth = createContext(null)
+export const useAuth = () => useContext(Auth)
+export const can = (me, p) => me && (me.perms.includes('*') || me.perms.includes(p))
+
+const NAV = [
+  ['/', 'Dashboard', LayoutDashboard, 'dashboard.view'],
+  ['/clientes', 'Clientes', Building2, 'clients.view'],
+  ['/monitoramento', 'Monitoramento', Radar, 'monitoring.view'],
+  ['/eventos', 'Eventos', Activity, 'events.view'],
+  ['/alertas', 'Alertas', Bell, 'alerts.view'],
+  ['/relatorios', 'Relatórios', FileText, 'reports.view'],
+  ['/rotinas', 'Rotinas', Timer, 'routines.view'],
+  ['/sla', 'SLA', BarChart3, 'sla.view'],
+  ['/whatsapp', 'WhatsApp', MessageCircle, 'whatsapp.view'],
+  ['/email', 'E-mail', Mail, 'email.view'],
+  ['/navi-ia', 'NAVI IA', Sparkles, 'navi.use'],
+  ['/usuarios', 'Usuários', UsersIcon, 'users.manage'],
+  ['/auditoria', 'Auditoria', ClipboardList, 'audit.view'],
+  ['/configuracoes', 'Configurações', Cog, 'settings.view'],
+]
+
+function StatusPills() {
+  const [st, setSt] = useState({})
+  useEffect(() => { const f = () => get('/settings/status').then(setSt).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t) }, [])
+  const P = ({ k, label }) => <div className={'pill ' + (st[k] ? (st[k].ok ? 'ok' : 'bad') : '')} title={st[k]?.detail || 'sem verificação ainda'}><i />{label}</div>
+  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" /><P k="navi" label="NAVI" /></div>
+}
+
+function Shell({ me, onLogout }) {
+  const loc = useLocation()
+  const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
+  return <div className="app">
+    <aside className="side">
+      <div className="brand"><img src="/navi/brand/simbolo_branco.png" alt="" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
+      <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
+        <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
+      <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
+        <div style={{ marginTop: 8 }}><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
+    </aside>
+    <div className="main">
+      <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1><StatusPills /></div>
+      <div className="content">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/clientes" element={<Clients />} />
+          <Route path="/clientes/:id" element={<ClientDetail />} />
+          <Route path="/monitoramento" element={<Monitoring />} />
+          <Route path="/eventos" element={<Events />} />
+          <Route path="/alertas" element={<Alerts />} />
+          <Route path="/relatorios" element={<Reports />} />
+          <Route path="/rotinas" element={<Routines />} />
+          <Route path="/sla" element={<SLA />} />
+          <Route path="/whatsapp" element={<WhatsApp />} />
+          <Route path="/email" element={<Email />} />
+          <Route path="/navi-ia" element={<NaviIA />} />
+          <Route path="/usuarios" element={<UsersPage />} />
+          <Route path="/auditoria" element={<AuditPage />} />
+          <Route path="/configuracoes" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </div>
+    </div>
+  </div>
+}
+
+export default function App() {
+  const [me, setMe] = useState(undefined)
+  const nav = useNavigate(); const toast = useToast()
+  const load = () => get('/auth/me').then(m => { setCsrf(m.csrf); setMe(m) }).catch(() => setMe(null))
+  useEffect(() => { load(); const h = () => setMe(null); window.addEventListener('navi:unauth', h); return () => window.removeEventListener('navi:unauth', h) }, [])
+  const logout = async () => { await post('/auth/logout').catch(() => {}); setMe(null); nav('/') }
+  if (me === undefined) return null
+  if (!me) return <Login onLogin={m => { setCsrf(m.csrf); setMe(m) }} />
+  return <Auth.Provider value={me}><Shell me={me} onLogout={logout} /></Auth.Provider>
+}

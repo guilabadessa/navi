@@ -1,0 +1,77 @@
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from .. import audit
+from ..config import get_settings
+from ..db import get_db
+from ..models import User
+from ..schemas import LoginIn, PasswordChange
+from ..security import (COOKIE, PERMS, client_ip, current_user, hash_password, login_limiter, make_session, needs_rehash,
+                        read_session, verify_password)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _me(u: User, csrf: str | None = None):
+    perms = PERMS.get(u.role, set())
+    return {"id": u.id, "email": u.email, "name": u.name, "role": u.role, "perms": sorted(perms),
+            "must_change_password": u.must_change_password, "csrf": csrf}
+
+
+@router.post("/login")
+def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    ip = client_ip(request)
+    key = f"{ip}|{body.email.lower()}"
+    if login_limiter.blocked(key):
+        audit.log(db, request, "login", "auth", result="bloqueado", detail={"email": body.email})
+        db.commit()
+        raise HTTPException(429, "Muitas tentativas. Aguarde 15 minutos.")
+    u = db.scalar(select(User).where(func.lower(User.email) == body.email.lower()))
+    if not u or not u.active or not verify_password(body.password, u.password_hash):
+        login_limiter.hit(key)
+        audit.log(db, request, "login", "auth", result="falha", detail={"email": body.email})
+        db.commit()
+        raise HTTPException(401, "E-mail ou senha inválidos")
+    login_limiter.reset(key)
+    if needs_rehash(u.password_hash):
+        u.password_hash = hash_password(body.password)
+    u.last_login = datetime.now(timezone.utc)
+    token, csrf = make_session(u.id)
+    st = get_settings()
+    response.set_cookie(COOKIE, token, httponly=True, secure=st.NAVI_COOKIE_SECURE, samesite="lax",
+                        max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
+    audit.log(db, request, "login", "auth", u.id, user=u)
+    db.commit()
+    return _me(u, csrf)
+
+
+@router.post("/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    sess = read_session(request.cookies.get(COOKIE))
+    u = db.get(User, sess["uid"]) if sess else None
+    if u:
+        audit.log(db, request, "logout", "auth", u.id, user=u)
+        db.commit()
+    response.delete_cookie(COOKIE, path=get_settings().NAVI_BASE_PATH)
+    return {"ok": True}
+
+
+@router.get("/me")
+def me(request: Request, user: User = Depends(current_user)):
+    sess = read_session(request.cookies.get(COOKIE))
+    return _me(user, sess["csrf"])
+
+
+@router.post("/change-password")
+def change_password(body: PasswordChange, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not verify_password(body.current_password, user.password_hash):
+        audit.log(db, request, "change_password", "user", user.id, result="falha")
+        db.commit()
+        raise HTTPException(400, "Senha atual incorreta")
+    user.password_hash, user.must_change_password = hash_password(body.new_password), False
+    audit.log(db, request, "change_password", "user", user.id)
+    db.commit()
+    return {"ok": True}
