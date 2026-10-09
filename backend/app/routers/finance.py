@@ -13,6 +13,7 @@ from ..models import Client, ClientPerson, ExtTenant, FinDoc, User
 from ..security import current_user, make_oauth_state, read_oauth_state, require, user_has
 from ..services import finance_service as F
 from ..services.contaazul_service import ContaAzul, ContaAzulError, DEFAULT_REDIRECT, digits
+from ..util import titlecase
 from .portal import _client_for
 
 router = APIRouter(tags=["finance"])
@@ -123,13 +124,13 @@ def links(db: Session = Depends(get_db), _=Depends(require("finance.view"))):
     by_client: dict[int, list] = {}
     for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked").order_by(ClientPerson.person_id)):
         p = people.get(cp.person_id)
-        by_client.setdefault(cp.client_id, []).append({"id": cp.person_id, "name": p.name if p else "(cadastro removido)", "doc": p.kind if p else None, "match": cp.match})
+        by_client.setdefault(cp.client_id, []).append({"id": cp.person_id, "name": titlecase(p.name) if p else "(cadastro removido)", "doc": p.kind if p else None, "match": cp.match})
     owner = {cp.person_id: cp.client_id for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked"))}
     rows = []
     for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
         rows.append({"client_id": c.id, "name": c.trade_name, "cnpj": c.cnpj, "persons": by_client.get(c.id, []), "suggestions": sug.get(c.id, []),
                      "has_cnpj": len(digits(c.cnpj)) >= 11})
-    return {"clients": rows, "people": [{"id": t.ext_id, "name": t.name, "doc": t.kind, "taken": t.ext_id in owner}
+    return {"clients": rows, "people": [{"id": t.ext_id, "name": titlecase(t.name), "doc": t.kind, "taken": t.ext_id in owner}
                                         for t in sorted(people.values(), key=lambda x: x.name.lower()) if t.active]}
 
 

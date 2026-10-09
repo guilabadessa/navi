@@ -19,7 +19,7 @@ from ..security import require, user_has
 from .. import portal_access as PA
 from ..services import event_service
 from ..services import kpi_service, maintenance_service
-from ..util import to_dict
+from ..util import titlecase, to_dict
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -85,6 +85,7 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
 
 @router.post("")
 def create(body: ClientIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    body.trade_name, body.legal_name, body.contact_name = titlecase(body.trade_name), titlecase(body.legal_name), titlecase(body.contact_name)
     _dupe_check(db, body.trade_name, body.cnpj)
     c = Client()
     _apply(db, c, body)
@@ -109,6 +110,7 @@ def update(cid: int, body: ClientIn, request: Request, db: Session = Depends(get
     c = db.get(Client, cid)
     if not c:
         raise HTTPException(404)
+    body.trade_name, body.legal_name, body.contact_name = titlecase(body.trade_name), titlecase(body.legal_name), titlecase(body.contact_name)
     _dupe_check(db, body.trade_name, body.cnpj, cid)
     _apply(db, c, body)
     audit.log(db, request, "client_update", "client", c.id, detail={"name": c.trade_name})
@@ -270,6 +272,7 @@ def invite_portal_user(cid: int, body: PortalUserIn, request: Request, db: Sessi
         raise HTTPException(404)
     if body.finance and not user_has(me, "finance.view"):
         raise HTTPException(403, "Você não tem permissão para conceder acesso ao financeiro")
+    body.name = titlecase(body.name)
     ex = db.scalar(select(User).where(func.lower(User.email) == body.email.lower()))
     if ex:
         # a mesma pessoa (ex.: prestador) pode acompanhar varios clientes com o mesmo login

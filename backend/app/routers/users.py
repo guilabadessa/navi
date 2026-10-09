@@ -12,7 +12,7 @@ from ..models import Client, User
 from ..schemas import UserIn
 from ..security import EXTRA_PERMS, hash_password, make_invite_token, require, user_has
 from ..services import mailer
-from ..util import to_dict
+from ..util import titlecase, to_dict
 
 router = APIRouter(prefix="/users", tags=["users"])
 ROLE_NAMES = {"ADMIN": "Administrador", "GESTOR": "Gestor", "ANALISTA_NOC": "Analista NOC", "VISUALIZADOR": "Visualizador",
@@ -61,6 +61,7 @@ def list_users(db: Session = Depends(get_db), _=Depends(require("users.manage"))
 
 @router.post("")
 def create_user(body: UserIn, request: Request, db: Session = Depends(get_db), me=Depends(require("users.manage"))):
+    body.name = titlecase(body.name)
     if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
         raise HTTPException(409, "E-mail já cadastrado")
     cid = _check(db, body)
@@ -83,6 +84,7 @@ def update_user(uid: int, body: UserIn, request: Request, db: Session = Depends(
     if u.id == me.id and (not body.active or body.role != "ADMIN"):
         raise HTTPException(400, "Você não pode remover seu próprio acesso de administrador")
     u.client_id = _check(db, body)
+    body.name = titlecase(body.name)
     u.name, u.role, u.active = body.name, body.role, body.active
     u.extra_perms = _extras(body, me, u.extra_perms)
     audit.log(db, request, "user_update", "user", u.id, detail={"role": u.role, "active": u.active, "client_id": u.client_id, "extra_perms": u.extra_perms})

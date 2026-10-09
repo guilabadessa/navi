@@ -258,3 +258,11 @@ tbody tr{transition:background .12s}
 .pprod{padding-left:16px;margin-left:2px;border-left:1px solid rgba(255,255,255,.28)}
 .pbrand{font-size:22px!important}
 .tabhelp{color:var(--mut);font-size:14.5px;margin:-4px 2px 16px;max-width:900px;line-height:1.5}
+
+/* ---- Listas: linhas alternadas (zebra) para leitura mais facil ---- */
+:root{--stripe:#eef2fb;--stripe-hover:#dfe8fb;--rowline:#d9e0f1}
+:root[data-theme=dark]{--stripe:#18234c;--stripe-hover:#223166;--rowline:#2a386b}
+.tbl td{border-bottom:1px solid var(--rowline)}
+.tbl tbody tr:nth-child(even) td{background:var(--stripe)}
+.tbl tbody tr:hover td{background:var(--stripe-hover)}
+.tbl tbody tr:last-child td{border-bottom:0}

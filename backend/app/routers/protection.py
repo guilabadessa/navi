@@ -11,7 +11,7 @@ from ..db import get_db
 from ..models import Client, Event, ExtAsset, ExtTenant
 from ..security import require
 from ..services import factory, protection_service as P
-from ..util import to_dict
+from ..util import titlecase, to_dict
 
 router = APIRouter(prefix="/protection", tags=["protection"])
 
@@ -44,7 +44,7 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
     rows = []
     for a in assets:
         t = tmap.get(a.ext_tenant_id)
-        rows.append({"id": a.id, "name": a.name, "type": a.type, "tenant": t.name if t else None, "client_id": t.client_id if t else None,
+        rows.append({"id": a.id, "name": a.name, "type": a.type, "tenant": titlecase(t.name) if t else None, "client_id": t.client_id if t else None,
                      "client": cn.get(t.client_id) if t else None, "policy": a.policy_name,
                      "last_success_at": a.last_success_at.isoformat() if a.last_success_at else None,
                      "last_failure_at": a.last_failure_at.isoformat() if a.last_failure_at else None, "last_result": a.last_result,
@@ -58,7 +58,7 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
     for a in assets:
         cnt_assets[a.ext_tenant_id] = cnt_assets.get(a.ext_tenant_id, 0) + 1
     return {"counts": counts, "assets": rows, "alerts": alerts,
-            "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": t.enabled,
+            "tenants": [{"id": t.id, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": t.enabled,
                          "assets": cnt_assets.get(t.id, 0)} for t in tenants],
             "thresholds": c, "failed_24h": db.scalar(select(func.count()).select_from(ExtAsset).where(
                 ExtAsset.source == P.SRC, ExtAsset.last_failure_at >= now - timedelta(hours=24))) or 0}

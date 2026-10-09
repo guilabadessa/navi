@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import settings_store as S
 from ..models import Client, ClientPerson, ExtTenant, FinDoc
+from ..util import titlecase
 from .contaazul_service import ContaAzul, ContaAzulError, digits
 
 log = logging.getLogger("navi.finance")
@@ -120,7 +121,7 @@ def suggestions(db: Session) -> dict[int, list[dict]]:
             n = _norm(p.name)
             by_name = bool(n and any(n == m or (len(m) > 5 and (m in n or n in m)) for m in names))
             if same_root or by_name:
-                hit.append({"id": p.ext_id, "name": p.name, "doc": p.kind, "why": "mesma raiz de CNPJ" if same_root else "nome parecido"})
+                hit.append({"id": p.ext_id, "name": titlecase(p.name), "doc": p.kind, "why": "mesma raiz de CNPJ" if same_root else "nome parecido"})
         if hit:
             out[c.id] = hit[:5]
     return out
