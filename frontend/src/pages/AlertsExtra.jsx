@@ -94,14 +94,14 @@ export function MaintenanceTab({ edit }) {
 }
 
 export function NocTab({ edit }) {
-  const toast = useToast(); const { data, reload } = useLoad(() => get('/noc-settings'), []); const [x, setX] = useState(null)
+  const toast = useToast(); const { data, reload } = useLoad(() => get('/noc-settings'), []); const [x, setX] = useState(null); const [tb, setTb] = useState(false)
   React.useEffect(() => { if (data && !x) setX(data) }, [data]) // eslint-disable-line
   if (!x) return <Loading />
   const set = (k, v) => setX({ ...x, [k]: v })
   const save = async () => { try { await put('/noc-settings', x); toast('Configurações do NOC salvas'); reload() } catch (e) { toast(e.message, true) } }
-  const test = async (what) => { try { const r = await post('/noc-settings/test', { what }); toast(r.result) } catch (e) { toast(e.message, true) } }
+  const test = async (what) => { if (tb) return; setTb(true); try { const r = await post('/noc-settings/test', { what }); toast(r.result) } catch (e) { toast(e.message, true) } finally { setTb(false) } }
   return <div style={{ display: 'grid', gap: 16 }}>
-    <Card title="Canal interno do NOC" actions={edit && <button className="btn sm" onClick={() => test('message')}><FlaskConical />Enviar teste</button>}>
+    <Card title="Canal interno do NOC" actions={edit && <button className="btn sm" disabled={tb} onClick={() => test('message')}><FlaskConical />Enviar teste</button>}>
       <p className="sub" style={{ marginTop: 0 }}>Destinos da equipe Orca TI (não são enviados a clientes): escalonamentos e resumo diário.</p>
       <div className="row r2"><Field label="GRUPO DE WHATSAPP DO NOC" hint="JID do grupo (…@g.us) ou número com DDD."><input value={x.noc_wa || ''} onChange={e => set('noc_wa', maskTarget(e.target.value))} placeholder="120363…@g.us" disabled={!edit} /></Field>
         <Field label="E-MAILS DO NOC" hint="Separe por vírgula ou ponto e vírgula."><input value={x.noc_emails || ''} onChange={e => set('noc_emails', e.target.value)} placeholder="noc@orcati.com.br" disabled={!edit} /></Field></div></Card>
@@ -115,7 +115,7 @@ export function NocTab({ edit }) {
       <Check label="Agrupar alertas simultâneos" checked={x.storm_enabled} onChange={v => set('storm_enabled', v)} />
       <div className="row r2" style={{ marginTop: 12 }}><Field label="AGRUPAR A PARTIR DE (ALERTAS)"><input type="number" min="2" value={x.storm_threshold} onChange={e => set('storm_threshold', +e.target.value)} disabled={!edit} /></Field>
         <Field label="ESPERA PARA JUNTAR (SEGUNDOS)" hint="Atraso curto antes de enviar, para reunir os alertas. Quedas que se resolvem nesse tempo nem chegam a ser enviadas."><input type="number" min="0" max="120" value={x.storm_hold_s} onChange={e => set('storm_hold_s', +e.target.value)} disabled={!edit} /></Field></div></Card>
-    <Card title="Resumo diário do NOC" actions={edit && <button className="btn sm" onClick={() => test('digest')}><FlaskConical />Enviar agora</button>}>
+    <Card title="Resumo diário do NOC" actions={edit && <button className="btn sm" disabled={tb} onClick={() => test('digest')}><FlaskConical />Enviar agora</button>}>
       <p className="sub" style={{ marginTop: 0 }}>Todos os dias, no horário escolhido: problemas em aberto por cliente, movimento das últimas 24h, falhas de envio e saúde das integrações.</p>
       <Check label="Enviar resumo diário" checked={x.digest_enabled} onChange={v => set('digest_enabled', v)} />
       <div className="row r2" style={{ marginTop: 12 }}><Field label="HORÁRIO"><input type="time" value={x.digest_time} onChange={e => set('digest_time', e.target.value)} disabled={!edit} /></Field>

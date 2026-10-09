@@ -229,7 +229,7 @@ class LetterheadIn(BaseModel):
 
 
 class PreviewIn(BaseModel):
-    kind: Literal["report", "notice", "new_user", "invite"] = "report"
+    kind: Literal["report", "notice", "new_user", "invite", "digest"] = "report"
 
 
 class TestSend(BaseModel):

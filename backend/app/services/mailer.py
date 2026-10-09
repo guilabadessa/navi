@@ -77,6 +77,8 @@ def _plain(kind: str, ctx: dict, sig: dict | None) -> str:
              f"referente ao período {ctx['period']}.\n\nAtenciosamente,")
     elif kind == "alert":
         t = ("[TESTE] " if ctx.get("test") else "") + ctx["title"] + "\n\n" + "\n".join(f"{a}: {b}" for a, b in ctx["rows"])
+    elif kind == "digest":
+        t = ctx["plain"]
     elif kind == "invite":
         t = (f"Olá, {ctx['name']}!\n\n{ctx['intro']}\n\nPerfil: {ctx['role']}\n\nDefina sua senha neste link (válido por {ctx['hours']} horas):\n{ctx['link']}")
     elif kind == "new_user":

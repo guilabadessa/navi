@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from pathlib import Path
 
@@ -121,6 +122,9 @@ def smtp_preview(body: PreviewIn, db: Session = Depends(get_db), _=Depends(requi
         "new_user": mailer.new_user_ctx("Maria Souza", "maria.souza@orcati.com.br", "Temp-4821-xQ", "Analista NOC"),
         "invite": mailer.invite_ctx("Maria Souza", "Analista NOC", "https://navi.orcati.com.br/cliente/convite/exemplo"),
     }
+    if body.kind == "digest":
+        from ..services import noc_service
+        ctxs["digest"] = noc_service.digest_ctx(noc_service.digest_data(db), datetime.now().strftime("%d/%m/%Y"))
     html, _t, _i = mailer.build(db, body.kind, ctxs[body.kind], preview=True)
     return {"html": html}
 
