@@ -100,3 +100,17 @@ export function MultiPick({ options, value, onChange, placeholder = 'Buscar…' 
       {list.map(o => <label key={o.value} className="check" style={{ padding: '7px 12px', borderBottom: '1px solid #f0f2f9' }}><input type="checkbox" checked={sel.has(o.value)} onChange={() => toggle(o.value)} />{o.label}{o.sub && <span className="sub" style={{ marginLeft: 'auto' }}>{o.sub}</span>}</label>)}
       {!list.length && <div className="empty" style={{ padding: 14 }}>Sem resultados</div>}</div></div>
 }
+
+
+// Categorias de incidente (origem do evento)
+export const KIND = { infra: 'Infraestrutura', backup: 'Backup', endpoint: 'Endpoints' }
+export const KindPill = ({ k }) => <span className={'badge b-' + ({ infra: 'info', backup: 'ok', endpoint: 'mut' }[k || 'infra'])}>{KIND[k || 'infra'] || k}</span>
+
+// Tempo decorrido em tempo real (incidente em aberto): "2h 14min 05s", atualizado a cada segundo
+const _fmt = (s) => { s = Math.max(0, Math.floor(s)); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60
+  return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + (m || d || h ? String(m).padStart(m || d || h ? 2 : 1, '0') + 'min ' : '') + String(x).padStart(2, '0') + 's' }
+export function LiveDur({ since }) {
+  const [, tick] = useState(0)
+  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t) }, [])
+  return <b className="mono" style={{ color: 'var(--crit, #bd1723)' }} title="Em andamento — contando em tempo real">{_fmt((Date.now() - new Date(since).getTime()) / 1000)}</b>
+}

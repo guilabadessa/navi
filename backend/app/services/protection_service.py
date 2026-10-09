@@ -383,6 +383,9 @@ def ems_status(a: ExtAsset, offline_days: int, now: datetime) -> str:
     return "online" if a.online else "offline"
 
 
+EMS_EVENT_KEYS = ("av", "ae", "sb", "wf", "vf", "fw", "vuln", "vpn", "pua", "rm", "cs", "fd", "sys")
+
+
 def sync_ems(db: Session, svc) -> dict:
     if not svc.configured or S.get(db, "ems.enabled") != "1":
         return {"skipped": True}
@@ -427,7 +430,9 @@ def sync_ems(db: Session, svc) -> dict:
                 a.meta = {"av_enabled": e.get("av_enabled"), "sig_ok": e.get("client_av_sig_version_up_to_date"), "version_ok": e.get("client_version_up_to_date"),
                           "quarantined": bool(e.get("is_quarantined")), "health_errors": e.get("health_error_count") or 0,
                           "health_warnings": e.get("health_warning_count") or 0, "fct_version": e.get("fct_version"), "os": e.get("os_version"),
-                          "user": next((u for u in users if u), None), "ip": e.get("ip_addr"), "managed": bool(e.get("is_managed", True))}
+                          "user": next((u for u in users if u), None), "ip": e.get("ip_addr"), "managed": bool(e.get("is_managed", True)),
+                          # contadores de eventos do FortiClient (os "baloes" do EMS): av, sb, ae, wf, vf, fw, vuln, vpn, pua, rm, sys...
+                          "events": {k: int(e.get(f"{k}_events_count") or 0) for k in EMS_EVENT_KEYS}, "vuln_sev": e.get("vuln_events_max_severity")}
                 seen.add(uid)
         for uid, a in cache.items():
             if uid not in seen:
@@ -486,7 +491,8 @@ def endpoint_rows(db: Session, client_id: int) -> list[dict]:
         for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(ems_ids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
             m, st = a.meta or {}, ems_status(a, c["ems_offline_days"], now)
             rows.append({"id": a.id, "name": a.name, "user": m.get("user"), "os": m.get("os"), "source": "FortiClient EMS", "techs": ["Antivírus (FortiClient)"],
-                         "status": st, "ok": st in ("online", "offline"), "last": a.last_success_at, "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok")})
+                         "status": st, "ok": st in ("online", "offline"), "last": a.last_success_at, "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok"),
+                         "events": m.get("events") or {}, "vuln_sev": m.get("vuln_sev")})
     flagged = {tid for tid, t in ac.items() if any(license_flags(t)[k] for k in ("security", "management", "dlp"))}
     if flagged:
         for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(list(flagged)), ExtAsset.type == "machine", ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, EyeOff, Wrench, Building2 } from 'lucide-react'
 import { get, post, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
-import { Card, Loading, Modal, PERIODS, PageHead, Pill, SevBadge, Stat, Table, periodLabel, useLoad, useToast } from '../ui'
+import { Card, LiveDur, Loading, Modal, PERIODS, PageHead, Pill, SevBadge, Stat, Table, periodLabel, useLoad, useToast } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, can } from '../App'
 
@@ -141,7 +141,7 @@ export default function Dashboard() {
         { h: 'Cliente', r: r => r.client_name ? <b>{r.client_name}</b> : <Pill tone="warn">sem cliente</Pill> },
         { h: 'Host', r: r => <b>{r.host}</b> }, { h: 'IP', k: 'ip' },
         { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> },
-        { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Há', r: r => since(r.started_at), cls: 'mono' }, { h: 'Alerta', r: r => r.wa_status || '—' },
+        { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Há', r: r => <LiveDur since={r.started_at} />, cls: 'mono' }, { h: 'Alerta', r: r => r.wa_status || '—' },
         { h: '', r: r => r.client_id && can(me, 'clients.edit') && <button className="btn sm" title="Colocar o cliente em manutenção por 2h" onClick={e => { e.stopPropagation(); maint(r.client_id, r.client_name) }}><Wrench /></button> }]} /></Card>
 
     <div className="grid g2">

@@ -300,12 +300,13 @@ def dashboard(cid: int, days: float = 30, db: Session = Depends(get_db), _=Depen
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)
     hids = [h.hostid for h in hosts]
-    evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == cid, Event.started_at < end,
-                                              (Event.recovered_at.is_(None)) | (Event.recovered_at > start))
-                          .order_by(Event.started_at.desc())))
+    allev = list(db.scalars(select(Event).where(Event.client_id == cid, Event.started_at < end,
+                                                (Event.recovered_at.is_(None)) | (Event.recovered_at > start))
+                            .order_by(Event.started_at.desc())))
+    evs = [e for e in allev if (e.kind or "infra") == "infra"]
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, cid, start, end))
-    active = [to_dict(e) for e in evs if e.status == "PROBLEM"]
+    active = [to_dict(e) for e in allev if e.status == "PROBLEM"]
     links = [h for h in hosts if any(w in (h.name or "").lower() for w in ("link", "wan", "vpn", "fortigate", "fw"))]
     from ..services import protection_service as P
     from .protection import asset_status
@@ -330,7 +331,7 @@ def dashboard(cid: int, days: float = 30, db: Session = Depends(get_db), _=Depen
     from ..services import finance_service
     return {"contracts": finance_service.client_contracts(db, cid), "services": services_service.of_client(db, c), "backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
             "available": h.available, "status": h.status} for h in hosts], "active_events": active,
-            "history": [to_dict(e) for e in evs[:100]], "links": len(links),
+            "history": [to_dict(e) for e in allev[:100]], "links": len(links),
             "reports": [to_dict(r, {"kpis"}) for r in db.scalars(select(ReportRun).where(ReportRun.client_id == cid)
                                                                  .order_by(ReportRun.generated_at.desc()).limit(10))],
             "rules": [to_dict(r) for r in db.scalars(select(AlertRule).where(AlertRule.client_id == cid))]}

@@ -4,6 +4,7 @@ import { EyeOff, Eye, FlaskConical, RefreshCw, HardDrive, ShieldCheck } from 'lu
 import { get, post, put, fmtDT, fmtNum } from '../api'
 import { Card, Check, Field, Loading, PageHead, Pill, SevBadge, Stat, Table, Tabs, useLoad, useToast } from '../ui'
 import { Play } from 'lucide-react'
+import { EventBalloons } from './ProtectionPanels'
 import { useAuth, can } from '../App'
 
 const ST = { ok: 'ok', falha: 'bad', 'sem backup': 'bad', offline: 'warn', 'sem dados': 'mut', ignorado: 'mut' }
@@ -66,6 +67,7 @@ export function Endpoints({ ov, clients, edit, reload }) {
       { h: 'Site (EMS)', r: r => <>{r.site}{r.client ? <div className="sub">→ {r.client}</div> : <div className="sub" style={{ color: 'var(--orange)' }}>não associado</div>}</> },
       { h: 'Sistema', r: r => <span className="sub">{(r.os || '').replace('Microsoft ', '').replace(' Edition, 64-bit', '').slice(0, 38)}</span> },
       { h: 'FortiClient', r: r => <span className="sub">{r.fct_version || '—'}</span> }, { h: 'Antivírus', r: r => r.av_enabled === false ? <Pill tone="bad">desativado</Pill> : r.sig_ok === false ? <Pill tone="warn">assin. antigas</Pill> : <Pill tone="ok">ok</Pill> },
+      { h: 'Eventos', r: r => <EventBalloons events={r.events} vulnSev={r.vuln_sev} /> },
       { h: 'Último contato', r: r => <span title={fmtDT(r.last_contact)}>{ago(r.last_contact)}</span> },
       { h: '', r: r => edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button> }]} /></Card></>
 }

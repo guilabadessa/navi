@@ -9,7 +9,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
 import Portal from './Portal'
 import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
-import { Card, Check, Field, Loading, Modal, MultiPick, PERIODS, PageHead, Pill, ServiceChips, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
+import { Card, Check, Field, KindPill, LiveDur, Loading, Modal, MultiPick, PERIODS, PageHead, Pill, ServiceChips, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { cnpjOk, maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
 
@@ -146,18 +146,18 @@ export function ClientDetail() {
         <Stat onClick={() => nav(`/eventos?client_id=${id}&days=${days}`)} label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
         <Stat onClick={() => nav('/monitoramento')} label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
       </div> : <p className="sub" style={{ marginBottom: 16 }}>Este cliente não possui hosts de infraestrutura monitorados — o acompanhamento é feito pelas abas de backup e endpoints.</p>}
-    <Contracts items={d.contracts} title="Serviços contratados (Conta Azul)" />
+    <Contracts items={d.contracts} title="Serviços contratados (Conta Azul)" meta />
     <div className="grid g-2-1" style={{ marginBottom: 16 }}>
       {infra && <Card title="Incidentes por dia"><div style={{ height: 230 }}><ResponsiveContainer><BarChart data={dd}><CartesianGrid vertical={false} stroke="#eef1f8" /><XAxis dataKey="d" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>}
       <Card title="Configuração de alertas"><div className="kv"><b>WhatsApp</b><span>{c.wa_enabled ? 'ativo' : 'desligado'}</span><b>Grupo</b><span className="mono" style={{ fontSize: 13 }}>{c.whatsapp_group_jid || '—'}</span>
         <b>Sev. mínima</b><span>{SEV[c.wa_min_severity]}</span><b>Atraso</b><span>{c.wa_delay_s}s</span><b>Recovery</b><span>{c.wa_send_recovery ? 'sim' : 'não'}</span><b>Regras</b><span>{d.rules.length} personalizada(s)</span></div></Card>
     </div>
     <Card title={`Eventos ativos (${d.active_events.length})`} pad={false} style={{ marginBottom: 16 }}>
-      <Table rows={d.active_events} empty="Nenhum evento ativo." cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', k: 'host' }, { h: 'Problema', r: r => <div className="trunc">{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card>
-    {infra &&     <div className="grid g2">
-        <Card title="Hosts" pad={false}><Table rows={d.hosts} cols={[{ h: '', r: r => <i className="dot" style={{ background: r.available === 2 ? '#bd1723' : r.available === 1 ? '#16a34a' : '#b8c0d8' }} /> , w: 30 }, { h: 'Host', k: 'name' }, { h: 'IP', k: 'ip' }]} /></Card>
-        <Card title="Histórico recente" pad={false}><Table rows={d.history.slice(0, 15)} cols={[{ h: 'Host', k: 'host' }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s) }, { h: '', r: r => <StatusBadge s={r.status} /> }]} /></Card>
-      </div>}
+      <Table rows={d.active_events} empty="Nenhum evento ativo." cols={[{ h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', k: 'host' }, { h: 'Problema', r: r => <div className="trunc">{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Em andamento há', r: r => <LiveDur since={r.started_at} /> }]} /></Card>
+    <div className="grid g2">
+        {infra && <Card title="Hosts" pad={false}><Table rows={d.hosts} cols={[{ h: '', r: r => <i className="dot" style={{ background: r.available === 2 ? '#bd1723' : r.available === 1 ? '#16a34a' : '#b8c0d8' }} /> , w: 30 }, { h: 'Host', k: 'name' }, { h: 'IP', k: 'ip' }]} /></Card>}
+        <Card title="Histórico recente (todas as categorias)" pad={false}><Table rows={d.history.slice(0, 15)} cols={[{ h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Item', k: 'host' }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => r.status === 'PROBLEM' ? <LiveDur since={r.started_at} /> : fmtDur(r.duration_s) }, { h: '', r: r => <StatusBadge s={r.status} /> }]} /></Card>
+      </div>
     {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
     </>}
     {preview && <Modal wide title={`Portal de ${c.trade_name} (pré-visualização)`} onClose={() => setPreview(false)}><div className="portal-embed"><Portal clientId={c.id} embedded /></div></Modal>}

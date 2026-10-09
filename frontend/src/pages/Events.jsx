@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Bookmark } from 'lucide-react'
 import { get, put, download, fmtDT, fmtDur, SEV } from '../api'
-import { Card, Drawer, Loading, PERIODS, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
+import { Card, Drawer, LiveDur, Loading, PERIODS, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 
 function Diag({ id }) {
@@ -21,7 +21,7 @@ function Detail({ id, onClose }) {
     <div style={{ marginBottom: 14, display: 'flex', gap: 8 }}><StatusBadge s={e.status} /><SevBadge n={e.severity} /></div>
     <div className="kv"><b>Host</b><span>{e.host}</span><b>IP</b><span>{e.ip || '—'}</span><b>Trigger</b><span>{e.trigger_name}</span><b>Item</b><span>{e.item_name || '—'}</span>
       <b>Grupos</b><span>{(e.group_names || []).map(g => <span className="chip" key={g}>{g}</span>)}</span><b>Início</b><span>{fmtDT(e.started_at)}</span><b>Recuperação</b><span>{e.recovered_at ? fmtDT(e.recovered_at) : 'em aberto'}</span>
-      <b>Duração</b><span>{fmtDur(e.duration_s)}</span><b>Valor</b><span>{e.opdata || '—'}</span><b>Origem</b><span>{e.source}</span><b>WhatsApp</b><span>{e.wa_status || '—'} {e.wa_message_id && <span className="sub mono">· {e.wa_message_id.slice(0, 14)}…</span>}</span></div>
+      <b>Duração</b><span>{e.status === 'PROBLEM' ? <LiveDur since={e.started_at} /> : fmtDur(e.duration_s)}</span><b>Valor</b><span>{e.opdata || '—'}</span><b>Origem</b><span>{e.source}</span><b>WhatsApp</b><span>{e.wa_status || '—'} {e.wa_message_id && <span className="sub mono">· {e.wa_message_id.slice(0, 14)}…</span>}</span></div>
     <Diag id={id} />
     <h3 style={{ margin: '22px 0 8px' }}>Mensagens enviadas</h3>
     {e.dispatches.length ? e.dispatches.map(d => <div key={d.id} className="card" style={{ padding: 14, marginBottom: 10 }}><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><Pill tone={d.kind === 'problem' ? 'bad' : 'ok'}>{d.kind}</Pill><Pill tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Pill><span className="sub">{fmtDT(d.sent_at || d.due_at)}</span></div>
@@ -68,7 +68,7 @@ export default function Events() {
     <Card pad={false}>{data ? <><Table rows={data.items} onRow={r => setSel(r.id)} cols={[
       { h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <><b>{r.host}</b>{r.kind && r.kind !== 'infra' && <div><Pill tone="info">{r.kind === 'backup' ? 'backup' : 'endpoint'}</Pill></div>}</> }, { h: 'IP', k: 'ip', cls: 'mono' },
       { h: 'Trigger', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) },
-      { h: 'Duração', r: r => fmtDur(r.duration_s ?? (r.status === 'PROBLEM' ? (Date.now() - new Date(r.started_at)) / 1000 : null)), cls: 'mono' }, { h: 'WA', r: r => r.wa_status ? <Pill tone={r.wa_status === 'failed' ? 'bad' : 'ok'}>{r.wa_status}</Pill> : '—' }]} />
+      { h: 'Duração', r: r => r.status === 'PROBLEM' ? <LiveDur since={r.started_at} /> : fmtDur(r.duration_s), cls: 'mono' }, { h: 'WA', r: r => r.wa_status ? <Pill tone={r.wa_status === 'failed' ? 'bad' : 'ok'}>{r.wa_status}</Pill> : '—' }]} />
       <div style={{ padding: '0 16px 12px' }}><Pager page={page} size={50} total={data.total} onPage={setPage} /></div></> : <Loading err={err} />}</Card>
     {sel && <Detail id={sel} onClose={() => setSel(null)} />}</>
 }

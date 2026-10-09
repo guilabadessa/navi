@@ -35,7 +35,7 @@ def _ev(e: Event) -> dict:
     # somente o necessario para o cliente (sem destinos, mensagens, notas internas, grupos do Zabbix)
     return {"id": e.id, "host": e.host, "ip": e.ip, "trigger_name": e.trigger_name, "severity": e.severity, "status": e.status,
             "started_at": e.started_at.isoformat(), "recovered_at": e.recovered_at.isoformat() if e.recovered_at else None,
-            "duration_s": e.duration_s}
+            "duration_s": e.duration_s, "kind": e.kind or "infra"}
 
 
 def _client_for(db: Session, user: User, client_id: int | None) -> Client:
@@ -76,13 +76,15 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)
-    evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < end,
-                                              (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at.desc())))
+    allev = list(db.scalars(select(Event).where(Event.client_id == c.id, Event.started_at < end,
+                                                (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at.desc())))
+    evs = [e for e in allev if (e.kind or "infra") == "infra"]  # disponibilidade/KPIs sao so de infraestrutura
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
-    vis = [e for e in evs if (e.severity or 0) >= msev]
+    vis = [e for e in allev if (e.severity or 0) >= msev]  # incidentes de TODAS as categorias (infra, backup, endpoints)
     sm = dict(k["summary"])
-    sm.update({"incidents": len(vis), "open": sum(1 for e in vis if e.status == "PROBLEM"), "resolved": sum(1 for e in vis if e.status != "PROBLEM")})
+    by_kind = {kd: {"total": sum(1 for e in vis if (e.kind or "infra") == kd), "open": sum(1 for e in vis if (e.kind or "infra") == kd and e.status == "PROBLEM")} for kd in ("infra", "backup", "endpoint")}
+    sm.update({"incidents": len(vis), "open": sum(1 for e in vis if e.status == "PROBLEM"), "resolved": sum(1 for e in vis if e.status != "PROBLEM"), "by_kind": by_kind})
     by_day: dict[str, int] = {}
     for e in vis:
         d = e.started_at.astimezone(timezone.utc).date().isoformat()
@@ -104,7 +106,7 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
     by_h = {h["hostid"]: h for h in k["by_host"]}
     open_by_host: dict[str, int] = {}
     for e in vis:
-        if e.status == "PROBLEM":
+        if e.status == "PROBLEM" and (e.kind or "infra") == "infra":
             open_by_host[e.hostid] = open_by_host.get(e.hostid, 0) + 1
     explicit = {x.zbx_hostid for x in c.hosts}
     host_rows = []

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Download, LogOut, Moon, Sun, UserRound, Wrench } from 'lucide-react'
 import { download, get, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
-import { Card, Loading, Modal, PERIODS, Pill, SevBadge, Stat, StatusBadge, Table, periodLabel, useLoad, useToast } from '../ui'
+import { Card, KIND, KindPill, LiveDur, Loading, Modal, PERIODS, Pill, SevBadge, Stat, StatusBadge, Table, periodLabel, useLoad, useToast } from '../ui'
 import { getTheme, toggleTheme } from '../theme'
 import { useAuth, can } from '../App'
 import Account from './Account'
@@ -23,7 +23,7 @@ const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ?
 function ServiceStatus({ d, go }) {
   const items = []
   if (d.services?.infra !== false) {
-    const down = d.hosts.filter(h => h.available === 2).length; const open = d.active.length
+    const down = d.hosts.filter(h => h.available === 2).length; const open = d.active.filter(e => (e.kind || 'infra') === 'infra').length
     items.push({ k: 'infra', tab: 'hosts', title: 'Infraestrutura', bad: down > 0 || open > 0, warn: false, line: `${d.hosts.length - down} de ${d.hosts.length} hosts disponíveis`, extra: open ? `${open} problema(s) em andamento` : 'Nenhum problema em andamento' })
   }
   if (d.backup?.enabled) {
@@ -48,16 +48,16 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
   const [pick, setPick] = useState(() => { try { return +localStorage.getItem(CKEY) || 0 } catch { return 0 } })
   const clientId = forced || (mine.some(c => c.id === pick) ? pick : (mine[0]?.id || undefined))
   const choose = (v) => { setPick(+v); setTab('geral'); setGrp(''); try { localStorage.setItem(CKEY, v) } catch { /* ignore */ } }
-  const [fsev, setFsev] = useState(''); const [fst, setFst] = useState(''); const [fq, setFq] = useState('')
+  const [fsev, setFsev] = useState(''); const [fst, setFst] = useState(''); const [fq, setFq] = useState(''); const [fk, setFk] = useState('')
   const { data: d, err, reload } = useLoad(() => get(`/portal/overview?days=${days}${clientId ? '&client_id=' + clientId : ''}${minSev != null ? '&min_sev=' + minSev : ''}`), [days, clientId, minSev], 30000)
   const dark = theme === 'dark'
   const s = d?.summary
   const byDay = d ? Object.entries(d.by_day).map(([k, v]) => ({ d: k.slice(5).split('-').reverse().join('/'), v })) : []
-  const hist = d ? d.history.filter(e => (!fsev || e.severity >= +fsev) && (!fst || (fst === 'open' ? e.status === 'PROBLEM' : e.status !== 'PROBLEM')) && (!fq || (e.host + ' ' + e.trigger_name).toLowerCase().includes(fq.toLowerCase()))) : []
+  const hist = d ? d.history.filter(e => (!fk || (e.kind || 'infra') === fk) && (!fsev || e.severity >= +fsev) && (!fst || (fst === 'open' ? e.status === 'PROBLEM' : e.status !== 'PROBLEM')) && (!fq || (e.host + ' ' + e.trigger_name).toLowerCase().includes(fq.toLowerCase()))) : []
   const hosts = d ? d.hosts.filter(h => (!grp || h.groups.includes(grp)) && (!hq || (h.name + ' ' + (h.ip || '')).toLowerCase().includes(hq.toLowerCase()))) : []
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
   const infra = d ? d.services?.infra !== false : true
-  const tabs = d ? [['geral', 'Visão geral'], ...(infra ? [['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`]] : []),
+  const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ...(infra ? [['hosts', `Hosts (${d.hosts.length})`]] : []),
     ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
@@ -74,38 +74,34 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
       {embedded && <div className="bar"><b style={{ fontSize: 18 }}>{d?.client.name}</b><div className="grow" /><select style={{ width: 'auto' }} value={String(days)} onChange={e => setDays(+e.target.value)} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
       {!d ? <Loading err={err} /> : <>
         {d.active.length > 0
-          ? <div className="banner bad" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => setTab(infra ? 'inc' : 'geral')}><div className="grow"><b>{d.active.length} problema(s) em andamento.</b> Nossa equipe já está acompanhando. <u>Ver detalhes</u></div></div>
+          ? <div className="banner bad" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => { setFk(''); setFst('open'); setTab('inc') }}><div className="grow"><b>{d.active.length} problema(s) em andamento.</b> Nossa equipe já está acompanhando. <u>Ver detalhes</u></div></div>
           : <div className="banner info"><div className="grow">✅ Todos os serviços monitorados estão operando normalmente.</div></div>}
         {d.maintenance.length > 0 && <div className="banner warn"><Wrench size={20} /><div className="grow"><b>Manutenção programada:</b> {d.maintenance.map(m => `${m.name} — ${fmtDT(m.start)} a ${fmtDT(m.end)}`).join(' · ')}</div></div>}
-        {infra && <div className="grid g4" style={{ marginBottom: 16 }}>
-          <Stat onClick={() => setTab('hosts')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
-          <Stat onClick={() => setTab('inc')} label="Incidentes" value={fmtNum(s.incidents)} tone={s.open ? 'bad' : ''} desc={`${s.resolved} resolvido(s) · ${s.open} em aberto`} />
-          <Stat onClick={() => setTab('hosts')} label="Indisponibilidade total" value={fmtDur(s.downtime_s)} desc={`${s.hosts_affected} de ${s.hosts_total} host(s) afetado(s)`} />
-          <Stat onClick={() => setTab('inc')} label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />
-        </div>}
+        <div className="grid g4" style={{ marginBottom: 16 }}>
+          {infra && <Stat onClick={() => setTab('hosts')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />}
+          <Stat onClick={() => { setFk(''); setTab('inc') }} label="Incidentes" value={fmtNum(s.incidents)} tone={s.open ? 'bad' : ''} desc={`${s.resolved} resolvido(s) · ${s.open} em aberto`} />
+          {['infra', 'backup', 'endpoint'].filter(k => d.services?.[k] !== false && (k === 'infra' ? infra : d.services?.[k])).map(k => <Stat key={k} onClick={() => { setFk(k); setTab('inc') }} label={`Incidentes · ${KIND[k]}`} value={fmtNum(s.by_kind?.[k]?.total || 0)} tone={s.by_kind?.[k]?.open ? 'bad' : ''} desc={`${s.by_kind?.[k]?.open || 0} em aberto`} />)}
+          {infra && <Stat onClick={() => setTab('inc')} label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR (infraestrutura)" />}
+        </div>
         <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {PORTAL_TIPS[tab] && <p className="tabhelp">{PORTAL_TIPS[tab][1]}</p>}
-        {tab === 'geral' && !infra && <>
+        {tab === 'geral' && <>
           <ServiceStatus d={d} go={setTab} />
           <Contracts items={d.contracts} />
-          <Card title="Alertas em andamento" pad={false}><Table rows={[...(d.backup?.alerts || []), ...(d.endpoints?.alerts || [])].filter(e => (e.severity || 0) >= d.min_sev)} empty="🎉 Nenhum alerta em andamento." cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
-            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
-        {tab === 'geral' && infra && <>
-          <ServiceStatus d={d} go={setTab} />
-          <Contracts items={d.contracts} />
-          <Card title={`Incidentes por dia · ${periodLabel(days)}`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
+          {infra && <Card title={`Incidentes por dia · ${periodLabel(days)}`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
-              <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>
-          <Card title="Problemas em andamento" pad={false}><Table rows={d.active} empty="🎉 Nenhum problema em andamento." cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <b>{r.host}</b> },
-            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
+              <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>}
+          <Card title={`Problemas em andamento (${d.active.length})`} pad={false}><Table rows={d.active} empty="🎉 Nenhum problema em andamento." onRow={() => { setFk(''); setFst('open'); setTab('inc') }} cols={[{ h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
+            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Em andamento há', r: r => <LiveDur since={r.started_at} /> }]} /></Card></>}
         {tab === 'inc' && <>
-          <div className="bar"><div className="grow"><input placeholder="Buscar por host ou problema…" value={fq} onChange={e => setFq(e.target.value)} /></div>
+          <div className="tabs" style={{ marginBottom: 12 }}>{[['', 'Todos', d.history.length], ...['infra', 'backup', 'endpoint'].filter(k => d.history.some(e => (e.kind || 'infra') === k) || d.services?.[k]).map(k => [k, KIND[k], d.history.filter(e => (e.kind || 'infra') === k).length])].map(([k, l, n]) => <button key={k || 'all'} className={fk === k ? 'on' : ''} onClick={() => setFk(k)}>{l} ({n})</button>)}</div>
+          <div className="bar"><div className="grow"><input placeholder="Buscar por item ou problema…" value={fq} onChange={e => setFq(e.target.value)} /></div>
             <select value={fsev} onChange={e => setFsev(e.target.value)}><option value="">Todas as severidades</option>{[5, 4, 3, 2, 1, 0].filter(n => n >= (d.min_sev || 0)).map(n => <option key={n} value={n}>{SEVN[n]} ou superior</option>)}</select>
             <select value={fst} onChange={e => setFst(e.target.value)}><option value="">Todas as situações</option><option value="open">Em andamento</option><option value="done">Resolvidos</option></select>
-            {(fsev || fst || fq) && <button className="btn sm" onClick={() => { setFsev(''); setFst(''); setFq('') }}>Limpar filtros</button>}</div>
+            {(fsev || fst || fq || fk) && <button className="btn sm" onClick={() => { setFsev(''); setFst(''); setFq(''); setFk('') }}>Limpar filtros</button>}</div>
           <div className="sub" style={{ margin: '0 2px 10px' }}>{hist.length} de {d.history.length} incidente(s) · exibindo severidade {SEVN[d.min_sev]} ou superior</div>
-          <Card pad={false}><Table rows={hist} empty="Nenhum incidente com estes filtros." cols={[{ h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <b>{r.host}</b> },
-            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s), cls: 'mono' }]} /></Card></>}
+          <Card pad={false}><Table rows={hist} empty="Nenhum incidente com estes filtros." cols={[{ h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
+            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) }, { h: 'Duração', r: r => r.status === 'PROBLEM' ? <LiveDur since={r.started_at} /> : fmtDur(r.duration_s), cls: 'mono' }]} /></Card></>}
         {tab === 'hosts' && <>
           <div className="bar"><div className="grow"><input placeholder="Buscar host ou IP…" value={hq} onChange={e => setHq(e.target.value)} /></div>
             <select value={grp} onChange={e => setGrp(e.target.value)}><option value="">Todos os grupos</option>{d.groups.map(g => <option key={g.name}>{g.name}</option>)}</select></div>

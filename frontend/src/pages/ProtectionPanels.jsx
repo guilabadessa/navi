@@ -7,6 +7,17 @@ const ago = (v) => { if (!v) return '—'; const h = (Date.now() - new Date(v).g
 const BST = { ok: ['ok', 'protegido'], falha: ['bad', 'com falha'], 'sem backup': ['bad', 'sem backup recente'], offline: ['warn', 'agente offline'], 'sem dados': ['mut', 'sem dados'] }
 const EST = { online: 'ok', offline: 'mut', 'sem contato': 'bad', 'antivírus off': 'bad', quarentena: 'bad', assinaturas: 'warn', atenção: 'warn' }
 
+// "Baloes" de eventos do FortiClient (igual ao EMS): contador por tipo; so aparecem os que tem ocorrencia
+const EVT = { av: ['AV', 'Eventos de antivírus', 'bad'], ae: ['AE', 'Anti-exploit', 'bad'], sb: ['SB', 'Sandbox', 'bad'], vuln: ['Vuln', 'Vulnerabilidades', 'warn'], pua: ['PUA', 'Aplicativos potencialmente indesejados', 'warn'],
+  wf: ['Web', 'Filtro web', 'info'], fw: ['FW', 'Firewall', 'info'], vpn: ['VPN', 'VPN', 'info'], rm: ['USB', 'Mídia removível', 'info'], cs: ['Cloud', 'Cloud scan', 'info'], vf: ['App', 'Filtro de aplicativos', 'info'], fd: ['Dl', 'Download de arquivos', 'info'], sys: ['Sis', 'Sistema', 'mut'] }
+export function EventBalloons({ events, vulnSev }) {
+  const on = Object.entries(events || {}).filter(([k, n]) => n > 0 && EVT[k])
+  if (!on.length) return <span className="sub">—</span>
+  const order = Object.keys(EVT)
+  on.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+  return <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{on.map(([k, n]) => <span key={k} className={'badge b-' + EVT[k][2]} title={`${EVT[k][1]}: ${n}${k === 'vuln' && vulnSev ? ` (maior severidade ${Number(vulnSev).toFixed(1)})` : ''}`}>{EVT[k][0]} {n > 999 ? '999+' : n}</span>)}</span>
+}
+
 // Servicos contratados no Acronis, agrupados por tecnologia (Backup, Seguranca/EDR, Gerenciamento/RMM, DLP...)
 export function ServicesCard({ services, detail = false }) {
   if (!services || !services.length) return null
@@ -60,5 +71,6 @@ export function EndpointsPanel({ data }) {
     <Card pad={false}><Table rows={rows} empty="Nenhum endpoint encontrado." cols={[
       { h: 'Situação', r: r => <Pill tone={EST[r.status] || 'mut'}>{r.status}</Pill> }, { h: 'Endpoint', r: r => <b>{r.name}</b> }, { h: 'Usuário / host', r: r => r.user || '—' },
       { h: 'Origem', r: r => <Pill tone="info">{r.source}</Pill> }, { h: 'Proteção', r: r => <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{r.techs.map(t => <span key={t} className="badge b-info">{t}</span>)}</span> },
+      { h: 'Eventos', r: r => r.source === 'FortiClient EMS' ? <EventBalloons events={r.events} vulnSev={r.vuln_sev} /> : <span className="sub">—</span> },
       { h: 'Último contato', r: r => r.last ? <span title={fmtDT(r.last)}>{ago(r.last)}</span> : '—' }]} /></Card></>
 }

@@ -226,7 +226,7 @@ def ems_overview(client_id: int | None = None, db: Session = Depends(get_db), _=
         rows.append({"id": a.id, "name": a.name, "site": t.name if t else None, "client_id": t.client_id if t else None, "client": cn.get(t.client_id) if t else None,
                      "os": m.get("os"), "user": m.get("user"), "ip": m.get("ip"), "fct_version": m.get("fct_version"), "policy": a.policy_name,
                      "online": a.online, "last_contact": a.last_success_at.isoformat() if a.last_success_at else None, "ignored": a.ignored,
-                     "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok"), "health_errors": m.get("health_errors", 0),
+                     "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok"), "health_errors": m.get("health_errors", 0), "events": m.get("events") or {}, "vuln_sev": m.get("vuln_sev"),
                      "status": P.ems_status(a, days, now)})
     counts: dict = {}
     for r in rows:
