@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Bookmark } from 'lucide-react'
 import { get, put, download, fmtDT, fmtDur, SEV } from '../api'
-import { Card, Drawer, Loading, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
+import { Card, Drawer, Loading, PERIODS, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 
 function Diag({ id }) {
@@ -38,7 +38,7 @@ const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) ||
 export default function Events() {
   const [sp] = useSearchParams()
   const [status, setStatus] = useState(sp.get('status') || ''); const [q, setQ] = useState(sp.get('q') || ''); const [sev, setSev] = useState(sp.get('min_severity') || ''); const [page, setPage] = useState(1)
-  const [days, setDays] = useState(sp.has('days') ? sp.get('days') : '7'); const [sel, setSel] = useState(null); const [cl, setCl] = useState(sp.get('client_id') || '')
+  const [days, setDays] = useState(sp.has('days') ? sp.get('days') : '0.0417'); const [sel, setSel] = useState(null); const [cl, setCl] = useState(sp.get('client_id') || '')
   const [saved, setSaved] = useState(loadSaved()); const toast = useToast(); const [kind, setKind] = useState(sp.get('kind') || '')
   const clients = useLoad(() => get('/clients'), [])
   const since = days ? new Date(Date.now() - days * 864e5).toISOString() : ''
@@ -51,8 +51,8 @@ export default function Events() {
     setSaved(l); try { localStorage.setItem(SAVED, JSON.stringify(l)) } catch { /* ignore */ }; toast('Filtro salvo')
   }
   const rmFilter = (name) => { const l = saved.filter(x => x.name !== name); setSaved(l); try { localStorage.setItem(SAVED, JSON.stringify(l)) } catch { /* ignore */ } }
-  const clear = () => { setKind(''); apply({ status: '', q: '', sev: '', cl: '', days: '7' }) }
-  const dirty = kind || status || q || sev !== '' || cl || days !== '7'
+  const clear = () => { setKind(''); apply({ status: '', q: '', sev: '', cl: '', days: '0.0417' }) }
+  const dirty = kind || status || q || sev !== '' || cl || days !== '0.0417'
   return <>
     <PageHead title="Eventos e Incidentes" desc="Ocorrências de todos os clientes (problema e recuperação ligados pelo Event ID do Zabbix). Filtre, exporte em CSV e abra o detalhe">
       <button className="btn" onClick={saveFilter}><Bookmark />Salvar filtro</button>
@@ -62,7 +62,7 @@ export default function Events() {
       <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">Todos</option><option value="PROBLEM">Em aberto</option><option value="RESOLVED">Resolvidos</option></select>
       <select value={sev} onChange={e => { setSev(e.target.value); setPage(1) }}><option value="">Qualquer severidade</option>{SEV.map((s, i) => <option key={i} value={i}>≥ {s}</option>)}</select>
       <select value={cl} onChange={e => { setCl(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
-      <select value={days} onChange={e => { setDays(e.target.value); setPage(1) }}><option value="1">Últimas 24h</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="">Tudo</option></select>
+      <select value={days} onChange={e => { setDays(e.target.value); setPage(1) }} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}<option value="">Todo o histórico</option></select>
       {dirty && <button className="btn sm" onClick={clear}>Limpar filtros</button>}</div>
     {saved.length > 0 && <div style={{ marginBottom: 14 }}><span className="sub">Filtros salvos: </span>{saved.map(f => <span key={f.name} className="chip" style={{ cursor: 'pointer' }} onClick={() => apply(f)}>{f.name} <span title="Remover" onClick={e => { e.stopPropagation(); rmFilter(f.name) }}>✕</span></span>)}</div>}
     <Card pad={false}>{data ? <><Table rows={data.items} onRow={r => setSel(r.id)} cols={[

@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { get, fmtDT, fmtDur } from '../api'
+import { useAuth, can } from '../App'
+import { Endpoints as EmsEndpoints, Overview as BackupOverview } from './Protection'
 import { Card, Drawer, Loading, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, Tabs, useLoad } from '../ui'
 
 const AV = { 0: ['mut', 'desconhecido'], 1: ['ok', 'disponível'], 2: ['bad', 'indisponível'] }
@@ -16,13 +18,22 @@ function HostDetail({ id, onClose }) {
   </>}</Drawer>
 }
 
+// Backup (Acronis) e endpoints (EMS) dentro do Monitoramento: carrega so quando a aba e aberta
+function ProtTab({ kind }) {
+  const me = useAuth(); const ov = useLoad(() => get(kind === 'bkp' ? '/protection/overview' : '/protection/ems'), [kind], 60000); const clients = useLoad(() => get('/clients'), [])
+  if (!ov.data || !clients.data) return <Loading err={ov.err} />
+  const edit = can(me, 'clients.edit')
+  return kind === 'bkp' ? <BackupOverview ov={ov.data} clients={clients.data} edit={edit} reload={ov.reload} /> : <EmsEndpoints ov={ov.data} clients={clients.data} edit={edit} reload={ov.reload} />
+}
+
 export default function Monitoring() {
   const [tab, setTab] = useState('hosts'); const [q, setQ] = useState(''); const [groupid, setGroup] = useState(''); const [av, setAv] = useState(''); const [page, setPage] = useState(1); const [sel, setSel] = useState(null)
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data, err } = useLoad(() => get(`/zabbix/hosts?page=${page}&size=50&q=${encodeURIComponent(q)}&groupid=${groupid}${av !== '' ? '&available=' + av : ''}`), [page, q, groupid, av], 30000)
   return <>
-    <PageHead title="Monitoramento" desc="Hosts e Host Groups sincronizados do Zabbix a cada 10 minutos, com o cliente associado a cada um. Backup (Acronis) e estações (EMS) ficam em Backup e Endpoints." />
-    <Tabs value={tab} onChange={setTab} tabs={[['hosts', 'Hosts'], ['groups', 'Host Groups']]} />
+    <PageHead title="Monitoramento" desc="Tudo o que a NAVI monitora: hosts e grupos (Zabbix), backup (Acronis) e endpoints (FortiClient EMS), com o cliente associado a cada item" />
+    <Tabs value={tab} onChange={setTab} tabs={[['hosts', 'Hosts (Zabbix)'], ['groups', 'Host Groups (Zabbix)'], ['bkp', 'Backup (Acronis)'], ['eps', 'Endpoints (EMS)']]} />
+    {(tab === 'bkp' || tab === 'eps') && <ProtTab kind={tab} />}
     {tab === 'hosts' && <>
       <div className="bar"><div className="grow"><input placeholder="Buscar host, IP ou DNS…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>
         <select value={groupid} onChange={e => { setGroup(e.target.value); setPage(1) }}><option value="">Todos os grupos</option>{(groups || []).map(g => <option key={g.groupid} value={g.groupid}>{g.name}</option>)}</select>

@@ -254,28 +254,32 @@ def list_tenants(db: Session = Depends(get_db), _=Depends(require("clients.view"
 _run_limiter = RateLimiter(1, 600)  # um disparo por item a cada 10 minutos
 
 
-@router.post("/assets/{aid}/run-backup")
-def run_backup(aid: int, request: Request, db: Session = Depends(get_db), user=Depends(require("protection.run"))):
-    """Executa o plano de backup do item agora (Acronis). Exige habilitar a acao em Configuracoes e permissao protection.run."""
+def do_run_backup(db: Session, request: Request, a: ExtAsset | None, who: str = "") -> dict:
+    """Nucleo do botao "Executar backup agora" (usado pelo painel e pelo portal): valida, limita, executa e audita."""
     if S.get(db, "acronis.actions") != "1":
         raise HTTPException(409, "A execução de backups pela NAVI está desativada. Um administrador pode habilitar em Configurações → Acronis.")
-    a = db.get(ExtAsset, aid)
     pid = (a.meta or {}).get("policy_id") if a else None
     if not a or a.source != P.SRC or a.type != "machine" or not pid:
         raise HTTPException(422, "Este item não permite execução manual (só máquinas com plano de backup conhecido).")
-    key = f"a{aid}"
+    key = f"a{a.id}"
     if _run_limiter.blocked(key):
         raise HTTPException(429, "Um backup já foi solicitado para este item há poucos minutos. Aguarde antes de repetir.")
     try:
         res = factory.acronis_for(db, (a.meta or {}).get("dc")).run_policy(pid, a.ext_id)
     except Exception as e:  # noqa: BLE001
-        audit.log(db, request, "backup_run", "ext_asset", aid, result="falha", detail={"item": a.name, "error": str(e)[:200]})
+        audit.log(db, request, "backup_run", "ext_asset", a.id, result="falha", detail={"item": a.name, "origem": who, "error": str(e)[:200]})
         db.commit()
         raise HTTPException(502, f"O Acronis recusou a execução: {str(e)[:200]}") from None
     _run_limiter.hit(key)
-    audit.log(db, request, "backup_run", "ext_asset", aid, detail={"item": a.name, "plano": a.policy_name, "status": res["status"]})
+    audit.log(db, request, "backup_run", "ext_asset", a.id, detail={"item": a.name, "plano": a.policy_name, "status": res["status"], "origem": who})
     db.commit()
     return {"ok": True, "detail": f"Backup solicitado ao Acronis para {a.name}. O resultado aparece aqui na próxima sincronização."}
+
+
+@router.post("/assets/{aid}/run-backup")
+def run_backup(aid: int, request: Request, db: Session = Depends(get_db), user=Depends(require("protection.run"))):
+    """Executa o plano de backup do item agora (Acronis). Exige habilitar a acao em Configuracoes e permissao protection.run."""
+    return do_run_backup(db, request, db.get(ExtAsset, aid), "painel")
 
 
 @router.get("/client/{cid}")
@@ -289,7 +293,7 @@ def client_protection(db: Session, cid: int, admin: bool = False) -> dict:
     tens = list(db.scalars(select(ExtTenant).where(ExtTenant.client_id == cid, ExtTenant.active.is_(True))))
     ac_ids = [t.id for t in tens if t.source == P.SRC]
     names = {"machine": "Máquina", "database": "Banco de dados", "mailbox": "Caixa de e-mail", "drive": "OneDrive", "site": "SharePoint", "team": "Teams"}
-    actions = admin and S.get(db, "acronis.actions") == "1"
+    actions = S.get(db, "acronis.actions") == "1"
     backups = []
     if ac_ids:
         for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(ac_ids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):

@@ -85,8 +85,8 @@ def ack_job(name: str, request: Request, user=Depends(current_user), db: Session
 
 
 @router.get("/dashboard")
-def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depends(get_db), _=Depends(require("dashboard.view"))):
-    days = max(1, min(days, 90))
+def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depends(get_db), _=Depends(require("dashboard.view"))):
+    days = round(max(1 / 24, min(days, 90)), 4)  # de 1 hora a 90 dias
 
     def build():
         now = datetime.now(timezone.utc)

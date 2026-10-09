@@ -25,18 +25,19 @@ export default function FinanceTab({ clientId }) {
     { h: 'Descrição', r: r => <div className="trunc" title={r.description}>{r.description || '—'}</div> },
     { h: 'Nota', r: r => r.nfse ? <span className="chip">NFS-e {r.nfse}</span> : <span className="sub">—</span> },
     { h: 'Vencimento', r: r => day(r.due_date) }, { h: 'Valor', r: r => <b>{brl(r.amount)}</b> }, { h: 'Pago', r: r => brl(r.paid) }, { h: '', r: r => links(r) }]
+  const go = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const notes = f.notes.filter(n => showCanc || n.status !== 'cancelada')
   return <>
     <div className="bar"><b style={{ fontSize: 17, fontFamily: 'var(--head)' }}>{f.month_label}</b><div className="grow" />
       <select style={{ width: 'auto' }} value={f.month} onChange={e => setMonth(e.target.value)}>{f.months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}<option value="all">Todos os períodos</option></select></div>
     <div className="grid g4" style={{ marginBottom: 16 }}>
-      <Stat label="A pagar no mês" value={brl(Math.max(0, (s.month_total || 0) - (s.month_paid || 0)))} desc={`${brl(s.month_total)} faturado · ${brl(s.month_paid)} pago`} />
-      <Stat label="Em atraso" value={brl(s.overdue_total)} tone={s.overdue_count ? 'bad' : 'ok'} desc={s.overdue_count ? `${s.overdue_count} título(s) vencido(s)` : 'Nenhum título em atraso'} />
-      <Stat label="Próximo vencimento" value={day(s.next_due)} desc={`${s.open_count} título(s) em aberto no total`} />
+      <Stat onClick={() => go('fin-titulos')} label="A pagar no mês" value={brl(Math.max(0, (s.month_total || 0) - (s.month_paid || 0)))} desc={`${brl(s.month_total)} faturado · ${brl(s.month_paid)} pago`} />
+      <Stat onClick={() => go(f.late.length ? 'fin-atraso' : 'fin-titulos')} label="Em atraso" value={brl(s.overdue_total)} tone={s.overdue_count ? 'bad' : 'ok'} desc={s.overdue_count ? `${s.overdue_count} título(s) vencido(s)` : 'Nenhum título em atraso'} />
+      <Stat onClick={() => go('fin-titulos')} label="Próximo vencimento" value={day(s.next_due)} desc={`${s.open_count} título(s) em aberto no total`} />
       <Stat label="Atualizado" value={f.last_sync ? fmtDT(f.last_sync) : '—'} desc="Sincronização com o faturamento" />
     </div>
-    {f.late.length > 0 && <Card title={`⚠️ Em atraso de meses anteriores (${f.late.length})`} pad={false} style={{ marginBottom: 16 }}><Table rows={f.late} cols={tcols} /></Card>}
-    <Card title="Boletos e cobranças do período" pad={false}><Table rows={f.titles} empty="Nenhum título neste período." cols={tcols} /></Card>
+    {f.late.length > 0 && <div id="fin-atraso"><Card title={`⚠️ Em atraso de meses anteriores (${f.late.length})`} pad={false} style={{ marginBottom: 16 }}><Table rows={f.late} cols={tcols} /></Card></div>}
+    <div id="fin-titulos"><Card title="Boletos e cobranças do período" pad={false}><Table rows={f.titles} empty="Nenhum título neste período." cols={tcols} /></Card></div>
     <Card title="Notas fiscais emitidas" pad={false} style={{ marginTop: 16 }} actions={<label className="check"><input type="checkbox" checked={showCanc} onChange={e => setShowCanc(e.target.checked)} />mostrar canceladas</label>}>
       <Table rows={notes} empty="Nenhuma nota fiscal neste período." cols={[
         { h: 'Número', r: r => <b>{r.number || '—'}</b> }, { h: 'Descrição', r: r => <div className="trunc" title={r.description}>{r.description}</div> },

@@ -291,11 +291,11 @@ def client_hosts(db: Session, c: Client) -> list[ZbxHost]:
 
 
 @router.get("/{cid}/dashboard")
-def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends(require("clients.view"))):
+def dashboard(cid: int, days: float = 30, db: Session = Depends(get_db), _=Depends(require("clients.view"))):
     c = db.get(Client, cid)
     if not c:
         raise HTTPException(404)
-    days = max(1, min(days, 90))  # limite = retencao local de eventos
+    days = round(max(1 / 24, min(days, 90)), 4)  # limite = retencao local de eventos
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)

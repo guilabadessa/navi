@@ -9,7 +9,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
 import Portal from './Portal'
 import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
-import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, ServiceChips, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
+import { Card, Check, Field, Loading, Modal, MultiPick, PERIODS, PageHead, Pill, ServiceChips, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { cnpjOk, maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
 
@@ -124,7 +124,7 @@ export function Clients() {
 }
 
 export function ClientDetail() {
-  const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [preview, setPreview] = useState(false); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
+  const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [preview, setPreview] = useState(false); const [days, setDays] = useState('0.0417'); const [edit, setEdit] = useState(null)
   const { data: d, err, reload } = useLoad(() => get(`/clients/${id}/dashboard?days=${days}`), [id, days], 30000)
   const [tab, setTab] = useState('geral'); const prot = useLoad(() => get(`/protection/client/${id}`), [id], 60000)
   if (!d) return <Loading err={err} />
@@ -133,7 +133,7 @@ export function ClientDetail() {
   return <>
     <PageHead title={c.trade_name} desc={[c.legal_name, c.cnpj].filter(Boolean).join(' · ')} badges={<ServiceChips s={d.services} />}>
       <Link className="btn" to="/clientes">← Clientes</Link>
-      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
+      <select style={{ width: 'auto' }} value={days} onChange={e => setDays(e.target.value)} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
@@ -141,10 +141,10 @@ export function ClientDetail() {
     {tab !== 'geral' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} detail /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} detail /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
     {tab === 'geral' && <>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>
-        <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
-        <Stat label="Incidentes" value={s.incidents} desc={`${s.resolved} resolvidos · ${s.open} em aberto`} tone={s.open ? 'warn' : ''} />
-        <Stat label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
-        <Stat label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
+        <Stat onClick={() => nav('/monitoramento')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
+        <Stat onClick={() => nav(`/eventos?client_id=${id}&days=${days}`)} label="Incidentes" value={s.incidents} desc={`${s.resolved} resolvidos · ${s.open} em aberto`} tone={s.open ? 'warn' : ''} />
+        <Stat onClick={() => nav(`/eventos?client_id=${id}&days=${days}`)} label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
+        <Stat onClick={() => nav('/monitoramento')} label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
       </div> : <p className="sub" style={{ marginBottom: 16 }}>Este cliente não possui hosts de infraestrutura monitorados — o acompanhamento é feito pelas abas de backup e endpoints.</p>}
     <Contracts items={d.contracts} title="Serviços contratados (Conta Azul)" />
     <div className="grid g-2-1" style={{ marginBottom: 16 }}>

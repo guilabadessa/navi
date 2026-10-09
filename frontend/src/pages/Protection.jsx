@@ -10,7 +10,7 @@ const ST = { ok: 'ok', falha: 'bad', 'sem backup': 'bad', offline: 'warn', 'sem 
 const TYPES = { machine: 'Máquina', database: 'Banco de dados', mailbox: 'Caixa de e-mail', drive: 'OneDrive', site: 'SharePoint', team: 'Teams' }
 const ago = (v) => { if (!v) return '—'; const h = (Date.now() - new Date(v).getTime()) / 36e5; return h < 1 ? 'há ' + Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? 'há ' + Math.round(h) + ' h' : 'há ' + Math.round(h / 24) + ' d' }
 
-function Overview({ ov, clients, edit, reload }) {
+export function Overview({ ov, clients, edit, reload }) {
   const toast = useToast(); const nav = useNavigate()
   const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [ty, setTy] = useState(''); const [cl, setCl] = useState('')
   const rows = ov.assets.filter(a => (!q || (a.name + ' ' + (a.tenant || '')).toLowerCase().includes(q.toLowerCase())) && (!st || a.status === st) && (!ty || a.type === ty) && (!cl || String(a.client_id) === cl))
@@ -19,10 +19,10 @@ function Overview({ ov, clients, edit, reload }) {
   const c = ov.counts
   return <>
     <div className="grid g4" style={{ marginBottom: 16 }}>
-      <Stat label="Backups em dia" value={fmtNum(c.ok)} tone="ok" desc={`${ov.assets.length} itens protegidos`} />
-      <Stat label="Com falha" value={fmtNum(c.falha)} tone={c.falha ? 'bad' : ''} desc={`${ov.failed_24h} falha(s) nas últimas 24h`} />
-      <Stat label="Sem backup recente" value={fmtNum(c['sem backup'])} tone={c['sem backup'] ? 'bad' : ''} desc={`sem sucesso há mais de ${ov.thresholds.stale_h}h`} />
-      <Stat label="Agentes offline" value={fmtNum(c.offline)} tone={c.offline ? 'warn' : ''} desc={`offline há mais de ${Math.round(ov.thresholds.offline_min / 60)}h`} />
+      <Stat onClick={() => setSt("ok")} label="Backups em dia" value={fmtNum(c.ok)} tone="ok" desc={`${ov.assets.length} itens protegidos`} />
+      <Stat onClick={() => setSt("falha")} label="Com falha" value={fmtNum(c.falha)} tone={c.falha ? 'bad' : ''} desc={`${ov.failed_24h} falha(s) nas últimas 24h`} />
+      <Stat onClick={() => setSt("sem backup")} label="Sem backup recente" value={fmtNum(c['sem backup'])} tone={c['sem backup'] ? 'bad' : ''} desc={`sem sucesso há mais de ${ov.thresholds.stale_h}h`} />
+      <Stat onClick={() => setSt("offline")} label="Agentes offline" value={fmtNum(c.offline)} tone={c.offline ? 'warn' : ''} desc={`offline há mais de ${Math.round(ov.thresholds.offline_min / 60)}h`} />
     </div>
     {ov.alerts.length > 0 && <Card title={`Problemas de backup em aberto (${ov.alerts.length})`} pad={false} style={{ marginBottom: 16 }}>
       <Table rows={ov.alerts} onRow={r => nav(`/eventos?kind=backup&q=${encodeURIComponent(r.host || '')}&days=`)} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Cliente', r: r => r.client_name || <Pill tone="warn">sem cliente</Pill> },
@@ -41,7 +41,7 @@ function Overview({ ov, clients, edit, reload }) {
 }
 
 const EST = { online: 'ok', offline: 'mut', 'sem contato': 'warn', 'antivírus off': 'bad', assinaturas: 'warn', quarentena: 'bad', atenção: 'warn', ignorado: 'mut' }
-function Endpoints({ ov, clients, edit, reload }) {
+export function Endpoints({ ov, clients, edit, reload }) {
   const toast = useToast(); const nav = useNavigate()
   const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [cl, setCl] = useState('')
   const rows = ov.assets.filter(a => (!q || (a.name + ' ' + (a.user || '') + ' ' + (a.site || '')).toLowerCase().includes(q.toLowerCase())) && (!st || a.status === st) && (!cl || String(a.client_id) === cl))
@@ -50,10 +50,10 @@ function Endpoints({ ov, clients, edit, reload }) {
   return <>
     {ov.blocked && <div className="banner bad"><div className="grow"><b>O EMS recusou o login.</b> Corrija o usuário/senha em Configuração e salve para tentar novamente (a NAVI não insiste, para não bloquear o usuário no EMS).</div></div>}
     <div className="grid g4" style={{ marginBottom: 16 }}>
-      <Stat label="Endpoints" value={fmtNum(ov.total)} desc={`${ov.online} online agora`} />
-      <Stat label="Com problema" value={fmtNum(prob)} tone={prob ? 'bad' : 'ok'} desc="sem contato, antivírus, assinaturas, quarentena" />
-      <Stat label="Sem contato" value={fmtNum(c['sem contato'] || 0)} tone={c['sem contato'] ? 'warn' : ''} desc={`há mais de ${ov.offline_days} dias`} />
-      <Stat label="Antivírus desativado" value={fmtNum(c['antivírus off'] || 0)} tone={c['antivírus off'] ? 'bad' : ''} desc="estações online sem proteção" />
+      <Stat onClick={() => setSt("")} label="Endpoints" value={fmtNum(ov.total)} desc={`${ov.online} online agora`} />
+      <Stat onClick={() => setSt(["sem contato", "antivírus off", "assinaturas", "quarentena", "atenção"].find(k => c[k]) || "")} label="Com problema" value={fmtNum(prob)} tone={prob ? 'bad' : 'ok'} desc="sem contato, antivírus, assinaturas, quarentena" />
+      <Stat onClick={() => setSt("sem contato")} label="Sem contato" value={fmtNum(c['sem contato'] || 0)} tone={c['sem contato'] ? 'warn' : ''} desc={`há mais de ${ov.offline_days} dias`} />
+      <Stat onClick={() => setSt("antivírus off")} label="Antivírus desativado" value={fmtNum(c['antivírus off'] || 0)} tone={c['antivírus off'] ? 'bad' : ''} desc="estações online sem proteção" />
     </div>
     {ov.alerts.length > 0 && <Card title={`Problemas de endpoints em aberto (${ov.alerts.length})`} pad={false} style={{ marginBottom: 16 }}>
       <Table rows={ov.alerts} onRow={r => nav(`/eventos?kind=endpoint&q=${encodeURIComponent(r.host || '')}&days=`)} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Cliente', r: r => r.client_name || <Pill tone="warn">sem cliente</Pill> },

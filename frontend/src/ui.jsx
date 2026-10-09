@@ -16,8 +16,14 @@ export const Card = ({ title, actions, children, pad = true, style }) => (
     {pad ? <div className="bd">{children}</div> : children}
   </div>)
 
-export const Stat = ({ label, value, desc, tone }) => (
-  <div className={'card stat ' + (tone || '')}><div className="l">{label}</div><div className="v">{value}</div>{desc && <div className="d">{desc}</div>}</div>)
+// Cartao de indicador. Com `onClick`, o cartao inteiro e clicavel (teclado incluido) e leva para o detalhe.
+export const Stat = ({ label, value, desc, tone, onClick }) => (
+  <div className={'card stat ' + (tone || '') + (onClick ? ' cardlink' : '')} {...(onClick ? { role: 'button', tabIndex: 0, onClick, onKeyDown: e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick(e)) } : {})}>
+    <div className="l">{label}</div><div className="v">{value}</div>{desc && <div className="d">{desc}</div>}</div>)
+
+// Periodos dos filtros (valor em dias; 1 hora = 1/24)
+export const PERIODS = [['0.0417', 'Última hora'], ['1', 'Últimas 24h'], ['7', 'Últimos 7 dias'], ['30', 'Últimos 30 dias'], ['90', 'Últimos 90 dias']]
+export const periodLabel = (d) => (PERIODS.find(([v]) => Math.abs(+v - +d) < 0.01) || [0, `Últimos ${d} dias`])[1]
 
 export const SevBadge = ({ n }) => <span className={'badge sev' + n}>{SEV[n] ?? n}</span>
 // Etiquetas dos servicos do cliente (infraestrutura / backup / estacoes)

@@ -289,7 +289,7 @@ def client_contracts(db: Session, client_id: int) -> list[dict]:
     rows = db.scalars(select(ClientContract).where(ClientContract.client_id == client_id, ClientContract.status == "ATIVO").order_by(ClientContract.number))
     return [{"items": [{"name": i.get("desc") or i.get("name"), "detail": i.get("name") if i.get("desc") and i.get("name") != i.get("desc") else None, "qty": i.get("qty")} for i in (r.items or [])],
              "number": r.number, "start": r.start_date.isoformat() if r.start_date else None, "end": r.end_date.isoformat() if r.end_date else None,
-             "lines": [ln.strip(" -•\t") for ln in (r.description or "").splitlines() if ln.strip()]} for r in rows]
+             "lines": []} for r in rows]
 
 
 def sync_all(db: Session, ca: ContaAzul) -> dict:

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, EyeOff, Wrench, Building2 } from 'lucide-react'
 import { get, post, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
-import { Card, Loading, Modal, PageHead, Pill, SevBadge, Stat, Table, useLoad, useToast } from '../ui'
+import { Card, Loading, Modal, PERIODS, PageHead, Pill, SevBadge, Stat, Table, periodLabel, useLoad, useToast } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, can } from '../App'
 
@@ -66,7 +66,7 @@ function FailedSends({ items, reload, canAck }) {
 
 export default function Dashboard() {
   const me = useAuth(); const toast = useToast(); const nav = useNavigate()
-  const [cl, setCl] = useState(ls('cl', '')); const [days, setDays] = useState(ls('days', '30'))
+  const [cl, setCl] = useState(ls('cl', '')); const [days, setDays] = useState(ls('period', '0.0417'))
   const clients = useLoad(() => get('/clients'), [])
   const { data: d, err, reload } = useLoad(() => get(`/dashboard?days=${days}${cl ? '&client_id=' + cl : ''}`), [cl, days], 20000)
   const health = useLoad(() => get('/dashboard/clients-health'), [], 30000)
@@ -84,8 +84,8 @@ export default function Dashboard() {
     <PageHead title="Painel do NOC" desc={`Situação de todos os clientes em tempo real · atualizado às ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
       <select style={{ width: 'auto' }} value={cl} onChange={e => { setCl(e.target.value); lset('cl', e.target.value) }}>
         <option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
-      <select style={{ width: 'auto' }} value={days} onChange={e => { setDays(e.target.value); lset('days', e.target.value) }}>
-        {[1, 7, 30, 90].map(x => <option key={x} value={x}>{x === 1 ? 'Últimas 24h' : `Últimos ${x} dias`}</option>)}</select>
+      <select style={{ width: 'auto' }} value={days} onChange={e => { setDays(e.target.value); lset('period', e.target.value) }} aria-label="Período">
+        {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
     </PageHead>
 
     {d.stale_jobs.length > 0 && <JobAlerts jobs={d.stale_jobs} reload={reload} canAck={can(me, 'routines.edit')} />}
@@ -97,24 +97,24 @@ export default function Dashboard() {
       <div className="cardlink" onClick={() => evs('&status=PROBLEM')}><Stat label="Problemas ativos" value={fmtNum(d.problems_active)} tone={d.problems_active ? 'bad' : 'ok'} desc={`${d.clients_affected} cliente(s) afetado(s)`} /></div>
       {noInfra ? <>
         <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backups com alerta" value={fmtNum(d.backup_active || 0)} tone={d.backup_active ? 'bad' : 'ok'} desc={d.services.backup ? 'Acronis' : 'cliente sem backup'} /></div>
-        <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Estações com alerta" value={fmtNum(d.endpoint_active || 0)} tone={d.endpoint_active ? 'bad' : 'ok'} desc={d.services.endpoint ? 'FortiClient EMS' : 'cliente sem estações'} /></div>
-        <Stat label="Serviços do cliente" value={[d.services.backup && 'Backup', d.services.endpoint && 'Estações'].filter(Boolean).join(' + ') || 'Nenhum'} desc="Sem hosts de infraestrutura associados" />
+        <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Endpoints com alerta" value={fmtNum(d.endpoint_active || 0)} tone={d.endpoint_active ? 'bad' : 'ok'} desc={d.services.endpoint ? 'FortiClient EMS' : 'cliente sem endpoints'} /></div>
+        <Stat onClick={() => nav('/clientes/' + cl)} label="Serviços do cliente" value={[d.services.backup && 'Backup', d.services.endpoint && 'Endpoints'].filter(Boolean).join(' + ') || 'Nenhum'} desc="Sem hosts de infraestrutura associados" />
       </> : <>
       <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label="Hosts monitorados" value={fmtNum(d.hosts_total)} desc={`${d.hosts_down} indisponível(is)`} tone={d.hosts_down ? 'warn' : ''} /></div>
-      <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label={`Disponibilidade (${days}d)`} value={fmtPct(d.availability_30d, 3)} tone="ok" desc={`MTTR ${fmtDur(d.mttr_s)}`} /></div>
+      <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label={`Disponibilidade · ${periodLabel(days)}`} value={fmtPct(d.availability_30d, 3)} tone="ok" desc={`MTTR ${fmtDur(d.mttr_s)}`} /></div>
       <div className="cardlink" onClick={() => evs('&status=PROBLEM&q=link')}><Stat label="Links indisponíveis" value={fmtNum(d.links_down)} tone={d.links_down ? 'bad' : ''} desc="alertas de link/WAN em aberto" /></div>
       </>}
     </div>
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => nav('/eventos?days=1')}><Stat label="Problemas hoje" value={fmtNum(d.problems_today)} /></div>
-      <div className="cardlink" onClick={() => evs()}><Stat label={`Últimos ${days} dias`} value={fmtNum(d.problems_30d)} /></div>
+      <div className="cardlink" onClick={() => evs()}><Stat label={periodLabel(days)} value={fmtNum(d.problems_30d)} /></div>
       <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backup e endpoints" value={fmtNum((d.backup_active || 0) + (d.endpoint_active || 0))} tone={(d.backup_active || 0) + (d.endpoint_active || 0) ? 'bad' : 'ok'} desc={`Acronis ${d.backup_active || 0} · EMS ${d.endpoint_active || 0}`} /></div>
-      <Stat label="Alertas enviados (24h)" value={fmtNum(d.alerts_24h?.sent || 0)} tone={failed ? 'warn' : ''} desc={`${failed} falha(s) · ${d.alerts_24h?.skipped || 0} ignorado(s)`} />
+      <Stat onClick={() => nav('/whatsapp')} label="Alertas enviados (24h)" value={fmtNum(d.alerts_24h?.sent || 0)} tone={failed ? 'warn' : ''} desc={`${failed} falha(s) · ${d.alerts_24h?.skipped || 0} ignorado(s)`} />
     </div>
 
     <div className="grid g-2-1" style={{ marginBottom: 16 }}>
-      <Card title={`Incidentes por dia (${days === '1' ? '24h' : days + ' dias'})`}><div style={{ height: 250 }}><ResponsiveContainer>
-        {days === '1'
+      <Card title={+days <= 1 ? `Incidentes por hora (últimas 24h)` : `Incidentes por dia · ${periodLabel(days)}`}><div style={{ height: 250 }}><ResponsiveContainer>
+        {+days <= 1
           ? <BarChart data={d.by_hour}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="h" tick={{ fontSize: 11 }} interval={1} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={34} /><Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart>
           : <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={34} />
             <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart>}</ResponsiveContainer></div></Card>
@@ -145,8 +145,8 @@ export default function Dashboard() {
         { h: '', r: r => r.client_id && can(me, 'clients.edit') && <button className="btn sm" title="Colocar o cliente em manutenção por 2h" onClick={e => { e.stopPropagation(); maint(r.client_id, r.client_name) }}><Wrench /></button> }]} /></Card>
 
     <div className="grid g2">
-      <Card title={`Top hosts com problemas (${days}d)`} pad={false}><Table rows={d.top_hosts} onRow={r => nav(`/eventos?q=${encodeURIComponent(r.host)}&days=${days}`)} cols={[{ h: 'Host', k: 'host' }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponível', r: r => fmtDur(r.downtime_s) }]} /></Card>
-      <Card title={`Top clientes com problemas (${days}d)`} pad={false}><Table rows={d.top_clients} onRow={r => nav(`/clientes/${r.client_id}`)} cols={[{ h: 'Cliente', k: 'client' }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponível', r: r => fmtDur(r.downtime_s) }]} /></Card>
+      <Card title={`Top hosts com problemas · ${periodLabel(days)}`} pad={false}><Table rows={d.top_hosts} onRow={r => nav(`/eventos?q=${encodeURIComponent(r.host)}&days=${days}`)} cols={[{ h: 'Host', k: 'host' }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponível', r: r => fmtDur(r.downtime_s) }]} /></Card>
+      <Card title={`Top clientes com problemas · ${periodLabel(days)}`} pad={false}><Table rows={d.top_clients} onRow={r => nav(`/clientes/${r.client_id}`)} cols={[{ h: 'Cliente', k: 'client' }, { h: 'Incidentes', k: 'incidents' }, { h: 'Indisponível', r: r => fmtDur(r.downtime_s) }]} /></Card>
     </div>
     <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       {Object.entries(d.health || {}).map(([k, v]) => <Pill key={k} tone={v.ok ? 'ok' : 'bad'}>{k}: {v.detail}</Pill>)}</div></>

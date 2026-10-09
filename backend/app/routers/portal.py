@@ -68,11 +68,11 @@ def my_clients(db: Session = Depends(get_db), user: User = Depends(require_any_p
 
 
 @router.get("/overview")
-def overview(days: int = 30, client_id: int | None = None, min_sev: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
+def overview(days: float = 30, client_id: int | None = None, min_sev: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
     c = _client_for(db, user, client_id)
     # severidade minima mostrada: a configurada para o usuario; a equipe, ao pre-visualizar, escolhe (padrao Alta)
     msev = user.portal_min_sev if user.role == "CLIENTE" else (4 if min_sev is None else max(0, min(min_sev, 5)))
-    days = max(1, min(days, 90))
+    days = round(max(1 / 24, min(days, 90)), 4)
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
     hosts = client_hosts(db, c)
@@ -152,6 +152,18 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
         "reports": [{"id": r.id, "name": r.name, "period_start": r.period_start.isoformat() if r.period_start else None,
                      "period_end": r.period_end.isoformat() if r.period_end else None, "generated_at": r.generated_at.isoformat()} for r in runs]}
+
+
+@router.post("/backups/{aid}/run")
+def run_backup(aid: int, request: Request, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require("portal.run"))):
+    """O cliente pede para executar de novo o backup de um item dele que falhou (mesmas regras e limites do painel)."""
+    from .protection import do_run_backup
+    c = _client_for(db, user, client_id)
+    a = db.get(ExtAsset, aid)
+    ten = db.get(ExtTenant, a.ext_tenant_id) if a and a.ext_tenant_id else None
+    if not a or not ten or ten.client_id != c.id:
+        raise HTTPException(404, "Item não encontrado")
+    return do_run_backup(db, request, a, f"portal:{user.email}")
 
 
 @router.get("/reports/{rid}/download")
