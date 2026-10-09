@@ -109,7 +109,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <div id="ftr">{{ lh.company }}{% if lh.cnpj %} · CNPJ {{ lh.cnpj }}{% endif %}{% if lh.address %} · {{ lh.address }}{% endif %}{% if lh.phone %} · {{ lh.phone }}{% endif %}{% if lh.site %} · {{ lh.site }}{% endif %}</div>
 
 {% set ns = namespace(n=0) %}
-{% set ncards = (1 if infra_on else 0) + (1 if backup else 0) + (1 if endpoints else 0) %}
+{% set ncards = (1 if infra_on else 0) + (1 if backup else 0) + (1 if endpoints else 0) + (1 if cloud else 0) %}
 {% macro tone(t) %}{{ {'ok':'#16a34a','warn':'#d97706','bad':'#bd1723','mut':'#8791b0'}[t] }}{% endmacro %}
 
 <!-- ============ CAPA / VISAO EXECUTIVA ============ -->
@@ -153,6 +153,13 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
   {% if endpoints.problems %}<span class="pill warn">{{ endpoints.problems }} COM PENDÊNCIA</span>{% else %}<span class="pill ok">TUDO EM CONFORMIDADE</span>{% endif %}
   <div class="m"><b>{{ endpoints.online }}</b> online agora</div>
   <div class="m"><b>{{ endpoints.inc.total if endpoints.inc else 0 }}</b> ocorrência(s) no período</div></div></td>{% endif %}
+{% if cloud %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#0a7bb5">
+  <div class="l">Cloud Orca</div>
+  <div class="v">{{ cloud.running }}<small> / {{ cloud.total }}</small></div><div class="d">máquinas ligadas</div>
+  <table class="trk"><tr><td class="f" style="width:{{ cloud.pct }}%;background:{{ '#16a34a' if not cloud.problems else '#d97706' }}"></td><td class="r"></td></tr></table>
+  {% if cloud.problems %}<span class="pill bad">{{ cloud.problems }} DESLIGADA(S)/COM ERRO</span>{% else %}<span class="pill ok">TUDO OPERANDO</span>{% endif %}
+  <div class="m"><b>{{ cloud.cpu }}</b> vCPU · <b>{{ cloud.ram }}</b> GB de memória</div>
+  <div class="m"><b>{{ cloud.inc.total if cloud.inc else 0 }}</b> ocorrência(s) no período</div></div></td>{% endif %}
 </tr></table>
 
 {% if hl %}<div class="blk">Destaques</div>
@@ -162,7 +169,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 
 <div class="blk">Neste relatório</div>
 <table class="meta" style="margin:0;border-top:none"><tr>
-{% set secs = ([('Infraestrutura', 'Disponibilidade, incidentes, hosts e eventos')] if infra_on else []) + ([('Backup', 'Itens protegidos, conformidade e ocorrências')] if backup else []) + ([('Endpoints', 'Conformidade, proteção por equipamento e ocorrências')] if endpoints else []) %}
+{% set secs = ([('Infraestrutura', 'Disponibilidade, incidentes, hosts e eventos')] if infra_on else []) + ([('Backup', 'Itens protegidos, conformidade e ocorrências')] if backup else []) + ([('Endpoints', 'Conformidade, proteção por equipamento e ocorrências')] if endpoints else []) + ([('Cloud Orca', 'Máquinas, recursos e ocorrências')] if cloud else []) %}
 {% for t, d in secs %}<td style="width:{{ (100 / (secs|length))|round(2) }}%;padding-right:4mm"><b>{{ '%02d'|format(loop.index) }} · {{ t }}</b><span style="font-weight:400;color:#6b7390;font-size:9pt">{{ d }}</span></td>{% endfor %}
 </tr></table>
 
@@ -253,6 +260,26 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <table class="data"><thead><tr><th>Endpoint</th><th>Usuário / host</th><th>Proteção</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
 {% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.techs }}</td><td>{{ b.last }}</td><td><span class="st {{ 'ok' if b.status == 'Online' else ('mut' if b.status == 'Offline' else ('bad' if b.status in ('Sem contato', 'Antivírus off', 'Quarentena') else 'warn')) }}">{{ b.status }}</span></td></tr>{% endfor %}</tbody></table>
 {{ incidents(endpoints, 'endpoints') }}
+{% endif %}
+
+<!-- ============ CLOUD ORCA ============ -->
+{% if cloud %}
+{% set ns.n = ns.n + 1 %}
+{% if ns.n > 1 %}<div class="pb"></div>{% endif %}
+<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Cloud Orca<small>máquinas virtuais</small></td></tr></table></div>
+<table class="kp"><tr>
+  <td><div class="l">Máquinas</div><div class="v">{{ cloud.total }}</div></td>
+  <td><div class="l">Ligadas</div><div class="v ok">{{ cloud.running }}</div></td>
+  <td><div class="l">Com atenção</div><div class="v {{ 'bad' if cloud.problems else '' }}">{{ cloud.problems }}</div></td>
+  <td><div class="l">vCPUs ligadas</div><div class="v">{{ cloud.cpu }}</div></td>
+  <td><div class="l">Memória ligada</div><div class="v">{{ cloud.ram }} GB</div></td>
+  <td><div class="l">Disco total</div><div class="v">{{ cloud.disk }} GB</div></td>
+</tr></table>
+{{ distbar(cloud) }}
+<div class="sub2">Máquinas e situação atual<span style="font:400 8.5pt Afacad;color:#6b7390"> · com atenção primeiro</span></div>
+<table class="data"><thead><tr><th>Máquina</th><th>Sistema</th><th>Recursos</th><th>IP</th><th>Situação</th></tr></thead><tbody>
+{% for b in cloud.rows %}<tr><td><b>{{ b.name }}</b></td><td>{{ b.os }}</td><td>{{ b.cpu }} vCPU · {{ b.ram }} GB · {{ b.disk }} GB</td><td>{{ b.ip }}</td><td><span class="st {{ 'ok' if b.state == 'Ligada' else ('bad' if b.state == 'Com erro' else 'mut') }}">{{ b.state }}</span></td></tr>{% endfor %}</tbody></table>
+{{ incidents(cloud, 'cloud') }}
 {% endif %}
 
 {% if notes %}<div class="sub2">Observações</div><div class="summary" style="margin-top:0">{{ notes }}</div>{% endif %}

@@ -59,6 +59,14 @@ def _client_for(db: Session, user: User, client_id: int | None) -> Client:
     return _client(db, user)
 
 
+def cloud_summary(db: Session, cid: int) -> dict | None:
+    from ..models import CloudVm
+    vms = list(db.scalars(select(CloudVm).where(CloudVm.client_id == cid, CloudVm.active.is_(True))))
+    if not vms:
+        return None
+    return {"total": len(vms), "running": sum(1 for v in vms if v.state == "RUNNING"), "off": [v.name for v in vms if v.state in ("STOPPED", "SHUTOFF", "ERROR") and not (v.expected_off or v.ignored)]}
+
+
 @router.get("/clients")
 def my_clients(db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
     """Clientes que o usuario pode acompanhar (para o seletor do portal)."""
@@ -83,7 +91,7 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
     vis = [e for e in allev if (e.severity or 0) >= msev]  # incidentes de TODAS as categorias (infra, backup, endpoints)
     sm = dict(k["summary"])
-    by_kind = {kd: {"total": sum(1 for e in vis if (e.kind or "infra") == kd), "open": sum(1 for e in vis if (e.kind or "infra") == kd and e.status == "PROBLEM")} for kd in ("infra", "backup", "endpoint")}
+    by_kind = {kd: {"total": sum(1 for e in vis if (e.kind or "infra") == kd), "open": sum(1 for e in vis if (e.kind or "infra") == kd and e.status == "PROBLEM")} for kd in ("infra", "backup", "endpoint", "cloud")}
     sm.update({"incidents": len(vis), "open": sum(1 for e in vis if e.status == "PROBLEM"), "resolved": sum(1 for e in vis if e.status != "PROBLEM"), "by_kind": by_kind})
     by_day: dict[str, int] = {}
     for e in vis:
@@ -149,6 +157,7 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
         "endpoints": {"enabled": bool(ep_assets), "assets": ep_assets, "alerts": ep_alerts},
         "protection": prot,
+        "cloud": cloud_summary(db, c.id),
         "services": services_service.of_client(db, c),
         "contracts": finance_service.client_contracts(db, c.id),
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],

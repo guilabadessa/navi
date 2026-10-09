@@ -397,7 +397,7 @@ class JobStatus(Base):
 
 
 class CloudAccount(Base):
-    """Chave de API da Nuvem Orca (BRASCLOUD) de UM cliente: a propria nuvem garante que a chave so enxerga a conta dele."""
+    """Chave de API da Cloud Orca (BRASCLOUD) de UM cliente: a propria nuvem garante que a chave so enxerga a conta dele."""
     __tablename__ = "cloud_accounts"
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), unique=True)
@@ -408,7 +408,31 @@ class CloudAccount(Base):
     owner: Mapped[str | None] = mapped_column(String(255))  # usuario dono da chave na nuvem (informativo)
     last_ok: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+    fails: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # consultas seguidas que falharam
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CloudVm(Base):
+    """Maquina virtual da Cloud Orca (copia local atualizada pelo worker: monitoramento, alertas, relatorios)."""
+    __tablename__ = "cloud_vms"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(64), unique=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str | None] = mapped_column(String(255))
+    state: Mapped[str | None] = mapped_column(String(24))
+    zone: Mapped[str | None] = mapped_column(String(64))
+    cpu: Mapped[int | None] = mapped_column(Integer)
+    ram_mb: Mapped[int | None] = mapped_column(Integer)
+    disk_gb: Mapped[int | None] = mapped_column(Integer)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    os: Mapped[str | None] = mapped_column(String(255))
+    network: Mapped[str | None] = mapped_column(String(128))
+    state_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    expected_off: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # desligada de proposito (pela NAVI): nao alerta
+    grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # reinicio em andamento: nao alerta ate aqui
+    ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # nao alertar esta maquina
 
 
 class ClientContract(Base):

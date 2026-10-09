@@ -35,6 +35,10 @@ function ServiceStatus({ d, go }) {
     const a = d.endpoints.assets.filter(x => x.status !== 'ignorado'); const bad = a.filter(x => x.status !== 'online' && x.status !== 'offline').length
     items.push({ k: 'eps', tab: 'eps', title: 'Endpoints', bad: bad > 0, line: `${a.length - bad} de ${a.length} endpoints em conformidade`, extra: bad ? `${bad} endpoint(s) com pendência` : 'Antivírus e proteção em dia' })
   }
+  if (d.cloud) {
+    const bad = d.cloud.off.length
+    items.push({ k: 'cloud', tab: 'cloud', title: 'Cloud Orca', bad: bad > 0, line: `${d.cloud.running} de ${d.cloud.total} máquinas ligadas`, extra: bad ? `${bad} máquina(s) desligada(s) ou com erro` : 'Todas as máquinas operando' })
+  }
   if (!items.length) return null
   return <div className="grid g3 svcstat" style={{ marginBottom: 16 }}>{items.map(i => <div key={i.k} className={'card svc cardlink ' + (i.bad ? 'bad' : 'ok')} style={{ padding: 16 }} role="button" tabIndex={0} onClick={() => go && go(i.tab)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && go && go(i.tab)}>
     <div className="l">{i.title}</div>
@@ -59,7 +63,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
   const infra = d ? d.services?.infra !== false : true
   const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ...(infra ? [['hosts', `Hosts (${d.hosts.length})`]] : []),
-    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Servidores']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
+    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Cloud Orca']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
@@ -81,7 +85,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
         <div className="grid g4" style={{ marginBottom: 16 }}>
           {infra && <Stat onClick={() => setTab('hosts')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />}
           <Stat onClick={() => { setFk(''); setTab('inc') }} label="Incidentes" value={fmtNum(s.incidents)} tone={s.open ? 'bad' : ''} desc={`${s.resolved} resolvido(s) · ${s.open} em aberto`} />
-          {['infra', 'backup', 'endpoint'].filter(k => d.services?.[k] !== false && (k === 'infra' ? infra : d.services?.[k])).map(k => <Stat key={k} onClick={() => { setFk(k); setTab('inc') }} label={`Incidentes · ${KIND[k]}`} value={fmtNum(s.by_kind?.[k]?.total || 0)} tone={s.by_kind?.[k]?.open ? 'bad' : ''} desc={`${s.by_kind?.[k]?.open || 0} em aberto`} />)}
+          {['infra', 'backup', 'endpoint', 'cloud'].filter(k => d.services?.[k] !== false && (k === 'infra' ? infra : d.services?.[k])).map(k => <Stat key={k} onClick={() => { setFk(k); setTab('inc') }} label={`Incidentes · ${KIND[k]}`} value={fmtNum(s.by_kind?.[k]?.total || 0)} tone={s.by_kind?.[k]?.open ? 'bad' : ''} desc={`${s.by_kind?.[k]?.open || 0} em aberto`} />)}
           {infra && <Stat onClick={() => setTab('inc')} label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR (infraestrutura)" />}
         </div>
         <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
@@ -95,7 +99,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
           <Card title={`Problemas em andamento (${d.active.length})`} pad={false}><Table rows={d.active} empty="🎉 Nenhum problema em andamento." onRow={() => { setFk(''); setFst('open'); setTab('inc') }} cols={[{ h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
             { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Em andamento há', r: r => <LiveDur since={r.started_at} /> }]} /></Card></>}
         {tab === 'inc' && <>
-          <div className="tabs" style={{ marginBottom: 12 }}>{[['', 'Todos', d.history.length], ...['infra', 'backup', 'endpoint'].filter(k => d.history.some(e => (e.kind || 'infra') === k) || d.services?.[k]).map(k => [k, KIND[k], d.history.filter(e => (e.kind || 'infra') === k).length])].map(([k, l, n]) => <button key={k || 'all'} className={fk === k ? 'on' : ''} onClick={() => setFk(k)}>{l} ({n})</button>)}</div>
+          <div className="tabs" style={{ marginBottom: 12 }}>{[['', 'Todos', d.history.length], ...['infra', 'backup', 'endpoint', 'cloud'].filter(k => d.history.some(e => (e.kind || 'infra') === k) || d.services?.[k]).map(k => [k, KIND[k], d.history.filter(e => (e.kind || 'infra') === k).length])].map(([k, l, n]) => <button key={k || 'all'} className={fk === k ? 'on' : ''} onClick={() => setFk(k)}>{l} ({n})</button>)}</div>
           <div className="bar"><div className="grow"><input placeholder="Buscar por item ou problema…" value={fq} onChange={e => setFq(e.target.value)} /></div>
             <select value={fsev} onChange={e => setFsev(e.target.value)}><option value="">Todas as severidades</option>{[5, 4, 3, 2, 1, 0].filter(n => n >= (d.min_sev || 0)).map(n => <option key={n} value={n}>{SEVN[n]} ou superior</option>)}</select>
             <select value={fst} onChange={e => setFst(e.target.value)}><option value="">Todas as situações</option><option value="open">Em andamento</option><option value="done">Resolvidos</option></select>

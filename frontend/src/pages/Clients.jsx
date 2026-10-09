@@ -59,7 +59,7 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Zabbix (hosts)'], ['acronis', 'Acronis'], ['ems', 'FortiClient EMS'], ...(c.id ? [['cloud', 'Nuvem Orca']] : []), ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Zabbix (hosts)'], ['acronis', 'Acronis'], ['ems', 'FortiClient EMS'], ...(c.id ? [['cloud', 'Cloud Orca']] : []), ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={look || cnpjHint(c.cnpj) || 'Ao digitar um CNPJ válido, o endereço e a razão social são preenchidos.'}><div style={{ display: 'flex', gap: 6 }}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => onCnpj(e.target.value)} placeholder="00.000.000/0000-00" /><button type="button" className="btn sm" title="Consultar e sobrescrever os dados com os da Receita" disabled={!cnpjOk(c.cnpj)} onClick={() => confirm('Substituir razão social, endereço, cidade, UF, telefone e e-mail pelos dados da Receita?') && lookup(c.cnpj, true)}>Consultar</button></div></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
@@ -139,8 +139,8 @@ export function ClientDetail() {
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
-    <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Nuvem Orca']] : [])]} />
-    {tab === 'cloud' && <CloudPanel path={`/cloud/clients/${id}/overview`} powerPath={u => `/cloud/clients/${id}/instances/${u}/power`} staff />}
+    <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Cloud Orca']] : [])]} />
+    {tab === 'cloud' && <CloudPanel path={`/cloud/clients/${id}/overview`} powerPath={u => `/cloud/clients/${id}/instances/${u}/power`} />}
     {tab !== 'geral' && tab !== 'cloud' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} detail /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} detail /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
     {tab === 'geral' && <>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>

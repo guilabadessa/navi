@@ -57,3 +57,17 @@ def test_tecnologias_do_equipamento_exigem_unidade_instalada_e_licenca():
     assert set(device_techs(units, {"security": True, "dlp": True, "management": True})) == {"Antimalware", "EDR", "DLP", "RMM"}
     assert device_techs(units, {"security": False, "dlp": False, "management": False}) == []
     assert device_techs(units, {"dlp": True}) == ["DLP"]
+
+
+def test_cloud_quotas_em_gb_e_vm_em_gb():
+    from app.services.cloud_service import Cloud, _vm
+    c = Cloud("http://x", "k", "s")
+    c.get = lambda path, **p: {"listResourceQuotaResponse": [
+        {"quotaType": "PrimaryStorage", "unitType": "Gib", "usedLimit": 708669603840, "maximumLimit": 710},
+        {"quotaType": "Memory", "unitType": "MB", "usedLimit": 57344, "maximumLimit": 57567},
+        {"quotaType": "Instance", "unitType": None, "usedLimit": 4, "maximumLimit": 7},
+        {"quotaType": "Project", "unitType": None, "usedLimit": 0, "maximumLimit": -1}]}
+    q = {x["type"]: x for x in c.quotas()}
+    assert q["PrimaryStorage"]["used"] == 660 and q["PrimaryStorage"]["unit"] == "gb"  # bytes -> GB
+    assert q["Memory"]["unit"] == "mb" and "Project" not in q
+    assert _vm({"uuid": "u", "volumeSize": "118111600640", "state": "RUNNING"}, "sp02")["disk_gb"] == 110

@@ -60,6 +60,15 @@ class NaviService:
         rows = self.db.execute(q.order_by(Event.severity.desc(), Event.started_at).limit(n)).all()
         return [{"client": nm or "Sem cliente", "item": e.host, "trigger": e.trigger_name, "since": e.started_at.isoformat(), "kind": e.kind} for e, nm in rows]
 
+    def cloud_vms(self, cid=None):
+        from ..models import CloudVm
+        q = select(CloudVm, Client.trade_name).join(Client, Client.id == CloudVm.client_id).where(CloudVm.active.is_(True))
+        if cid:
+            q = q.where(CloudVm.client_id == cid)
+        st = {"RUNNING": "ligada", "STOPPED": "desligada", "SHUTOFF": "desligada", "ERROR": "com erro"}
+        rows = self.db.execute(q.order_by(Client.trade_name, CloudVm.name)).all()
+        return [{"client": c, "vm": v.name, "estado": st.get(v.state, (v.state or "").lower()), "recursos": f"{v.cpu} vCPU · {round((v.ram_mb or 0) / 1024)} GB · {v.disk_gb or '—'} GB"} for v, c in rows]
+
     def services(self):
         from . import services_service as SS
         cl = list(self.db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)))
@@ -77,6 +86,8 @@ class NaviService:
 
     @staticmethod
     def _kind(qn):
+        if any(w in qn for w in ("cloud", "máquina virtual", "maquina virtual", "vms", " vm ", "servidor cloud", "instância", "instancia")):
+            return "cloud"
         if any(w in qn for w in ("backup", "acronis")):
             return "backup"
         if any(w in qn for w in ("estaç", "estac", "endpoint", "antiv", "forticlient", " ems", "notebook", "computador")):
@@ -89,7 +100,7 @@ class NaviService:
         qn = question.lower()
         days = 30 if "30" in qn or "mês" in qn or "mes" in qn else (7 if "7" in qn or "semana" in qn else 30)
         kind, (cid, cname) = self._kind(qn), self._client_in(qn)
-        kname = {"backup": "de backup", "endpoint": "de estações/antivírus", "infra": "de infraestrutura"}.get(kind, "")
+        kname = {"cloud": "da Cloud Orca", "backup": "de backup", "endpoint": "de estações/antivírus", "infra": "de infraestrutura"}.get(kind, "")
         scope = f" de {cname}" if cname else ""
         if self.provider and self.provider.name != "none":
             ctx = {"top_hosts": self.top_hosts(days, kind=kind, cid=cid), "top_clients": self.top_clients(days, kind=kind),
@@ -101,6 +112,9 @@ class NaviService:
         if any(w in qn for w in ("serviço", "servico", "contrat", "cobertura", "quais clientes tem", "quais clientes têm", "possui")):
             d = self.services()
             return {"answer": "Serviços ativos por cliente (infraestrutura, backup e estações).", "data": {"services": d}, "mode": "rules"}
+        if kind == "cloud" and "top" not in qn:
+            d = self.cloud_vms(cid)
+            return {"answer": (f"{len(d)} máquina(s) da Cloud Orca{scope}: {sum(1 for x in d if x['estado'] == 'ligada')} ligada(s)." if d else f"Nenhuma máquina da Cloud Orca{scope}."), "data": {"vms": d} if d else {}, "mode": "rules"}
         if kind in ("backup", "endpoint") and "top" not in qn and "recorrent" not in qn and "mais" not in qn:
             d = self.open_alerts(kind, cid)
             return {"answer": (f"{len(d)} alerta(s) em aberto {kname}{scope}." if d else f"Nenhum alerta em aberto {kname}{scope}. 🎉"), "data": {"alerts": d} if d else {}, "mode": "rules"}

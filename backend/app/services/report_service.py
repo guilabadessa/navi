@@ -257,7 +257,29 @@ def _n(v) -> str:
     return f"{v:.3f}".replace(".", ",")
 
 
-def highlights(mods, k, backup, endpoints, infra_on) -> list[dict]:
+def cloud_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
+    """Maquinas da Cloud Orca do cliente: estado atual, recursos e ocorrencias do periodo; None se nao houver conta vinculada."""
+    if not client_id:
+        return None
+    from collections import Counter
+
+    from ..models import CloudVm
+    vms = list(db.scalars(select(CloudVm).where(CloudVm.client_id == client_id, CloudVm.active.is_(True)).order_by(CloudVm.name)))
+    if not vms:
+        return None
+    fmt = lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—"  # noqa: E731
+    lab = {"RUNNING": "Ligada", "STOPPED": "Desligada", "SHUTOFF": "Desligada", "ERROR": "Com erro"}
+    rows = [{"name": v.name, "state": lab.get(v.state, (v.state or "").capitalize()), "ok": v.state == "RUNNING" or bool(v.expected_off or v.ignored), "cpu": v.cpu, "ram": round((v.ram_mb or 0) / 1024), "disk": v.disk_gb,
+             "ip": v.ip or "—", "os": v.os or "—", "since": fmt(v.state_since)} for v in vms]
+    n_ok = sum(1 for r in rows if r["ok"])
+    rows.sort(key=lambda r: (r["ok"], r["name"].lower()))
+    return {"total": len(rows), "running": sum(1 for v in vms if v.state == "RUNNING"), "ok": n_ok, "problems": len(rows) - n_ok, "pct": round(100 * n_ok / len(rows), 1),
+            "cpu": sum(v.cpu or 0 for v in vms if v.state == "RUNNING"), "ram": round(sum(v.ram_mb or 0 for v in vms if v.state == "RUNNING") / 1024), "disk": sum(v.disk_gb or 0 for v in vms),
+            "dist": _dist(Counter(r["state"] for r in rows), {"Ligada": "ok", "Desligada": "mut", "Com erro": "bad"}), "rows": rows,
+            "inc": period_incidents(db, client_id, "cloud", start, end, z) if start else None}
+
+
+def highlights(mods, k, backup, endpoints, infra_on, cloud=None) -> list[dict]:
     """Pontos de atencao e boas noticias para a capa (apenas dos servicos incluidos)."""
     out = []
     if infra_on:
@@ -277,6 +299,11 @@ def highlights(mods, k, backup, endpoints, infra_on) -> list[dict]:
             out.append({"tone": "bad", "text": f"{backup['problems']} de {backup['total']} item(ns) de backup requerem atenção: {names}."})
         else:
             out.append({"tone": "ok", "text": f"Todos os {backup['total']} itens de backup estão protegidos e em dia."})
+    if cloud:
+        if cloud["problems"]:
+            out.append({"tone": "bad", "text": f"{cloud['problems']} de {cloud['total']} máquina(s) da Cloud Orca desligada(s) ou com erro: " + ", ".join(r["name"] for r in cloud["rows"] if not r["ok"])[:140] + "."})
+        else:
+            out.append({"tone": "ok", "text": f"Todas as {cloud['total']} máquinas da Cloud Orca estão operando normalmente."})
     if endpoints:
         if endpoints["problems"]:
             out.append({"tone": "warn", "text": f"{endpoints['problems']} de {endpoints['total']} endpoint(s) com pendência (sem contato, antivírus desligado ou assinaturas)."})
@@ -353,10 +380,11 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         z = tz()
         backup = backup_section(db, rep.client_id, z, start, end) if "backup" in mods else None
         endpoints = endpoint_section(db, rep.client_id, z, start, end) if "endpoint" in mods else None
+        cloud = cloud_section(db, rep.client_id, z, start, end) if "cloud" in mods else None
         title = ("Relatório de Disponibilidade" if mods == ["infra"] else
-                 "Relatório de Backup" if mods == ["backup"] else "Relatório de Endpoints" if mods == ["endpoint"] else
+                 "Relatório de Backup" if mods == ["backup"] else "Relatório de Endpoints" if mods == ["endpoint"] else "Relatório da Cloud Orca" if mods == ["cloud"] else
                  "Relatório de Serviços Gerenciados")
-        html = env.get_template("report.html").render(hl=highlights(mods, k, backup, endpoints, infra_on), backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
+        html = env.get_template("report.html").render(hl=highlights(mods, k, backup, endpoints, infra_on, cloud), backup=backup, endpoints=endpoints, cloud=cloud, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
             report_title=title,
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
             client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),

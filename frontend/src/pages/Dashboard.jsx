@@ -109,6 +109,7 @@ export default function Dashboard() {
       <div className="cardlink" onClick={() => nav('/eventos?days=1')}><Stat label="Problemas hoje" value={fmtNum(d.problems_today)} /></div>
       <div className="cardlink" onClick={() => evs()}><Stat label={periodLabel(days)} value={fmtNum(d.problems_30d)} /></div>
       <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backup e endpoints" value={fmtNum((d.backup_active || 0) + (d.endpoint_active || 0))} tone={(d.backup_active || 0) + (d.endpoint_active || 0) ? 'bad' : 'ok'} desc={`Acronis ${d.backup_active || 0} · EMS ${d.endpoint_active || 0}`} /></div>
+      {d.cloud && <Stat onClick={() => nav('/monitoramento?aba=cloud')} label="Cloud Orca" value={`${d.cloud.running}/${d.cloud.total}`} tone={d.cloud.off ? 'bad' : 'ok'} desc={d.cloud.off ? `${d.cloud.off} máquina(s) desligada(s) ou com erro` : `máquinas ligadas${cl ? '' : ' · ' + d.cloud.clients + ' cliente(s)'}`} />}
       <Stat onClick={() => nav('/whatsapp')} label="Alertas enviados (24h)" value={fmtNum(d.alerts_24h?.sent || 0)} tone={failed ? 'warn' : ''} desc={`${failed} falha(s) · ${d.alerts_24h?.skipped || 0} ignorado(s)`} />
     </div>
 

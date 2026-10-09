@@ -58,7 +58,7 @@ export default function Events() {
       <button className="btn" onClick={saveFilter}><Bookmark />Salvar filtro</button>
       <button className="btn" onClick={() => download(`/events-export?${qs}`, 'eventos-navi.csv').catch(e => toast(e.message, true))}><Download />Exportar CSV</button></PageHead>
     <div className="bar"><div className="grow"><input placeholder="Buscar host, IP, trigger ou item…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>
-      <select value={kind} onChange={e => { setKind(e.target.value); setPage(1) }}><option value="">Todas as origens</option><option value="infra">Infraestrutura (Zabbix)</option><option value="backup">Backup (Acronis)</option><option value="endpoint">Endpoints (EMS)</option></select>
+      <select value={kind} onChange={e => { setKind(e.target.value); setPage(1) }}><option value="">Todas as origens</option><option value="infra">Infraestrutura (Zabbix)</option><option value="backup">Backup (Acronis)</option><option value="endpoint">Endpoints (EMS)</option><option value="cloud">Cloud Orca</option></select>
       <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">Todos</option><option value="PROBLEM">Em aberto</option><option value="RESOLVED">Resolvidos</option></select>
       <select value={sev} onChange={e => { setSev(e.target.value); setPage(1) }}><option value="">Qualquer severidade</option>{SEV.map((s, i) => <option key={i} value={i}>≥ {s}</option>)}</select>
       <select value={cl} onChange={e => { setCl(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>

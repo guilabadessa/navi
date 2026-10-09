@@ -3,13 +3,13 @@ import { Send, Sparkles } from 'lucide-react'
 import { post, fmtDT, fmtDur } from '../api'
 import { Card, PageHead, Table } from '../ui'
 
-const SUG = ['Top 10 hosts com mais problemas nos últimos 30 dias', 'Quais clientes tiveram mais indisponibilidade este mês?', 'Backups com falha agora', 'Estações sem contato ou com antivírus desligado', 'Quais serviços cada cliente possui?', 'Quais os problemas mais recorrentes?']
+const SUG = ['Top 10 hosts com mais problemas nos últimos 30 dias', 'Quais clientes tiveram mais indisponibilidade este mês?', 'Backups com falha agora', 'Endpoints sem contato ou com antivírus desligado', 'Máquinas da Cloud Orca desligadas', 'Quais serviços cada cliente possui?', 'Quais os problemas mais recorrentes?']
 
-const SERV = { infra: 'Infra', backup: 'Backup', endpoint: 'Estações' }
+const SERV = { infra: 'Infra', backup: 'Backup', endpoint: 'Endpoints' }
 function Data({ d }) {
-  const rows = d.hosts || d.clients || d.triggers || d.alerts || d.services; if (!rows) return null
+  const rows = d.hosts || d.clients || d.triggers || d.alerts || d.services || d.vms; if (!rows) return null
   const cols = d.hosts ? [['host', 'Item / host'], ['incidents', 'Ocorrências'], ['downtime_s', 'Tempo']] : d.clients ? [['client', 'Cliente'], ['incidents', 'Incidentes'], ['downtime_s', 'Indisponível']]
-    : d.alerts ? [['client', 'Cliente'], ['item', 'Item'], ['trigger', 'Problema'], ['since', 'Desde']] : d.services ? [['client', 'Cliente'], ['infra', SERV.infra], ['backup', SERV.backup], ['endpoint', SERV.endpoint]] : [['trigger', 'Problema'], ['incidents', 'Ocorrências']]
+    : d.alerts ? [['client', 'Cliente'], ['item', 'Item'], ['trigger', 'Problema'], ['since', 'Desde']] : d.vms ? [['client', 'Cliente'], ['vm', 'Máquina'], ['estado', 'Estado'], ['recursos', 'Recursos']] : d.services ? [['client', 'Cliente'], ['infra', SERV.infra], ['backup', SERV.backup], ['endpoint', SERV.endpoint], ['cloud', 'Cloud']] : [['trigger', 'Problema'], ['incidents', 'Ocorrências']]
   return <div style={{ marginTop: 10 }}><Table rows={rows.map((r, i) => ({ ...r, id: i }))} cols={cols.map(([k, h]) => ({ h, r: r => k === 'downtime_s' ? fmtDur(r[k]) : k === 'since' ? fmtDT(r[k]) : r[k] }))} /></div>
 }
 

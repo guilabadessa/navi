@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from ..models import Client, CloudAccount, ExtTenant
 
-MODULES = ("infra", "backup", "endpoint")
-NAMES = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Endpoints"}
+MODULES = ("infra", "backup", "endpoint", "cloud")
+NAMES = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Endpoints", "cloud": "Cloud Orca"}
 _SRC = {"acronis": "backup", "ems": "endpoint"}
 
 

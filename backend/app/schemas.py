@@ -151,7 +151,7 @@ class ReportIn(BaseModel):
     include_open: bool = True
     include_charts: bool = True
     include_kpis: bool = True
-    modules: list[Literal["infra", "backup", "endpoint"]] | None = None
+    modules: list[Literal["infra", "backup", "endpoint", "cloud"]] | None = None
     letterhead: str = "orca"
     notes: str | None = None
     wa_dest: str | None = Field(default=None, max_length=128)

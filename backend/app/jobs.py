@@ -27,6 +27,7 @@ JOBS = {
     "health_checks": ("Health checks", 120),
     "sync_acronis": ("Sincronização Acronis (backup)", 300),
     "sync_ems": ("Sincronização FortiClient EMS (endpoints)", 600),
+    "sync_cloud": ("Sincronização Cloud Orca (máquinas)", 120),
     "sync_finance": ("Sincronização financeira (Conta Azul)", 1800),
     "notices": ("Avisos ao cliente (boleto a vencer e resumo mensal)", 3600),
     "escalate": ("Escalonamento de alertas", 60),
@@ -104,6 +105,14 @@ def sync_ems(db):
     res = protection_service.sync_ems(db, factory.ems(db))
     if not res.get("skipped"):
         log.info("ems: %s", res)
+
+
+@tracked("sync_cloud")
+def sync_cloud(db):
+    from .services import cloud_service
+    res = cloud_service.sync_all(db)
+    if res.get("new") or res.get("resolved") or res.get("errors"):
+        log.info("cloud: %s", res)
 
 
 @tracked("sync_finance")
@@ -249,7 +258,7 @@ def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
     for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
-                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_finance", sync_finance), ("notices", notices), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
+                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_cloud", sync_cloud), ("sync_finance", sync_finance), ("notices", notices), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,
                     next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5 + 3 * list(JOBS).index(name)))

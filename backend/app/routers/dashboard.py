@@ -27,6 +27,18 @@ def _cached(key: str, ttl: int, fn):
     return v
 
 
+def cloud_stats(db: Session, client_id: int | None) -> dict | None:
+    from ..models import CloudVm
+    q = select(CloudVm).where(CloudVm.active.is_(True))
+    if client_id:
+        q = q.where(CloudVm.client_id == client_id)
+    vms = list(db.scalars(q))
+    if not vms:
+        return None
+    return {"total": len(vms), "running": sum(1 for v in vms if v.state == "RUNNING"), "clients": len({v.client_id for v in vms}),
+            "off": sum(1 for v in vms if v.state != "RUNNING" and not (v.expected_off or v.ignored))}
+
+
 def _sig(j: JobStatus, kind: str) -> str:
     return f"erro:{(j.error or '')[:200]}" if kind == "erro" else f"atraso:{j.last_run.isoformat() if j.last_run else ''}"
 
@@ -141,7 +153,7 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "services": services_service.of_client(db, db.get(Client, client_id)) if client_id and db.get(Client, client_id) else None, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "cloud": cloud_stats(db, client_id), "services": services_service.of_client(db, db.get(Client, client_id)) if client_id and db.get(Client, client_id) else None, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db), "failed_dispatches": failed_dispatches(db)}
 
 

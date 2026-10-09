@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { get, fmtDT, fmtDur } from '../api'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth, can } from '../App'
+import { CloudFleet } from './CloudPanel'
 import { Endpoints as EmsEndpoints, Overview as BackupOverview } from './Protection'
 import { Card, Drawer, Loading, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, Tabs, useLoad } from '../ui'
 
@@ -27,13 +29,14 @@ function ProtTab({ kind }) {
 }
 
 export default function Monitoring() {
-  const [tab, setTab] = useState('hosts'); const [q, setQ] = useState(''); const [groupid, setGroup] = useState(''); const [av, setAv] = useState(''); const [page, setPage] = useState(1); const [sel, setSel] = useState(null)
+  const [sp] = useSearchParams(); const [tab, setTab] = useState(sp.get('aba') || 'hosts'); const [q, setQ] = useState(''); const [groupid, setGroup] = useState(''); const [av, setAv] = useState(''); const [page, setPage] = useState(1); const [sel, setSel] = useState(null)
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data, err } = useLoad(() => get(`/zabbix/hosts?page=${page}&size=50&q=${encodeURIComponent(q)}&groupid=${groupid}${av !== '' ? '&available=' + av : ''}`), [page, q, groupid, av], 30000)
   return <>
-    <PageHead title="Monitoramento" desc="Tudo o que a NAVI monitora: hosts e grupos (Zabbix), backup (Acronis) e endpoints (FortiClient EMS), com o cliente associado a cada item" />
-    <Tabs value={tab} onChange={setTab} tabs={[['hosts', 'Hosts (Zabbix)'], ['groups', 'Host Groups (Zabbix)'], ['bkp', 'Backup (Acronis)'], ['eps', 'Endpoints (EMS)']]} />
+    <PageHead title="Monitoramento" desc="Tudo o que a NAVI monitora: hosts e grupos (Zabbix), backup (Acronis), endpoints (FortiClient EMS) e máquinas da Cloud Orca, com o cliente associado a cada item" />
+    <Tabs value={tab} onChange={setTab} tabs={[['hosts', 'Hosts (Zabbix)'], ['groups', 'Host Groups (Zabbix)'], ['bkp', 'Backup (Acronis)'], ['eps', 'Endpoints (EMS)'], ['cloud', 'Cloud Orca']]} />
     {(tab === 'bkp' || tab === 'eps') && <ProtTab kind={tab} />}
+    {tab === 'cloud' && <CloudFleet />}
     {tab === 'hosts' && <>
       <div className="bar"><div className="grow"><input placeholder="Buscar host, IP ou DNS…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>
         <select value={groupid} onChange={e => { setGroup(e.target.value); setPage(1) }}><option value="">Todos os grupos</option>{(groups || []).map(g => <option key={g.groupid} value={g.groupid}>{g.name}</option>)}</select>

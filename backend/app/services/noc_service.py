@@ -151,7 +151,7 @@ def group_email(kind: str, client: Client | None, items: list[tuple], tzname: st
 
 
 # ---------------- resumo diario ----------------
-KIND_NAMES = {"infra": "Infraestrutura (Zabbix)", "backup": "Backup (Acronis)", "endpoint": "Estações (FortiClient EMS)"}
+KIND_NAMES = {"infra": "Infraestrutura (Zabbix)", "backup": "Backup (Acronis)", "endpoint": "Endpoints (FortiClient EMS)", "cloud": "Cloud Orca"}
 SEV_ICON = {5: "🔴", 4: "🟠", 3: "🟡", 2: "🔵", 1: "⚪", 0: "⚪"}
 
 
@@ -171,7 +171,7 @@ def digest_data(db: Session) -> dict:
     for e in open_ev:
         by_sev[e.severity or 0] = by_sev.get(e.severity or 0, 0) + 1
         by_kind[e.kind or "infra"] = by_kind.get(e.kind or "infra", 0) + 1
-        c = clients.setdefault(names.get(e.client_id) or "Sem cliente associado", {"infra": 0, "backup": 0, "endpoint": 0, "worst": 0, "top": None, "total": 0})
+        c = clients.setdefault(names.get(e.client_id) or "Sem cliente associado", {"infra": 0, "backup": 0, "endpoint": 0, "cloud": 0, "worst": 0, "top": None, "total": 0})
         c[e.kind or "infra"] += 1
         c["total"] += 1
         if (e.severity or 0) >= c["worst"]:
@@ -211,7 +211,7 @@ def digest_text(d: dict, day: str, tzname: str = "America/Sao_Paulo") -> list[st
     if d["clients"]:
         L += ["", f"🏢 *Por cliente* ({len(d['clients'])} com problemas)"]
         for r in d["clients"][:12]:
-            parts = [f"{n} {lbl}" for n, lbl in ((r["infra"], "infra"), (r["backup"], "backup"), (r["endpoint"], "estações")) if n]
+            parts = [f"{n} {lbl}" for n, lbl in ((r["infra"], "infra"), (r["backup"], "backup"), (r["endpoint"], "endpoints"), (r["cloud"], "cloud")) if n]
             L.append(f"   {SEV_ICON.get(r['worst'], '')} *{r['name']}* — {', '.join(parts)} (maior: {SEVERITIES.get(r['worst'])})")
         if len(d["clients"]) > 12:
             L.append(f"   … e mais {len(d['clients']) - 12} cliente(s)")

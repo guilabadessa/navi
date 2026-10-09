@@ -52,7 +52,7 @@ export const PORTAL_TIPS = {
   hosts: ['Hosts', 'Seus servidores e equipamentos monitorados, com estado atual e disponibilidade. Filtre por grupo ou procure pelo nome/IP.'],
   grp: ['Grupos', 'Seus ambientes agrupados. Clique em um grupo para ver só os hosts dele.'],
   bkp: ['Backup', 'Quando foi o último backup com sucesso de cada servidor e se há algum alerta aberto.'],
-  cloud: ['Servidores', 'Suas máquinas na Nuvem Orca: estado, recursos e consumo do plano. Você pode ligar, desligar ou reiniciar cada máquina (a ação pede confirmação e fica registrada).'],
+  cloud: ['Cloud Orca', 'Suas máquinas na Cloud Orca: estado, recursos e consumo do plano. Você pode ligar, desligar ou reiniciar cada máquina (a ação pede confirmação e fica registrada).'],
   eps: ['Endpoints', 'Os equipamentos protegidos (antivírus, EDR, DLP, RMM) e quando cada um falou conosco pela última vez. Use os filtros por tecnologia e situação.'],
   rel: ['Relatórios', 'Os relatórios mensais em PDF. É só clicar para baixar.'],
   fin: ['Financeiro', 'Boletos e notas fiscais do mês. Troque o mês no seletor; o que estiver vencido de meses anteriores aparece em destaque.'],
