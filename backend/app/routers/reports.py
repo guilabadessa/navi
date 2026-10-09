@@ -147,8 +147,12 @@ def preview(rid: int, body: GenerateIn, db: Session = Depends(get_db), _=Depends
     if not r:
         raise HTTPException(404)
     a, e = _period(r, body)
+    client = db.get(Client, r.client_id) if r.client_id else None
+    mods = report_service.resolve_modules(db, r, client)
+    if "infra" not in mods:
+        return {"kpis": None, "events": 0, "hosts": 0, "modules": mods}
     k, events, hosts, client = report_service.build(db, r, a, e)
-    return {"kpis": k, "events": len(events), "hosts": len(hosts)}
+    return {"kpis": k, "events": len(events), "hosts": len(hosts), "modules": mods}
 
 
 @router.post("/{rid}/generate")

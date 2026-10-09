@@ -93,7 +93,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <!-- ============ CAPA / VISAO EXECUTIVA ============ -->
 <table class="top"><tr>
   <td><img class="logo" src="file://{{ assets }}/brand/azul.png"></td>
-  <td class="tag">Relatório de Disponibilidade e SLA<span>Emitido em {{ generated_at }}</span></td></tr></table>
+  <td class="tag">{{ report_title }}<span>Emitido em {{ generated_at }}</span></td></tr></table>
 
 {% if client_logo %}<img class="clientlogo" src="file://{{ client_logo }}">{% endif %}
 <div class="eyebrow">Cliente</div>
@@ -103,10 +103,13 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <table class="info"><tr>
   <td><b>Período</b><span>{{ period_label }}</span></td>
   <td><b>CNPJ</b><span>{{ cnpj or '—' }}</span></td>
-  <td><b>Hosts avaliados</b><span>{{ s.hosts_total }}</span></td>
+  {% if infra_on %}<td><b>Hosts avaliados</b><span>{{ s.hosts_total }}</span></td>
   <td><b>SLA contratado</b><span>{{ pct(s.sla_target) if s.sla_target is not none else '—' }}</span></td>
+  {% else %}<td><b>Serviços incluídos</b><span>{{ mods|join(' · ') }}</span></td>
+  <td><b>Emitido em</b><span>{{ generated_at }}</span></td>{% endif %}
 </tr></table>
 
+{% if infra_on %}
 {% if kpis_on %}
 <div class="sec"><table><tr><td class="n">01</td><td class="t">Resumo executivo</td></tr></table></div>
 <table class="hero"><tr>
@@ -164,12 +167,20 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 {% for t in k.by_trigger %}<tr><td>{{ t.key }}</td><td>{{ t.incidents }}</td><td>{{ dur(t.downtime_s) }}</td></tr>{% endfor %}</tbody></table>
 {% endif %}
 
+{% endif %}
+
 {% if backup %}
-<div class="pb"></div>
+{% if infra_on %}<div class="pb"></div>{% endif %}
 <div class="sec" style="margin-top:0"><table><tr><td class="n"></td><td class="t">Backup<small>situação atual dos itens protegidos</small></td></tr></table></div>
 <div class="summary">{{ backup.ok }} de {{ backup.total }} item(ns) com backup em dia{% if backup.problems %}; {{ backup.problems }} requer(em) atenção{% endif %}.</div>
 <table class="data"><thead><tr><th>Item</th><th>Tipo</th><th>Último backup com sucesso</th><th>Situação</th></tr></thead><tbody>
 {% for b in backup.rows %}<tr><td>{{ b.name }}</td><td>{{ b.type }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
+{% if backup.inc %}
+<div class="summary" style="margin-top:3mm">No período: <b>{{ backup.inc.total }}</b> ocorrência(s) de backup{% if backup.inc.open %}, <b>{{ backup.inc.open }}</b> ainda em aberto{% endif %}.</div>
+{% if backup.inc.rows %}<table class="data" style="margin-top:3mm"><thead><tr><th>Item</th><th>Ocorrência</th><th>Sev.</th><th>Início → Recuperação</th></tr></thead><tbody>
+{% for e in backup.inc.rows %}<tr><td>{{ e.name }}</td><td>{{ e.what }}</td><td><span class="sev s{{ e.sev }}">{{ sevname(e.sev) }}</span></td>
+<td>{{ e.start }}<div class="ip">{% if e.end %}{{ e.end }}{% if e.dur %} · <b>{{ dur2(e.dur) }}</b>{% endif %}{% else %}<span class="open">EM ABERTO</span>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% endif %}
+{% endif %}
 {% endif %}
 
 {% if endpoints %}
@@ -177,6 +188,12 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <div class="summary">{{ endpoints.total }} estação(ões) monitorada(s); {{ endpoints.online }} online agora{% if endpoints.problems %}; {{ endpoints.problems }} requer(em) atenção (sem contato prolongado, antivírus desativado ou desatualizado){% endif %}.</div>
 <table class="data"><thead><tr><th>Estação</th><th>Usuário</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
 {% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
+{% if endpoints.inc %}
+<div class="summary" style="margin-top:3mm">No período: <b>{{ endpoints.inc.total }}</b> ocorrência(s) de estações/antivírus{% if endpoints.inc.open %}, <b>{{ endpoints.inc.open }}</b> ainda em aberto{% endif %}.</div>
+{% if endpoints.inc.rows %}<table class="data" style="margin-top:3mm"><thead><tr><th>Item</th><th>Ocorrência</th><th>Sev.</th><th>Início → Recuperação</th></tr></thead><tbody>
+{% for e in endpoints.inc.rows %}<tr><td>{{ e.name }}</td><td>{{ e.what }}</td><td><span class="sev s{{ e.sev }}">{{ sevname(e.sev) }}</span></td>
+<td>{{ e.start }}<div class="ip">{% if e.end %}{{ e.end }}{% if e.dur %} · <b>{{ dur2(e.dur) }}</b>{% endif %}{% else %}<span class="open">EM ABERTO</span>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% endif %}
+{% endif %}
 {% endif %}
 
 {% if notes %}<div class="sec"><table><tr><td class="n"></td><td class="t">Observações</td></tr></table></div><div class="summary">{{ notes }}</div>{% endif %}

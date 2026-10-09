@@ -32,7 +32,8 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
   const hist = d ? d.history.filter(e => (!fsev || e.severity >= +fsev) && (!fst || (fst === 'open' ? e.status === 'PROBLEM' : e.status !== 'PROBLEM')) && (!fq || (e.host + ' ' + e.trigger_name).toLowerCase().includes(fq.toLowerCase()))) : []
   const hosts = d ? d.hosts.filter(h => (!grp || h.groups.includes(grp)) && (!hq || (h.name + ' ' + (h.ip || '')).toLowerCase().includes(hq.toLowerCase()))) : []
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
-  const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`], ['grp', `Grupos (${d.groups.length})`],
+  const infra = d ? d.services?.infra !== false : true
+  const tabs = d ? [['geral', 'Visão geral'], ...(infra ? [['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`], ['grp', `Grupos (${d.groups.length})`]] : []),
     ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
@@ -60,7 +61,14 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
         </div>
         <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {PORTAL_TIPS[tab] && <p className="tabhelp">{PORTAL_TIPS[tab][1]}</p>}
-        {tab === 'geral' && <>
+        {tab === 'geral' && !infra && <>
+          <div className="grid g3" style={{ marginBottom: 16 }}>
+            {d.backup?.enabled && <Stat label="Backup" value={`${d.backup.assets.filter(a => a.status === 'ok').length}/${d.backup.assets.length}`} desc="itens com backup em dia" tone={d.backup.alerts.length ? 'bad' : 'ok'} />}
+            {d.endpoints?.enabled && <Stat label="Estações" value={`${d.endpoints.assets.filter(a => a.status === 'online' || a.status === 'offline').length}/${d.endpoints.assets.length}`} desc="estações sem pendências" tone={d.endpoints.alerts?.length ? 'bad' : 'ok'} />}
+            <Stat label="Em andamento" value={(d.backup?.alerts?.length || 0) + (d.endpoints?.alerts?.length || 0)} desc="alertas de backup e estações" /></div>
+          <Card title="Alertas em andamento" pad={false}><Table rows={[...(d.backup?.alerts || []), ...(d.endpoints?.alerts || [])].filter(e => (e.severity || 0) >= d.min_sev)} empty="🎉 Nenhum alerta em andamento." cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
+            { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
+        {tab === 'geral' && infra && <>
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
               <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>

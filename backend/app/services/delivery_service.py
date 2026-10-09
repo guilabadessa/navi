@@ -38,7 +38,7 @@ def deliver(db: Session, run: ReportRun, rep: Report, wa_dest: str | None = None
     if mail_requested and not to:
         run.email_status = "não enviado: cliente sem e-mail de relatório cadastrado"
     if to:
-        subj = (subject or "Relatório de Disponibilidade — {CLIENTE} — {PERIODO}").replace("{CLIENTE}", cname).replace("{PERIODO}", plabel)
+        subj = (subject or ("Relatório de Disponibilidade — {CLIENTE} — {PERIODO}" if run.kpis else "Relatório de Serviços — {CLIENTE} — {PERIODO}")).replace("{CLIENTE}", cname).replace("{PERIODO}", plabel)
         try:
             ctx = mailer.report_ctx(cname, plabel, rep.name, fname, run.kpis)
             mailer.send(db, "report", to, subj, ctx, cc, bcc, [(fname, data, "application/pdf")])

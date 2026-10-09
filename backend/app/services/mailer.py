@@ -119,7 +119,7 @@ def report_ctx(client_name: str, period: str, report_name: str, filename: str, k
     k = None
     if kpis:
         k = {"availability": f"{kpis['availability']:.3f}%".replace(".", ","), "incidents": kpis["incidents"], "sla_met": kpis.get("sla_met")}
-    return {"title": "Relatório de Disponibilidade e SLA", "subtitle": f"{client_name} · {period}", "tag": "Relatório · NOC Orca TI",
+    return {"title": "Relatório de Disponibilidade e SLA" if kpis else "Relatório de Serviços Gerenciados", "subtitle": f"{client_name} · {period}", "tag": "Relatório · NOC Orca TI",
             "preheader": f"Relatório de {client_name} — {period}", "client_name": client_name, "period": period,
             "report_name": report_name, "filename": filename, "kpis": k}
 

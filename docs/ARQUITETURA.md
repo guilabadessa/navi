@@ -45,3 +45,6 @@ Integrações (somente leitura): Zabbix · Acronis · FortiClient EMS · Conta A
 - `settings_store` mantém **uma única fotografia** da tabela `settings` em memória por processo (TTL 20 s, trocada por inteiro; nada é gravado a mais no banco). Gravar uma configuração derruba a fotografia ao concluir a transação. As chaves `contaazul.*` não passam pelo cache (o refresh token gira e o outro processo não pode ler valor velho).
 - O banner de falhas do Dashboard lista rotinas com erro/atraso; "Dar ciência" grava `job_status.ack_sig` (assinatura da falha). Outro erro ou novo atraso muda a assinatura e o aviso volta.
 - **Minha conta** (`/conta`, e botão no portal do cliente): edita o nome e troca a senha (limite de 8 tentativas/15 min; derruba as outras sessões).
+
+## Serviços por cliente
+`services_service` deduz o que cada cliente tem: **infra** (hosts/grupos do Zabbix), **backup** (tenant Acronis) e **endpoint** (site EMS). Todas as telas se adaptam: relatórios (`reports.modules`, vazio = automático; o PDF só inclui o que o cliente tem e não consulta o Zabbix se não houver infra), SLA (disponibilidade só com infra; backup/estações mostram itens em dia), Dashboard, detalhe do cliente, portal do cliente (abas) e NAVI IA (entende backup, estações e serviços).

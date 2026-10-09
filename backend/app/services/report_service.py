@@ -19,7 +19,7 @@ from weasyprint import HTML  # noqa: E402
 from .. import settings_store as S  # noqa: E402
 from ..config import get_settings  # noqa: E402
 from ..models import SEVERITIES, Client, Event, Report, ReportRun, ZbxHost  # noqa: E402
-from . import factory, kpi_service, live_events  # noqa: E402
+from . import factory, kpi_service, live_events, services_service  # noqa: E402
 from .notification_service import fmt_duration, tz  # noqa: E402
 
 APP = Path(__file__).resolve().parent.parent
@@ -161,7 +161,29 @@ def summary_text(k: dict, client_name: str, period: str) -> str:
     return t
 
 
-def backup_section(db: Session, client_id: int | None, z) -> dict | None:
+def resolve_modules(db: Session, rep: Report, client: Client | None) -> list[str]:
+    """Modulos do relatorio: os escolhidos que o cliente realmente tem; sem escolha = tudo que o cliente tem.
+    Relatorio geral (sem cliente) e sempre de infraestrutura."""
+    if not client:
+        return ["infra"]
+    have = services_service.active_list(services_service.of_client(db, client))
+    mods = [m for m in (rep.modules or have) if m in have]
+    if not mods:
+        raise ValueError("O cliente não possui o(s) serviço(s) selecionado(s) (infraestrutura, backup ou estações) associado(s) ao cadastro.")
+    return mods
+
+
+def period_incidents(db: Session, client_id: int, kind: str, start: datetime, end: datetime, z) -> dict:
+    """Ocorrencias (eventos NAVI de backup/estacoes) que tocaram o periodo."""
+    evs = list(db.scalars(select(Event).where(Event.kind == kind, Event.client_id == client_id, Event.started_at < end,
+                                              (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at)))
+    fmt = lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—"  # noqa: E731
+    rows = [{"name": e.host or "—", "what": e.trigger_name or "—", "sev": e.severity, "start": fmt(e.started_at),
+             "end": fmt(e.recovered_at) if e.recovered_at else None, "dur": e.duration_s} for e in evs[:80]]
+    return {"total": len(evs), "open": sum(1 for e in evs if e.status == "PROBLEM"), "rows": rows}
+
+
+def backup_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
     """Situacao atual do backup (Acronis) dos itens do cliente; None se o cliente nao tem tenant associado."""
     if not client_id:
         return None
@@ -182,10 +204,11 @@ def backup_section(db: Session, client_id: int | None, z) -> dict | None:
                      "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—", "ok": st == "ok"})
     if not rows:
         return None
-    return {"rows": rows[:120], "total": len(rows), "ok": sum(1 for r in rows if r["ok"]), "problems": sum(1 for r in rows if not r["ok"])}
+    return {"rows": rows[:120], "total": len(rows), "ok": sum(1 for r in rows if r["ok"]), "problems": sum(1 for r in rows if not r["ok"]),
+            "inc": period_incidents(db, client_id, "backup", start, end, z) if start else None}
 
 
-def endpoint_section(db: Session, client_id: int | None, z) -> dict | None:
+def endpoint_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
     """Situacao atual das estacoes (FortiClient EMS) do cliente; None se nao houver site associado."""
     if not client_id:
         return None
@@ -204,7 +227,8 @@ def endpoint_section(db: Session, client_id: int | None, z) -> dict | None:
         return None
     attention = [r for r in rows if not r["ok"]]
     return {"total": len(rows), "online": sum(1 for r in rows if r["status"] == "online"), "problems": len(attention),
-            "rows": (attention + [r for r in rows if r["ok"]])[:80]}
+            "rows": (attention + [r for r in rows if r["ok"]])[:80],
+            "inc": period_incidents(db, client_id, "endpoint", start, end, z) if start else None}
 
 
 def compare_text(k: dict, prev: dict | None, plabel: str) -> str:
@@ -254,12 +278,18 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
     db.add(run)
     db.flush()
     try:
-        k, events, hosts, client = build(db, rep, start, end)
+        client = db.get(Client, rep.client_id) if rep.client_id else None
+        mods = resolve_modules(db, rep, client)
+        infra_on = "infra" in mods
+        if infra_on:
+            k, events, hosts, client = build(db, rep, start, end)
+        else:  # cliente so de backup/estacoes: nao consulta o Zabbix
+            k, events, hosts = kpi_service.compute([], [], start, end, client.sla_target if client else None), [], []
         cname = client.trade_name if client else "Todos os clientes"
         plabel = period_label(start, end)
         prev = None
         try:
-            prev = build(db, rep, start - (end - start), start)[0]  # periodo anterior (consulta ao vivo no Zabbix)
+            prev = build(db, rep, start - (end - start), start)[0] if infra_on else None  # periodo anterior (consulta ao vivo no Zabbix)
         except Exception:  # noqa: BLE001
             prev = None
         cmp_text = compare_text(k, prev, period_label(start - (end - start), start))
@@ -267,15 +297,19 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         rows = sorted(sorted(events, key=lambda e: -(e.duration_s or 0))[:MAX_ROWS], key=lambda e: e.started_at)
         env = Environment(loader=FileSystemLoader(str(APP / "templates")), autoescape=select_autoescape(["html"]))
         z = tz()
-        backup = backup_section(db, rep.client_id, z)
-        endpoints = endpoint_section(db, rep.client_id, z)
-        html = env.get_template("report.html").render(backup=backup, endpoints=endpoints,
+        backup = backup_section(db, rep.client_id, z, start, end) if "backup" in mods else None
+        endpoints = endpoint_section(db, rep.client_id, z, start, end) if "endpoint" in mods else None
+        title = ("Relatório de Disponibilidade e SLA" if mods == ["infra"] else
+                 "Relatório de Backup" if mods == ["backup"] else "Relatório de Estações e Antivírus" if mods == ["endpoint"] else
+                 "Relatório de Serviços Gerenciados")
+        html = env.get_template("report.html").render(backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
+            report_title=title,
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
             client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),
-            s=k["summary"], k=k, kpis_on=rep.include_kpis, charts=make_charts(k) if rep.include_charts else [],
+            s=k["summary"], k=k, kpis_on=rep.include_kpis, charts=make_charts(k) if (rep.include_charts and infra_on) else [],
             rows=rows, total_rows=len(events), truncated=len(events) > MAX_ROWS, notes=rep.notes,
-            summary_text=summary_text(k, cname, plabel), cmp_text=cmp_text,
+            summary_text=summary_text(k, cname, plabel) if infra_on else '', cmp_text=cmp_text,
             pct=lambda v: "—" if v is None else f"{v:.3f}%".replace(".", ","),
             dur=lambda v: fmt_duration(v) if v is not None else "—", dur2=dur2,
             dt=lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—",
@@ -287,7 +321,7 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         path = folder / f"{safe}_{start:%Y%m%d}-{end:%Y%m%d}_{datetime.now():%H%M%S}.pdf"
         path.write_bytes(pdf)
         run.file_path, run.size, run.sha256 = str(path), len(pdf), hashlib.sha256(pdf).hexdigest()
-        run.kpis, run.status = k["summary"], "ok"
+        run.kpis, run.status = (k["summary"] if infra_on else None), "ok"
         db.commit()
         prune_runs(db, rep.client_id)
     except Exception as e:  # noqa: BLE001

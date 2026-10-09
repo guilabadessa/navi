@@ -78,6 +78,7 @@ export default function Dashboard() {
     if (!confirm(`Colocar ${name} em manutenção por 2 horas? Nenhum alerta será enviado para este cliente nesse período.`)) return
     try { await post(`/clients/${cid}/maintenance`, { hours: 2 }); toast('Cliente em manutenção por 2h'); reload() } catch (e) { toast(e.message, true) }
   }
+  const noInfra = !!(d.services && !d.services.infra)
   const failed = d.alerts_24h?.failed || 0  // total bruto (card); o banner usa so os sem ciencia
   return <>
     <PageHead title="Painel do NOC" desc={`Situação de todos os clientes em tempo real · atualizado às ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
@@ -94,9 +95,15 @@ export default function Dashboard() {
 
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => evs('&status=PROBLEM')}><Stat label="Problemas ativos" value={fmtNum(d.problems_active)} tone={d.problems_active ? 'bad' : 'ok'} desc={`${d.clients_affected} cliente(s) afetado(s)`} /></div>
+      {noInfra ? <>
+        <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backups com alerta" value={fmtNum(d.backup_active || 0)} tone={d.backup_active ? 'bad' : 'ok'} desc={d.services.backup ? 'Acronis' : 'cliente sem backup'} /></div>
+        <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Estações com alerta" value={fmtNum(d.endpoint_active || 0)} tone={d.endpoint_active ? 'bad' : 'ok'} desc={d.services.endpoint ? 'FortiClient EMS' : 'cliente sem estações'} /></div>
+        <Stat label="Serviços do cliente" value={[d.services.backup && 'Backup', d.services.endpoint && 'Estações'].filter(Boolean).join(' + ') || 'Nenhum'} desc="Sem hosts de infraestrutura associados" />
+      </> : <>
       <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label="Hosts monitorados" value={fmtNum(d.hosts_total)} desc={`${d.hosts_down} indisponível(is)`} tone={d.hosts_down ? 'warn' : ''} /></div>
       <div className="cardlink" onClick={() => nav('/sla')}><Stat label={`Disponibilidade (${days}d)`} value={fmtPct(d.availability_30d, 3)} tone="ok" desc={`MTTR ${fmtDur(d.mttr_s)}`} /></div>
       <div className="cardlink" onClick={() => evs('&status=PROBLEM&q=link')}><Stat label="Links indisponíveis" value={fmtNum(d.links_down)} tone={d.links_down ? 'bad' : ''} desc="alertas de link/WAN em aberto" /></div>
+      </>}
     </div>
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => nav('/eventos?days=1')}><Stat label="Problemas hoje" value={fmtNum(d.problems_today)} /></div>

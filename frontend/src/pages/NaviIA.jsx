@@ -1,18 +1,20 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { Send, Sparkles } from 'lucide-react'
-import { post, fmtDur } from '../api'
+import { post, fmtDT, fmtDur } from '../api'
 import { Card, PageHead, Table } from '../ui'
 
-const SUG = ['Top 10 hosts com mais problemas nos últimos 30 dias', 'Quais clientes tiveram mais indisponibilidade este mês?', 'Quais os problemas mais recorrentes?', 'Top hosts da última semana']
+const SUG = ['Top 10 hosts com mais problemas nos últimos 30 dias', 'Quais clientes tiveram mais indisponibilidade este mês?', 'Backups com falha agora', 'Estações sem contato ou com antivírus desligado', 'Quais serviços cada cliente possui?', 'Quais os problemas mais recorrentes?']
 
+const SERV = { infra: 'Infra', backup: 'Backup', endpoint: 'Estações' }
 function Data({ d }) {
-  const rows = d.hosts || d.clients || d.triggers; if (!rows) return null
-  const cols = d.hosts ? [['host', 'Host'], ['incidents', 'Incidentes'], ['downtime_s', 'Indisponível']] : d.clients ? [['client', 'Cliente'], ['incidents', 'Incidentes'], ['downtime_s', 'Indisponível']] : [['trigger', 'Problema'], ['incidents', 'Ocorrências']]
-  return <div style={{ marginTop: 10 }}><Table rows={rows.map((r, i) => ({ ...r, id: i }))} cols={cols.map(([k, h]) => ({ h, r: r => k === 'downtime_s' ? fmtDur(r[k]) : r[k] }))} /></div>
+  const rows = d.hosts || d.clients || d.triggers || d.alerts || d.services; if (!rows) return null
+  const cols = d.hosts ? [['host', 'Item / host'], ['incidents', 'Ocorrências'], ['downtime_s', 'Tempo']] : d.clients ? [['client', 'Cliente'], ['incidents', 'Incidentes'], ['downtime_s', 'Indisponível']]
+    : d.alerts ? [['client', 'Cliente'], ['item', 'Item'], ['trigger', 'Problema'], ['since', 'Desde']] : d.services ? [['client', 'Cliente'], ['infra', SERV.infra], ['backup', SERV.backup], ['endpoint', SERV.endpoint]] : [['trigger', 'Problema'], ['incidents', 'Ocorrências']]
+  return <div style={{ marginTop: 10 }}><Table rows={rows.map((r, i) => ({ ...r, id: i }))} cols={cols.map(([k, h]) => ({ h, r: r => k === 'downtime_s' ? fmtDur(r[k]) : k === 'since' ? fmtDT(r[k]) : r[k] }))} /></div>
 }
 
 export default function NaviIA() {
-  const [msgs, setMsgs] = useState([{ who: 'n', text: 'Olá! Eu sou a NAVI. Pergunte sobre hosts, clientes e incidentes do seu ambiente.' }]); const [q, setQ] = useState(''); const [busy, setBusy] = useState(false); const end = useRef()
+  const [msgs, setMsgs] = useState([{ who: 'n', text: 'Olá! Eu sou a NAVI. Pergunte sobre hosts, clientes, backups, estações e incidentes do seu ambiente.' }]); const [q, setQ] = useState(''); const [busy, setBusy] = useState(false); const end = useRef()
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
   const ask = async (text) => { if (!text.trim()) return; setMsgs(m => [...m, { who: 'u', text }]); setQ(''); setBusy(true)
     try { const r = await post('/navi/ask', { question: text }); setMsgs(m => [...m, { who: 'n', text: r.answer, data: r.data, mode: r.mode }]) } catch (e) { setMsgs(m => [...m, { who: 'n', text: 'Erro: ' + e.message }]) } finally { setBusy(false) } }

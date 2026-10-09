@@ -20,6 +20,8 @@ export const Stat = ({ label, value, desc, tone }) => (
   <div className={'card stat ' + (tone || '')}><div className="l">{label}</div><div className="v">{value}</div>{desc && <div className="d">{desc}</div>}</div>)
 
 export const SevBadge = ({ n }) => <span className={'badge sev' + n}>{SEV[n] ?? n}</span>
+// Etiquetas dos servicos do cliente (infraestrutura / backup / estacoes)
+export const ServiceChips = ({ s }) => { const x = [['infra', 'Infra'], ['backup', 'Backup'], ['endpoint', 'Estações']].filter(([k]) => s && s[k]); return x.length ? <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{x.map(([k, l]) => <span key={k} className="badge b-info">{l}</span>)}</span> : <span className="badge b-mut">Sem serviços</span> }
 export const Pill = ({ tone = 'mut', children }) => <span className={'badge b-' + tone}>{children}</span>
 export const StatusBadge = ({ s }) => s === 'PROBLEM' ? <Pill tone="bad"><i className="dot live" style={{ background: '#bd1723' }} />EM ABERTO</Pill> : <Pill tone="ok">RESOLVIDO</Pill>
 
@@ -67,8 +69,8 @@ export function Pager({ page, size, total, onPage }) {
     <span className="mono">{page} / {pages}</span>
     <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>›</button></div>
 }
-export const PageHead = ({ title, desc, children }) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-  <div><h1 style={{ fontSize: 26 }}>{title}</h1>{desc && <p className="sub">{desc}</p>}</div><div style={{ display: 'flex', gap: 10 }}>{children}</div></div>
+export const PageHead = ({ title, desc, badges, children }) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+  <div><h1 style={{ fontSize: 26 }}>{title}</h1>{badges && <div style={{ margin: '4px 0' }}>{badges}</div>}{desc && <p className="sub">{desc}</p>}</div><div style={{ display: 'flex', gap: 10 }}>{children}</div></div>
 
 export function useLoad(fn, deps = [], interval) {
   const [data, setData] = useState(null); const [err, setErr] = useState(null); const [loading, setLoading] = useState(true)

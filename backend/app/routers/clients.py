@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from ..schemas import ClientIn
 from ..security import require, user_has
 from .. import portal_access as PA
-from ..services import event_service
+from ..services import event_service, services_service
 from ..services import kpi_service, maintenance_service
 from ..util import titlecase, to_dict, like
 
@@ -31,6 +31,7 @@ def _full(db: Session, c: Client) -> dict:
     d["groups"] = [{"groupid": g.zbx_groupid, "name": gmap.get(g.zbx_groupid, g.name)} for g in c.groups]
     d["host_ids"] = [h.zbx_hostid for h in c.hosts]
     d["contacts"] = [to_dict(x) for x in c.contacts]
+    d["services"] = services_service.of_client(db, c)
     return d
 
 
@@ -76,8 +77,11 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
     for k_, n_ in db.execute(select(UserClient.client_id, func.count()).group_by(UserClient.client_id)).all():
         pu[k_] = pu.get(k_, 0) + n_
     out = []
-    for c in db.scalars(stmt):
+    rows = list(db.scalars(stmt))
+    svc = services_service.of_clients(db, rows)
+    for c in rows:
         d = to_dict(c)
+        d["services"] = svc[c.id]
         d["group_count"], d["open_events"], d["portal_users"] = len(c.groups), open_by.get(c.id, 0), pu.get(c.id, 0)
         out.append(d)
     return out
@@ -301,7 +305,7 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
 
     backup = prot("acronis", lambda a: asset_status(a, pc, nowx))
     endpoints = prot("ems", lambda a: P.ems_status(a, pc["ems_offline_days"], nowx))
-    return {"backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
+    return {"services": services_service.of_client(db, c), "backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
             "available": h.available, "status": h.status} for h in hosts], "active_events": active,
             "history": [to_dict(e) for e in evs[:100]], "links": len(links),
             "reports": [to_dict(r, {"kpis"}) for r in db.scalars(select(ReportRun).where(ReportRun.client_id == cid)

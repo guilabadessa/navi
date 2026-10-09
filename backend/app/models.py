@@ -325,6 +325,7 @@ class Report(Base):
     include_open: Mapped[bool] = mapped_column(Boolean, default=True)
     include_charts: Mapped[bool] = mapped_column(Boolean, default=True)
     include_kpis: Mapped[bool] = mapped_column(Boolean, default=True)
+    modules: Mapped[list | None] = mapped_column(JSON)  # infra | backup | endpoint; vazio = automatico (o que o cliente tem)
     letterhead: Mapped[str] = mapped_column(String(64), default="orca")
     notes: Mapped[str | None] = mapped_column(Text)
     wa_dest: Mapped[str | None] = mapped_column(String(128))

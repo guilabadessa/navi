@@ -9,7 +9,7 @@ from ..db import get_db
 from .. import audit, settings_store
 from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, ExtAsset, ExtTenant, HealthCheck, JobStatus, ZbxHost
 from ..security import current_user, require
-from ..services import kpi_service, maintenance_service
+from ..services import kpi_service, maintenance_service, services_service
 from ..util import to_dict
 from .clients import client_hosts
 
@@ -141,7 +141,7 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "services": services_service.of_client(db, db.get(Client, client_id)) if client_id and db.get(Client, client_id) else None, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db), "failed_dispatches": failed_dispatches(db)}
 
 
@@ -189,15 +189,23 @@ def sla(days: int = 30, db: Session = Depends(get_db), _=Depends(require("sla.vi
         now = datetime.now(timezone.utc)
         start = now - timedelta(days=days)
         out = []
-        for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
+        clients = list(db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)))
+        svc, prot = services_service.of_clients(db, clients), services_service.protection_counts(db)
+        for c in clients:
+            pr = prot.get(c.id, {})
+            base = {"client_id": c.id, "client": c.trade_name, "services": svc[c.id], "backup_items": pr.get("backup_items", 0), "backup_bad": pr.get("backup_bad", 0),
+                    "endpoint_items": pr.get("endpoint_items", 0), "endpoint_bad": pr.get("endpoint_bad", 0)}
+            if not svc[c.id]["infra"]:  # sem hosts: SLA de disponibilidade nao se aplica
+                out.append({**base, "hosts": 0, "sla_target": c.sla_target, "availability": None, "incidents": 0, "downtime_s": 0, "mttr_s": None, "mtbf_s": None, "met": None})
+                continue
             hosts = client_hosts(db, c)
             evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < now,
                                                       (Event.recovered_at.is_(None)) | (Event.recovered_at > start))))
             k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, now, c.sla_target,
                                     exclude=maintenance_service.exclusions(db, c.id, start, now))
             s = k["summary"]
-            out.append({"client_id": c.id, "client": c.trade_name, "hosts": len(hosts), "sla_target": c.sla_target,
+            out.append({**base, "hosts": len(hosts), "sla_target": c.sla_target,
                         "availability": s["availability"], "incidents": s["incidents"], "downtime_s": s["downtime_s"],
                         "mttr_s": s["mttr_s"], "mtbf_s": s["mtbf_s"], "met": s["sla_met"]})
-        return {"days": days, "items": sorted(out, key=lambda x: (x["met"] is not False, x["availability"]))}
+        return {"days": days, "items": sorted(out, key=lambda x: (x["met"] is not False, x["availability"] if x["availability"] is not None else 101))}
     return _cached(f"sla{days}", 60, build)

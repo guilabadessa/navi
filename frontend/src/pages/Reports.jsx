@@ -5,11 +5,12 @@ import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pager, Pill, T
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskTarget, cnpjHint } from '../mask'
 
+const MODS = [['infra', 'Infraestrutura (disponibilidade e SLA)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Estações e antivírus (FortiClient EMS)']]
 const iso = (d) => d ? new Date(d).toISOString() : null
 const loc = (v) => v ? new Date(new Date(v).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
 
 function ReportForm({ r, clients, onClose, onSaved }) {
-  const [x, setX] = useState({ name: '', client_id: null, cnpj: '', period_start: null, period_end: null, host_ids: [], group_ids: [], triggers: [], items: [], severities: [], include_resolved: true, include_open: true, include_charts: true, include_kpis: true, letterhead: 'orca', notes: '', wa_dest: '', email_dest: '', ...r })
+  const [x, setX] = useState({ name: '', client_id: null, cnpj: '', period_start: null, period_end: null, host_ids: [], group_ids: [], triggers: [], items: [], severities: [], include_resolved: true, include_open: true, include_charts: true, include_kpis: true, modules: null, letterhead: 'orca', notes: '', wa_dest: '', email_dest: '', ...r })
   const toast = useToast(); const [tab, setTab] = useState('g')
   const hosts = useLoad(() => get(`/zabbix/hosts?size=200${x.client_id ? '&client_id=' + x.client_id : ''}`), [x.client_id]); const groups = useLoad(() => get('/zabbix/groups'), [])
   const set = k => e => setX({ ...x, [k]: e.target ? e.target.value : e })
@@ -21,6 +22,9 @@ function ReportForm({ r, clients, onClose, onSaved }) {
     <Tabs value={tab} onChange={setTab} tabs={[['g', 'Geral'], ['f', 'Hosts e filtros'], ['o', 'Conteúdo'], ['d', 'Destinatários']]} />
     {tab === 'g' && <><div className="row r2"><Field label="NOME DO RELATÓRIO *"><input value={x.name} onChange={set('name')} placeholder="SLA Mensal — Hotel X" /></Field>
       <Field label="CLIENTE"><select value={x.client_id || ''} onChange={onClient}><option value="">— selecione —</option>{clients.map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field></div>
+      {x.client_id && (() => { const svc = (clients.find(c => c.id === x.client_id) || {}).services || {}; const have = MODS.filter(([k]) => svc[k]); const sel = x.modules || have.map(([k]) => k)
+        return <Field label="O QUE INCLUIR NO RELATÓRIO" hint={have.length ? 'Só aparecem os serviços que este cliente possui. Sem alterar, o relatório inclui todos.' : 'Este cliente ainda não tem hosts, backup (Acronis) nem estações (EMS) associados.'}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>{have.map(([k, l]) => <Check key={k} label={l} checked={sel.includes(k)} onChange={v => { const n = v ? [...sel, k] : sel.filter(a => a !== k); setX({ ...x, modules: n.length === have.length ? null : n }) }} />)}</div></Field> })()}
       <div className="row r3"><Field label="CNPJ" hint={cnpjHint(x.cnpj)}><input inputMode="numeric" value={x.cnpj || ''} onChange={e => setX({ ...x, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="PERÍODO INICIAL" hint="Opcional se usar rotina"><input type="datetime-local" value={loc(x.period_start)} onChange={e => setX({ ...x, period_start: e.target.value })} /></Field>
         <Field label="PERÍODO FINAL"><input type="datetime-local" value={loc(x.period_end)} onChange={e => setX({ ...x, period_end: e.target.value })} /></Field></div>
       <Field label="OBSERVAÇÕES (aparecem no PDF)"><textarea value={x.notes || ''} onChange={set('notes')} /></Field></>}
@@ -53,7 +57,8 @@ function GenerateModal({ r, onClose, onDone }) {
     <div className="row r3"><Field label="PERÍODO"><select value={m} onChange={e => setM(e.target.value)}><option value="prev_day">Dia anterior</option><option value="prev_week">Semana anterior</option><option value="prev_month">Mês anterior</option><option value="custom">Personalizado</option></select></Field>
       {m === 'custom' && <><Field label="INÍCIO"><input type="datetime-local" value={loc(a)} onChange={e => setA(e.target.value)} /></Field><Field label="FIM"><input type="datetime-local" value={loc(b)} onChange={e => setB(e.target.value)} /></Field></>}</div>
     <p className="hint">O PDF é gerado primeiro, sem enviar nada. Depois você poderá baixar, conferir e só então confirmar o envio.</p>
-    {pv && <div className="grid g4" style={{ marginTop: 16 }}>{[['Disponibilidade', fmtPct(pv.kpis.summary.availability, 3)], ['Incidentes', pv.kpis.summary.incidents], ['Indisponibilidade', fmtDur(pv.kpis.summary.downtime_s)], ['Hosts', pv.hosts]].map(([l, v]) => <div key={l} className="card stat"><div className="l">{l}</div><div className="v" style={{ fontSize: 22 }}>{v}</div></div>)}</div>}</Modal>
+    {pv && !pv.kpis && <p className="hint" style={{ marginTop: 16 }}>Este relatório não inclui infraestrutura: a prévia de KPIs não se aplica. Serviços incluídos: {pv.modules.join(', ')}.</p>}
+    {pv && pv.kpis && <div className="grid g4" style={{ marginTop: 16 }}>{[['Disponibilidade', fmtPct(pv.kpis.summary.availability, 3)], ['Incidentes', pv.kpis.summary.incidents], ['Indisponibilidade', fmtDur(pv.kpis.summary.downtime_s)], ['Hosts', pv.hosts]].map(([l, v]) => <div key={l} className="card stat"><div className="l">{l}</div><div className="v" style={{ fontSize: 22 }}>{v}</div></div>)}</div>}</Modal>
   return <Modal title="PDF gerado" onClose={close} footer={<button className="btn" onClick={close}>Concluir</button>}>
     <div className="card" style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
       <div><b>{run.name}</b><div className="sub">{fmtDT(run.period_start).slice(0, 10)} → {fmtDT(run.period_end).slice(0, 10)} · {(run.size / 1024).toFixed(0)} KB{run.kpis ? ` · disponibilidade ${fmtPct(run.kpis.availability, 3)}` : ''}</div></div>

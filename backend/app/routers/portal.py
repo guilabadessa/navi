@@ -12,7 +12,7 @@ from .. import portal_access as PA
 from ..db import get_db
 from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
 from ..security import current_user, has_perm, require
-from ..services import kpi_service, maintenance_service
+from ..services import kpi_service, maintenance_service, services_service
 from .clients import client_hosts
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -128,6 +128,8 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
                                      for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name))]
     bk_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
                  for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.client_id == c.id))]
+    ep_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
+                 for e in db.scalars(select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM", Event.client_id == c.id))]
     etids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == c.id, ExtTenant.source == "ems")))
     ems_days = pc["ems_offline_days"]
     from ..models import ExtAsset as _A
@@ -144,7 +146,8 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
         "active": [_ev(e) for e in vis if e.status == "PROBLEM"],
         "history": [_ev(e) for e in vis[:300]],
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
-        "endpoints": {"enabled": bool(etids), "assets": ep_assets},
+        "endpoints": {"enabled": bool(etids), "assets": ep_assets, "alerts": ep_alerts},
+        "services": services_service.of_client(db, c),
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
         "reports": [{"id": r.id, "name": r.name, "period_start": r.period_start.isoformat() if r.period_start else None,
                      "period_end": r.period_end.isoformat() if r.period_end else None, "generated_at": r.generated_at.isoformat()} for r in runs]}
