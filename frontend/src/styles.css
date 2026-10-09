@@ -281,3 +281,10 @@ tbody tr{transition:background .12s}
 .chanbar .chantest{margin-left:auto;display:inline-flex;gap:6px;align-items:center}
 .chanbar input{height:28px;font-size:12.5px;padding:3px 9px;width:auto;min-width:170px}
 .chanbar .btn{height:28px;font-size:12.5px;padding:0 12px}
+
+/* situacao dos servicos no portal */
+.svc{border-top:3px solid #16a34a}.svc.bad{border-top-color:#bd1723}
+.svc .l{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);font-weight:600}
+.svc .st{font-size:19px;font-weight:700;margin:6px 0 8px;display:flex;align-items:center;gap:8px;color:var(--ink)}
+.svc.bad .st{color:#bd1723}
+.svc .sub{margin:2px 0}

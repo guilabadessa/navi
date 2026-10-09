@@ -17,6 +17,28 @@ const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ?
 
 // Portal do cliente: somente leitura, restrito ao proprio cliente (o servidor garante o isolamento).
 // "embedded"/clientId = pre-visualizacao pela equipe Orca (mostra exatamente o que o cliente ve).
+// Situacao atual de cada servico contratado: operando normalmente ou com falha
+function ServiceStatus({ d }) {
+  const items = []
+  if (d.services?.infra !== false) {
+    const down = d.hosts.filter(h => h.available === 2).length; const open = d.active.length
+    items.push({ k: 'infra', title: 'Infraestrutura', bad: down > 0 || open > 0, warn: false, line: `${d.hosts.length - down} de ${d.hosts.length} hosts disponíveis`, extra: open ? `${open} problema(s) em andamento` : 'Nenhum problema em andamento' })
+  }
+  if (d.backup?.enabled) {
+    const a = d.backup.assets.filter(x => x.status !== 'ignorado' && x.status !== 'sem dados'); const bad = a.filter(x => x.status !== 'ok').length
+    items.push({ k: 'bkp', title: 'Backup', bad: bad > 0, line: `${a.length - bad} de ${a.length} itens com backup em dia`, extra: bad ? `${bad} item(ns) com falha ou atraso` : 'Todos os backups executaram com sucesso' })
+  }
+  if (d.endpoints?.enabled) {
+    const a = d.endpoints.assets.filter(x => x.status !== 'ignorado'); const bad = a.filter(x => x.status !== 'online' && x.status !== 'offline').length
+    items.push({ k: 'eps', title: 'Estações e antivírus', bad: bad > 0, line: `${a.length - bad} de ${a.length} estações em conformidade`, extra: bad ? `${bad} estação(ões) com pendência` : 'Antivírus e proteção em dia' })
+  }
+  if (!items.length) return null
+  return <div className="grid g3 svcstat" style={{ marginBottom: 16 }}>{items.map(i => <div key={i.k} className={'card svc ' + (i.bad ? 'bad' : 'ok')} style={{ padding: 16 }}>
+    <div className="l">{i.title}</div>
+    <div className="st"><i className="dot" style={{ background: i.bad ? '#bd1723' : '#16a34a' }} />{i.bad ? 'Com falha' : 'Operando normalmente'}</div>
+    <div className="sub">{i.line}</div><div className="sub">{i.extra}</div></div>)}</div>
+}
+
 export default function Portal({ me, onLogout, reloadMe, clientId: forced, embedded, minSev }) {
   const toast = useToast(); const auth = useAuth(); const canFin = can(auth, 'portal.finance') || can(auth, 'finance.view'); const [days, setDays] = useState(30); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
   const [grp, setGrp] = useState(''); const [hq, setHq] = useState(''); const [acc, setAcc] = useState(!!me?.must_change_password && !forced)
@@ -62,13 +84,11 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
         <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
         {PORTAL_TIPS[tab] && <p className="tabhelp">{PORTAL_TIPS[tab][1]}</p>}
         {tab === 'geral' && !infra && <>
-          <div className="grid g3" style={{ marginBottom: 16 }}>
-            {d.backup?.enabled && <Stat label="Backup" value={`${d.backup.assets.filter(a => a.status === 'ok').length}/${d.backup.assets.length}`} desc="itens com backup em dia" tone={d.backup.alerts.length ? 'bad' : 'ok'} />}
-            {d.endpoints?.enabled && <Stat label="Estações" value={`${d.endpoints.assets.filter(a => a.status === 'online' || a.status === 'offline').length}/${d.endpoints.assets.length}`} desc="estações sem pendências" tone={d.endpoints.alerts?.length ? 'bad' : 'ok'} />}
-            <Stat label="Em andamento" value={(d.backup?.alerts?.length || 0) + (d.endpoints?.alerts?.length || 0)} desc="alertas de backup e estações" /></div>
+          <ServiceStatus d={d} />
           <Card title="Alertas em andamento" pad={false}><Table rows={[...(d.backup?.alerts || []), ...(d.endpoints?.alerts || [])].filter(e => (e.severity || 0) >= d.min_sev)} empty="🎉 Nenhum alerta em andamento." cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
             { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
         {tab === 'geral' && infra && <>
+          <ServiceStatus d={d} />
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
               <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>

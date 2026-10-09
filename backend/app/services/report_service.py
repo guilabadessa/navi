@@ -65,17 +65,22 @@ def resolve_period(mode: str, days: int | None = None, ref: datetime | None = No
 
 
 def universe_hosts(db: Session, rep: Report, client: Client | None) -> list[ZbxHost]:
-    ids = set(rep.host_ids or [])
-    gids = set(rep.group_ids or [])
-    if not ids and not gids and client:
-        ids |= {h.zbx_hostid for h in client.hosts}
-        gids |= {g.zbx_groupid for g in client.groups}
+    """Hosts do relatorio. Com cliente, so entram hosts QUE O CLIENTE TEM HOJE: selecoes antigas guardadas no relatorio
+    (host/grupo desvinculado depois) sao descartadas e o relatorio e atualizado."""
+    ids, gids = set(rep.host_ids or []), set(rep.group_ids or [])
+    if client:
+        from ..routers.clients import client_hosts
+        mine = {h.hostid: h for h in client_hosts(db, client)}
+        cur_g = {g.zbx_groupid for g in client.groups}
+        ids, gids = {i for i in ids if i in mine}, {g for g in gids if g in cur_g}
+        if sorted(ids) != sorted(rep.host_ids or []) or sorted(gids) != sorted(rep.group_ids or []):
+            rep.host_ids, rep.group_ids = sorted(ids), sorted(gids)  # limpa o lixo guardado
+            db.flush()
+        if not ids and not gids:
+            return sorted(mine.values(), key=lambda h: (h.name or "").lower())
+        return [h for h in mine.values() if h.hostid in ids or (gids and set(h.group_ids or []) & gids)]
     q = select(ZbxHost).where(ZbxHost.active.is_(True))
-    out = []
-    for h in db.scalars(q):
-        if h.hostid in ids or (gids and set(h.group_ids or []) & gids):
-            out.append(h)
-    return out
+    return [h for h in db.scalars(q) if h.hostid in ids or (gids and set(h.group_ids or []) & gids)]
 
 
 def _chart_png(fig) -> str:
