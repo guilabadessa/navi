@@ -83,6 +83,78 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
     return out
 
 
+def _addr(j: dict) -> str | None:
+    cep = "".join(ch for ch in (j.get("cep") or "") if ch.isdigit()).zfill(8)
+    street = " ".join(x for x in [j.get("tipo"), j.get("logradouro")] if x)
+    num = (j.get("numero") or "").strip()
+    if num.upper().replace("/", "").replace(" ", "") == "SN":
+        num = "S/N"
+    out = street + (f", {num}" if num else "")
+    if j.get("complemento"):
+        out += f" - {j['complemento'].strip()}"
+    if j.get("bairro"):
+        out += f" - {j['bairro']}"
+    out = titlecase(out) if out else ""
+    out = out.replace("S/n", "S/N")
+    if cep.strip("0"):
+        out += f" - CEP {cep[:5]}-{cep[5:]}"
+    return out or None
+
+
+def _parse_brasilapi(x: dict) -> dict:
+    ph = "".join(ch for ch in (x.get("ddd_telefone_1") or "") if ch.isdigit())
+    return {"razao": x["razao_social"], "fantasia": x.get("nome_fantasia"), "tipo": x.get("descricao_tipo_de_logradouro"), "logradouro": x.get("logradouro"),
+            "numero": x.get("numero"), "complemento": x.get("complemento"), "bairro": x.get("bairro"), "cep": x.get("cep"), "cidade": x.get("municipio"),
+            "uf": x.get("uf"), "phone": ph or None, "email": (x.get("email") or "").lower() or None, "situacao": x.get("descricao_situacao_cadastral")}
+
+
+def _parse_cnpjws(x: dict) -> dict:
+    e = x["estabelecimento"]
+    ph = "".join(ch for ch in f"{e.get('ddd1') or ''}{e.get('telefone1') or ''}" if ch.isdigit())
+    return {"razao": x["razao_social"], "fantasia": e.get("nome_fantasia"), "tipo": e.get("tipo_logradouro"), "logradouro": e.get("logradouro"),
+            "numero": e.get("numero"), "complemento": e.get("complemento"), "bairro": e.get("bairro"), "cep": e.get("cep"),
+            "cidade": (e.get("cidade") or {}).get("nome"), "uf": (e.get("estado") or {}).get("sigla"), "phone": ph or None,
+            "email": (e.get("email") or "").lower() or None, "situacao": (e.get("situacao_cadastral") or "").upper()}
+
+
+_cnpj_cache: dict[str, tuple[float, dict]] = {}
+
+
+@router.get("/cnpj/{cnpj}")
+def cnpj_lookup(cnpj: str, _=Depends(require("clients.edit"))):
+    """Consulta publica do CNPJ (BrasilAPI / dados da Receita Federal) para preencher o cadastro. So o CNPJ sai do servidor."""
+    import time
+    import httpx
+    d = "".join(ch for ch in cnpj if ch.isdigit())
+    if len(d) != 14:
+        raise HTTPException(422, "CNPJ deve ter 14 dígitos")
+    hit = _cnpj_cache.get(d)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    j = None
+    for url, parse in ((f"https://brasilapi.com.br/api/cnpj/v1/{d}", _parse_brasilapi), (f"https://publica.cnpj.ws/cnpj/{d}", _parse_cnpjws)):
+        try:
+            r = httpx.get(url, timeout=12, headers={"User-Agent": "NAVI/1.0"})
+        except httpx.HTTPError:
+            continue
+        if r.status_code == 404:
+            raise HTTPException(404, "CNPJ não encontrado na base da Receita Federal")
+        if r.status_code == 400:
+            raise HTTPException(422, "CNPJ inválido")
+        if r.status_code == 200:
+            try:
+                j = parse(r.json())
+                break
+            except (KeyError, TypeError, ValueError):
+                continue
+    if j is None:
+        raise HTTPException(502, "A consulta de CNPJ está indisponível no momento. Preencha manualmente ou tente de novo em instantes.")
+    out = {"legal_name": titlecase(j["razao"]), "trade_name": titlecase(j["fantasia"] or j["razao"]), "address": _addr(j), "city": titlecase(j["cidade"]),
+           "state": j["uf"], "phone": j["phone"], "email": j["email"], "situacao": j["situacao"]}
+    _cnpj_cache[d] = (time.time(), out)
+    return out
+
+
 @router.post("")
 def create(body: ClientIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
     body.trade_name, body.legal_name, body.contact_name = titlecase(body.trade_name), titlecase(body.legal_name), titlecase(body.contact_name)

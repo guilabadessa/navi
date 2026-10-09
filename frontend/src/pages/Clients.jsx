@@ -8,7 +8,7 @@ import Portal from './Portal'
 import { get, post, put, del, upload, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pill, SevBadge, Stat, StatusBadge, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
-import { maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
+import { cnpjOk, maskCNPJ, maskPhone, maskTarget, cnpjHint } from '../mask'
 
 export async function deleteClient(c, toast) {
   try {
@@ -30,6 +30,17 @@ function ClientForm({ initial, onClose, onSaved }) {
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data: tpls } = useLoad(() => get('/alerts/templates'), [])
   const set = (k) => (e) => setC({ ...c, [k]: e && e.target ? e.target.value : e })
+  const [look, setLook] = useState('')
+  // Consulta o CNPJ na Receita (via servidor) e preenche o cadastro. Automatico: so campos vazios; pelo botao: sobrescreve (com confirmacao).
+  const lookup = async (cnpj, overwrite) => {
+    setLook('Consultando a Receita Federal…')
+    try {
+      const r = await get('/clients/cnpj/' + cnpj.replace(/\D/g, ''))
+      setC(p => { const n = { ...p }; for (const k of ['legal_name', 'trade_name', 'address', 'city', 'state', 'phone', 'email']) if (r[k] && (overwrite || !p[k])) n[k] = k === 'phone' ? maskPhone(r[k]) : r[k]; return n })
+      setLook(r.situacao && r.situacao !== 'ATIVA' ? `⚠ Situação na Receita: ${r.situacao}` : '✔ Dados da Receita preenchidos — confira antes de salvar')
+    } catch (e) { setLook(e.message) }
+  }
+  const onCnpj = (v) => { const m = maskCNPJ(v); setC(p => ({ ...p, cnpj: m })); setLook(''); if (m.replace(/\D/g, '').length === 14 && cnpjOk(m)) lookup(m, false) }
   const save = async () => {
     if (busy) return
     setBusy(true)
@@ -46,7 +57,7 @@ function ClientForm({ initial, onClose, onSaved }) {
     <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
-      <div className="row r3"><Field label="CNPJ" hint={cnpjHint(c.cnpj)}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => setC({ ...c, cnpj: maskCNPJ(e.target.value) })} placeholder="00.000.000/0000-00" /></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
+      <div className="row r3"><Field label="CNPJ" hint={look || cnpjHint(c.cnpj) || 'Ao digitar um CNPJ válido, o endereço e a razão social são preenchidos.'}><div style={{ display: 'flex', gap: 6 }}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => onCnpj(e.target.value)} placeholder="00.000.000/0000-00" /><button type="button" className="btn sm" title="Consultar e sobrescrever os dados com os da Receita" disabled={!cnpjOk(c.cnpj)} onClick={() => confirm('Substituir razão social, endereço, cidade, UF, telefone e e-mail pelos dados da Receita?') && lookup(c.cnpj, true)}>Consultar</button></div></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
         <Field label="STATUS"><select value={c.status} onChange={set('status')}><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></Field></div>
       <div className="row r3"><Field label="ENDEREÇO"><input value={c.address || ''} onChange={set('address')} /></Field><Field label="CIDADE"><input value={c.city || ''} onChange={set('city')} /></Field><Field label="UF"><input maxLength={2} value={c.state || ''} onChange={e => setC({ ...c, state: e.target.value.toUpperCase() })} /></Field></div>
       <div className="row r3"><Field label="CONTATO"><input value={c.contact_name || ''} onChange={set('contact_name')} /></Field><Field label="E-MAIL"><input value={c.email || ''} onChange={set('email')} /></Field><Field label="TELEFONE"><input inputMode="tel" value={c.phone || ''} onChange={e => setC({ ...c, phone: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
