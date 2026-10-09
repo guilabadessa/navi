@@ -3,6 +3,7 @@ import { Download, Eye, FilePlus2, Mail, MessageCircle, Pencil, Play, Plus, Send
 import { api, get, post, put, del, download, fmtDT, fmtDur, fmtPct, SEV } from '../api'
 import { Card, Check, Field, Loading, Modal, MultiPick, PageHead, Pager, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { ResolvedLine } from './Dest'
 import { maskCNPJ, maskTarget, cnpjHint } from '../mask'
 
 const MODS = [['infra', 'Infraestrutura (disponibilidade e SLA)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Estações e antivírus (FortiClient EMS)']]
@@ -37,7 +38,8 @@ function ReportForm({ r, clients, onClose, onSaved }) {
       <Check label="Incluir gráficos" checked={x.include_charts} onChange={v => setX({ ...x, include_charts: v })} /><Check label="Incluir KPIs e visão executiva" checked={x.include_kpis} onChange={v => setX({ ...x, include_kpis: v })} />
       <Field label="PAPEL TIMBRADO"><select value={x.letterhead} onChange={set('letterhead')}><option value="orca">Orca TI (padrão)</option></select></Field></div>}
     {tab === 'd' && <><Field label="DESTINATÁRIO WHATSAPP" hint='JID do grupo/contato, ou "client" para usar o grupo do cliente'><input value={x.wa_dest || ''} onChange={set('wa_dest')} placeholder="client" /></Field>
-      <div style={{ height: 12 }} /><Field label="DESTINATÁRIOS DE E-MAIL" hint='Separe por vírgula, ou "client" para usar os e-mails de relatório do cliente'><textarea value={x.email_dest || ''} onChange={set('email_dest')} /></Field></>}
+      <div style={{ height: 12 }} /><Field label="DESTINATÁRIOS DE E-MAIL" hint='Separe por vírgula, ou "client" para usar os e-mails de relatório do cliente'><textarea value={x.email_dest || ''} onChange={set('email_dest')} /></Field>
+      <div style={{ marginTop: 10 }}>{x.client_id ? <ResolvedLine client={clients.find(c => c.id === x.client_id)} wa={x.wa_dest} email={x.email_dest} /> : <p className="hint">Selecione o cliente na aba Geral para ver os destinos reais.</p>}</div></>}
   </Modal>
 }
 

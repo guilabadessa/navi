@@ -4,6 +4,7 @@ import { get, post, put, del, fmtDT, SEV } from '../api'
 import { SeverityTab, MigrationTab, MaintenanceTab, NocTab } from './AlertsExtra'
 import { Card, Check, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { DestBox } from './Dest'
 import { maskTarget } from '../mask'
 
 const DELAYS = [[0, 'Imediato'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos']]
@@ -32,6 +33,7 @@ function RuleForm({ r, clients, tpls, onClose, onSaved }) {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10 }}>{SEV.map((s, i) => <Check key={i} label={s} checked={sevs.includes(i)} onChange={() => toggleSev(i)} />)}</div>
       <p className="hint">Se marcar severidades aqui, elas substituem a “severidade mínima”.</p></details>
     <h3 style={{ fontSize: 15, margin: '6px 0 10px' }}>Canais e destinos</h3>
+    {x.client_id ? <DestBox c={clients.find(c => c.id === x.client_id)} only={['wa', 'alert']} title="Destino usado quando a regra não define um" /> : <p className="hint" style={{ marginBottom: 10 }}>Regra para todos os clientes: cada alerta vai para o grupo/celular e e-mails do cliente do evento (veja no cadastro do cliente).</p>}
     <div className="grid g2" style={{ marginBottom: 14 }}>
       <div className="card" style={{ padding: 14 }}><Check label="WhatsApp" checked={x.notify_whatsapp} onChange={v => setX({ ...x, notify_whatsapp: v })} />
         <input style={{ marginTop: 8 }} disabled={!x.notify_whatsapp} value={x.dest_jid || ''} onChange={e => setX({ ...x, dest_jid: maskTarget(e.target.value) })} placeholder="Vazio = grupo/celular do cliente do evento" />

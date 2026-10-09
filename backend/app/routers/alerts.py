@@ -9,7 +9,7 @@ from ..db import get_db
 from ..models import AlertRule, Client, Dispatch, Event, MessageTemplate
 from ..schemas import RuleIn, RuleTestIn, TemplateIn, TestSend
 from ..security import current_user, require, user_has
-from ..services import factory, notification_service as N
+from ..services import commlog, factory, notification_service as N
 from ..util import to_dict
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -164,6 +164,41 @@ def test_whatsapp(body: TestSend, request: Request, db: Session = Depends(get_db
         ok, detail = True, "Mensagem enviada"
     except Exception as e:  # noqa: BLE001
         ok, detail = False, str(e)
+    commlog.record("whatsapp", "Teste de envio", body.to, "sent" if ok else "failed", None if ok else detail, body.text[:120])
     audit.log(db, request, "whatsapp_test", "whatsapp", result="ok" if ok else "falha", detail={"to": body.to})
     db.commit()
     return {"ok": ok, "detail": detail}
+
+
+@router.get("/history")
+def history(channel: str = "whatsapp", status: str | None = None, page: int = 1, size: int = 40, db: Session = Depends(get_db), user=Depends(current_user)):
+    """Historico completo de UM canal: alertas (dispatches) + relatorios, resumo, avisos, testes e falhas de rotinas (comm_log)."""
+    from ..models import CommLog
+    channel = "email" if channel == "email" else "whatsapp"
+    if not user_has(user, f"{channel}.view"):
+        raise HTTPException(403, "Sem permissão")
+    size = min(size, 200)
+    dq = select(Dispatch).where(Dispatch.channel == channel)
+    cq = select(CommLog).where(CommLog.channel == channel)
+    if status:
+        dq = dq.where(Dispatch.status == ("skipped" if status == "skipped" else status))
+        cq = cq.where(CommLog.status == status)
+    total = (db.scalar(select(func.count()).select_from(dq.subquery())) or 0) + (db.scalar(select(func.count()).select_from(cq.subquery())) or 0)
+    need = page * size
+    drows = db.scalars(dq.order_by(Dispatch.id.desc()).limit(need)).all()
+    crows = db.scalars(cq.order_by(CommLog.id.desc()).limit(need)).all()
+    evs = {e.id: e for e in db.scalars(select(Event).where(Event.id.in_([d.event_id for d in drows])))}
+    names = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    items = []
+    for d in drows:
+        e = evs.get(d.event_id)
+        items.append({"ts": (d.sent_at or d.due_at or d.created_at), "origin": {"problem": "Alerta", "recovery": "Recuperação", "escalation": "Escalonamento"}.get(d.kind, d.kind),
+                      "client": names.get(e.client_id) if e else None, "what": f"{e.host} — {e.trigger_name}" if e else None, "dest": d.dest_jid,
+                      "status": d.status, "error": d.error})
+    for c in crows:
+        items.append({"ts": c.ts, "origin": c.kind, "client": names.get(c.client_id), "what": c.subject, "dest": c.dest, "status": c.status, "error": c.error})
+    items.sort(key=lambda x: x["ts"], reverse=True)
+    items = items[(page - 1) * size: page * size]
+    for i in items:
+        i["ts"] = i["ts"].isoformat() if i["ts"] else None
+    return {"total": total, "items": items}

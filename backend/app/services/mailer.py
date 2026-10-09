@@ -107,11 +107,25 @@ def build(db: Session, kind: str, ctx: dict, preview: bool = False):
     return html, _plain(kind, ctx, sig), inline
 
 
-def send(db: Session, kind: str, to: list[str] | str, subject: str, ctx: dict, cc=None, bcc=None, attachments=None):
-    html, text, inline = build(db, kind, ctx)
+_KIND_LABEL = {"report": "Relatório", "digest": "Resumo diário do NOC", "notice": "Aviso", "invite": "Convite de acesso", "new_user": "Dados de acesso"}
+
+
+def send(db: Session, kind: str, to: list[str] | str, subject: str, ctx: dict, cc=None, bcc=None, attachments=None,
+         log: str | None = None, client_id: int | None = None):
+    """Envia e registra no historico de e-mail (alertas ficam em dispatches; use `log` para forcar, ex.: teste de alerta)."""
+    from . import commlog
+    label = log or _KIND_LABEL.get(kind) or ("Aviso" if kind != "alert" else None)
     to = split_addrs(to) if isinstance(to, str) else to
-    factory.email(db).send(to, subject, text, split_addrs(cc) if isinstance(cc, str) else cc,
-                           split_addrs(bcc) if isinstance(bcc, str) else bcc, attachments, html=html, inline=inline)
+    try:
+        html, text, inline = build(db, kind, ctx)
+        factory.email(db).send(to, subject, text, split_addrs(cc) if isinstance(cc, str) else cc,
+                               split_addrs(bcc) if isinstance(bcc, str) else bcc, attachments, html=html, inline=inline)
+    except Exception as e:
+        if label:
+            commlog.record("email", label, to, "failed", str(e), subject, client_id)
+        raise
+    if label:
+        commlog.record("email", label, to, "sent", None, subject, client_id)
 
 
 # ---- contextos prontos ----

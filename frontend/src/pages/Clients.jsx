@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
 import Coverage from './Coverage'
+import { DestBox } from './Dest'
 import PortalAccess from './PortalAccess'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
@@ -66,11 +67,12 @@ function ClientForm({ initial, onClose, onSaved }) {
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
         options={groups.map(g => ({ value: g.groupid, label: g.name, sub: g.clients.length ? 'em uso: ' + g.clients.join(', ') : g.host_count + ' host(s)' }))} /> : <Loading />}</>}
     {tab === 'wa' && <>
+      <DestBox c={c} only={['wa', 'alert']} title="Destinos dos alertas deste cliente" />
       <div className="row" style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} />
         <Check label="Enviar alertas deste cliente por e-mail" checked={c.mail_enabled} onChange={v => setC({ ...c, mail_enabled: v })} /></div>
       <div className="row"><Field label="E-MAILS DE ALERTA" hint="Separe por vírgula. Vazio = usa os e-mails de relatório ou o e-mail do cliente."><input value={c.alert_emails || ''} onChange={set('alert_emails')} placeholder="noc@cliente.com.br, ti@cliente.com.br" disabled={!c.mail_enabled} /></Field></div>
-      <div className="row r2"><Field label="GRUPO WHATSAPP (JID)" hint="Formato 1203630…@g.us. Sem grupo, usa o celular abaixo."><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
-        <Field label="WHATSAPP DO CLIENTE"><input inputMode="tel" value={c.whatsapp || ''} onChange={e => setC({ ...c, whatsapp: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
+      <div className="row r2"><Field label="GRUPO WHATSAPP (JID) — alertas e relatórios" hint="Formato 1203630…@g.us. Sem grupo, usa o celular ao lado. Usado por alertas, relatórios e rotinas."><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
+        <Field label="WHATSAPP (CELULAR) — alertas e relatórios"><input inputMode="tel" value={c.whatsapp || ''} onChange={e => setC({ ...c, whatsapp: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
       <div className="row r4"><Field label="SEVERIDADE MÍNIMA (WhatsApp e e-mail)"><select value={c.wa_min_severity} onChange={set('wa_min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
         <Field label="ATRASO ANTES DO ENVIO"><select value={c.wa_delay_s} onChange={set('wa_delay_s')}>{[[0, 'Imediato'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="HORÁRIO (vazio = 24x7)" hint="ex.: 08:00-18:00"><input value={c.wa_hours || ''} onChange={set('wa_hours')} /></Field>
@@ -79,9 +81,10 @@ function ClientForm({ initial, onClose, onSaved }) {
       <div className="row r2"><Field label="TEMPLATE DE ALERTA"><select value={c.wa_problem_template_id || ''} onChange={e => setC({ ...c, wa_problem_template_id: e.target.value ? Number(e.target.value) : null })}><option value="">Padrão</option>{(tpls || []).filter(t => t.kind === 'problem').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
         <Field label="TEMPLATE DE RECUPERAÇÃO"><select value={c.wa_recovery_template_id || ''} onChange={e => setC({ ...c, wa_recovery_template_id: e.target.value ? Number(e.target.value) : null })}><option value="">Padrão</option>{(tpls || []).filter(t => t.kind === 'recovery').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field></div></>}
     {tab === 'rel' && <>
+      <DestBox c={c} only={['wa', 'report']} title="Destinos dos relatórios deste cliente" />
       <div className="row r3"><Field label="SLA CONTRATADO (%)"><input type="number" step="0.01" min="0" max="100" value={c.sla_target} onChange={set('sla_target')} /></Field>
         <Field label="HORÁRIO DE ATENDIMENTO"><input value={c.service_hours || ''} onChange={set('service_hours')} placeholder="24x7 / Seg-Sex 8h-18h" /></Field></div>
-      <Field label="E-MAILS PARA RELATÓRIOS" hint="Separe por vírgula"><textarea value={c.report_emails || ''} onChange={set('report_emails')} /></Field>
+      <Field label="E-MAILS DE DESTINO DOS RELATÓRIOS" hint="Separe por vírgula. É para estes endereços que as rotinas e os relatórios enviam quando o destino é “client”. O WhatsApp usa o grupo/celular da aba Alertas."><textarea value={c.report_emails || ''} onChange={set('report_emails')} /></Field>
       {c.id && <div style={{ marginTop: 14 }}><label className="f">LOGO DO CLIENTE</label><input type="file" accept="image/*" onChange={async e => { try { await upload(`/clients/${c.id}/logo`, e.target.files[0]); toast('Logo enviada') } catch (x) { toast(x.message, true) } }} /></div>}</>}
     {tab === 'portal' && c.id && <PortalAccess client={c} />}
     {tab === 'contatos' && <>

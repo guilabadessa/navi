@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from .. import audit, scheduling
 from ..db import get_db
 from ..jobs import JOBS
-from ..models import JobStatus, Report, Schedule
+from ..models import Client, JobStatus, Report, Schedule
 from ..schemas import ScheduleIn
 from ..security import require
-from ..services import delivery_service, report_service
+from ..services import commlog, delivery_service, destinations, report_service
 from ..util import to_dict
 
 router = APIRouter(prefix="/routines", tags=["routines"])
@@ -18,8 +18,29 @@ router = APIRouter(prefix="/routines", tags=["routines"])
 
 @router.get("/schedules")
 def schedules(db: Session = Depends(get_db), _=Depends(require("routines.view"))):
-    names = dict(db.execute(select(Report.id, Report.name)).all())
-    return [{**to_dict(s), "report_name": names.get(s.report_id)} for s in db.scalars(select(Schedule).order_by(Schedule.name))]
+    reps = {r.id: r for r in db.scalars(select(Report))}
+    out = []
+    for s in db.scalars(select(Schedule).order_by(Schedule.name)):
+        rep = reps.get(s.report_id)
+        client = db.get(Client, rep.client_id) if rep and rep.client_id else None
+        out.append({**to_dict(s), "report_name": rep.name if rep else None, "resolved": _resolve(s, client)})
+    return out
+
+
+def _resolve(s: Schedule, client: Client | None) -> dict:
+    """Destinos REAIS desta rotina (o que de fato recebe), com aviso quando algo esta faltando."""
+    d = destinations.describe(client)
+    wa = d["wa"] if s.wa_dest == "client" else (s.wa_dest or None)
+    em = d["report_emails"] if s.email_to == "client" else (s.email_to or None)
+    warn = []
+    if s.wa_dest and not wa:
+        warn.append("WhatsApp solicitado, mas o cliente não tem grupo nem celular cadastrado")
+    if s.email_to and not em:
+        warn.append("E-mail solicitado, mas o cliente não tem e-mail de relatório cadastrado")
+    if not s.wa_dest and not s.email_to:
+        warn.append("Nenhum destino configurado: o relatório será gerado e não enviado")
+    return {"client": d["client"], "wa": wa, "wa_kind": d["wa_kind"] if s.wa_dest == "client" else ("informado na rotina" if wa else None), "email": em,
+            "email_origin": "cadastro do cliente" if s.email_to == "client" else "informado na rotina", "warnings": warn}
 
 
 def _fill(s: Schedule, b: ScheduleIn):
@@ -70,7 +91,15 @@ def run_now(sid: int, request: Request, db: Session = Depends(get_db), me=Depend
     if not s or not rep:
         raise HTTPException(404)
     a, b = report_service.resolve_period(s.period_mode, s.period_days)
-    run = report_service.generate(db, rep, me.email, a, b, name_suffix="_manual")
+    try:
+        run = report_service.generate(db, rep, me.email, a, b, name_suffix="_manual")
+    except Exception as e:
+        for ch, want in (("whatsapp", s.wa_dest), ("email", s.email_to)):
+            if want:
+                commlog.record(ch, "Relatório agendado", None, "failed", f"Execução manual de '{s.name}' falhou antes do envio: {e}", rep.name, rep.client_id)
+        if isinstance(e, ValueError):
+            raise HTTPException(422, str(e))
+        raise
     delivery_service.deliver(db, run, rep, s.wa_dest, s.email_to, s.email_cc, s.email_bcc, s.subject)
     s.last_run, s.last_status = datetime.now(timezone.utc), f"manual · WA: {run.wa_status or '-'} · E-mail: {run.email_status or '-'}"[:250]
     audit.log(db, request, "schedule_run", "schedule", sid, detail={"run": run.id})

@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from ..schemas import ClientIn
 from ..security import require, user_has
 from .. import portal_access as PA
-from ..services import event_service, services_service
+from ..services import destinations, event_service, services_service
 from ..services import kpi_service, maintenance_service
 from ..util import titlecase, to_dict, like
 
@@ -32,6 +32,7 @@ def _full(db: Session, c: Client) -> dict:
     d["host_ids"] = [h.zbx_hostid for h in c.hosts]
     d["contacts"] = [to_dict(x) for x in c.contacts]
     d["services"] = services_service.of_client(db, c)
+    d["destinations"] = destinations.describe(c)
     return d
 
 

@@ -13,7 +13,7 @@ from .. import audit, settings_store
 from ..db import get_db
 from ..models import Client, ClientHost, ClientHostGroup, Event, MaintenanceWindow, SeverityRule, ZbxHost, ZbxHostGroup
 from ..security import require
-from ..services import event_service, factory, maintenance_service, noc_service, severity_service
+from ..services import commlog, event_service, factory, maintenance_service, noc_service, severity_service
 from ..util import parse_dt, to_dict
 
 router = APIRouter(tags=["ops"])
@@ -340,8 +340,10 @@ def noc_test(body: NocTest, db: Session = Depends(get_db), _=Depends(require("al
         try:
             factory.evolution(db).send_text(c["noc_wa"], "🧪 *TESTE NAVI* — este é o canal do NOC para escalonamentos e resumo diário. Não é um incidente real.")
             res.append("WhatsApp ok")
+            commlog.record("whatsapp", "Teste do canal do NOC", c["noc_wa"], "sent")
         except Exception as e:  # noqa: BLE001
             res.append(f"WhatsApp erro: {str(e)[:120]}")
+            commlog.record("whatsapp", "Teste do canal do NOC", c["noc_wa"], "failed", str(e))
     if c["noc_emails"]:
         try:
             from ..services import mailer

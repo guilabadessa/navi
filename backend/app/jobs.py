@@ -13,8 +13,8 @@ from sqlalchemy import delete, select
 from . import scheduling, settings_store as S
 from .config import get_settings
 from .db import SessionLocal
-from .models import (AuditLog, Dispatch, Event, HealthCheck, JobStatus, Report, ReportRun, Schedule, SyncRun)
-from .services import (delivery_service, event_service, factory, noc_service, notification_service, protection_service,
+from .models import (AuditLog, CommLog, Dispatch, Event, HealthCheck, JobStatus, Report, ReportRun, Schedule, SyncRun)
+from .services import (commlog, delivery_service, event_service, factory, noc_service, notification_service, protection_service,
                        report_service, sync_service)
 
 log = logging.getLogger("navi.jobs")
@@ -157,6 +157,10 @@ def run_schedules(db):
             db.rollback()
             s = db.get(Schedule, s.id)
             s.last_status = f"erro: {e}"[:250]
+            rep = db.get(Report, s.report_id)
+            for ch, want in (("whatsapp", s.wa_dest), ("email", s.email_to)):  # a falha aparece no historico dos canais solicitados
+                if want:
+                    commlog.record(ch, "Relatório agendado", None, "failed", f"Rotina '{s.name}' falhou antes do envio: {e}", rep.name if rep else s.name, rep.client_id if rep else None)
         s.last_run = now
         s.next_run = scheduling.next_run(s, now)
         db.commit()
@@ -205,6 +209,7 @@ def cleanup(db):
     # eventos resolvidos alem da retencao saem da NAVI (consulta historica e feita ao vivo no Zabbix)
     db.execute(delete(Event).where(Event.status == "RESOLVED", Event.started_at < now - timedelta(days=ret)))
     db.execute(delete(Dispatch).where(Dispatch.created_at < now - timedelta(days=ret)))
+    db.execute(delete(CommLog).where(CommLog.ts < now - timedelta(days=ret)))
     db.execute(delete(SyncRun).where(SyncRun.started_at < now - timedelta(days=30)))
     db.execute(delete(AuditLog).where(AuditLog.ts < now - timedelta(days=730)))
     # PDFs orfaos (sem registro) e excedentes por cliente

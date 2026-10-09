@@ -395,6 +395,20 @@ class JobStatus(Base):
     ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class CommLog(Base):
+    """Comunicacao enviada pela NAVI que nao e alerta (alertas ficam em dispatches): relatorios, resumo, avisos, testes, convites."""
+    __tablename__ = "comm_log"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    channel: Mapped[str] = mapped_column(String(16), index=True)  # whatsapp | email
+    kind: Mapped[str] = mapped_column(String(48))
+    dest: Mapped[str | None] = mapped_column(Text)
+    subject: Mapped[str | None] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(16))  # sent | failed | skipped
+    error: Mapped[str | None] = mapped_column(Text)
+    client_id: Mapped[int | None] = mapped_column(Integer, index=True)
+
+
 class SyncRun(Base):
     __tablename__ = "sync_runs"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import settings_store as S
 from ..config import get_settings
 from ..models import SEVERITIES, Client, Dispatch, Event, HealthCheck, JobStatus
+from . import commlog
 from .email_service import split_addrs
 from .evolution_service import normalize_target
 
@@ -266,8 +267,10 @@ def send_digest(db: Session, evo, manual: bool = False) -> str:
         try:
             evo.send_text(c["noc_wa"], f"📋 *RESUMO DIÁRIO DO NOC — {day}*" + ("  _(teste)_" if manual else "") + "\n\n" + "\n".join(digest_text(d, day)))
             res.append("WhatsApp ok")
+            commlog.record("whatsapp", "Resumo diário do NOC", c["noc_wa"], "sent")
         except Exception as e:  # noqa: BLE001
             res.append(f"WhatsApp erro: {str(e)[:80]}")
+            commlog.record("whatsapp", "Resumo diário do NOC", c["noc_wa"], "failed", str(e))
     return " · ".join(res)
 
 

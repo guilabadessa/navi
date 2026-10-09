@@ -11,6 +11,7 @@ from ..models import Client, Report, ReportRun
 from ..schemas import GenerateIn, ReportIn, SendIn
 from ..security import require
 from ..services import delivery_service, kpi_service, report_service
+from ..services import destinations as dest_svc
 from ..util import to_dict
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -21,7 +22,8 @@ def list_reports(db: Session = Depends(get_db), _=Depends(require("reports.view"
     names = dict(db.execute(select(Client.id, Client.trade_name)).all())
     last = {r: (g, st) for r, g, st in db.execute(select(ReportRun.report_id, func.max(ReportRun.generated_at), func.count())
                                                  .group_by(ReportRun.report_id)).all()}
-    return [{**to_dict(r), "client_name": names.get(r.client_id), "last_run": (last.get(r.id) or (None, 0))[0] and last[r.id][0].isoformat(),
+    cl = {c.id: c for c in db.scalars(select(Client))}
+    return [{**to_dict(r), "destinations": dest_svc.describe(cl.get(r.client_id)), "client_name": names.get(r.client_id), "last_run": (last.get(r.id) or (None, 0))[0] and last[r.id][0].isoformat(),
              "runs": (last.get(r.id) or (None, 0))[1]} for r in db.scalars(select(Report).order_by(Report.created_at.desc()))]
 
 
@@ -166,7 +168,7 @@ def generate(rid: int, body: GenerateIn, request: Request, db: Session = Depends
     except Exception as ex:  # noqa: BLE001
         audit.log(db, request, "report_generate", "report", rid, result="falha", detail={"error": str(ex)[:300]})
         db.commit()
-        raise HTTPException(500, f"Falha ao gerar relatório: {ex}")
+        raise HTTPException(422 if isinstance(ex, ValueError) else 500, f"Falha ao gerar relatório: {ex}")
     audit.log(db, request, "report_generate", "report", rid, detail={"run": run.id})
     db.commit()
     return to_dict(run, {"kpis"})

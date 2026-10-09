@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
+from . import commlog
 from .email_service import split_addrs
 from .evolution_service import normalize_target
 
@@ -398,8 +399,10 @@ def test_rule(db: Session, evo, rule: AlertRule, to_whatsapp: str | None = None,
             try:
                 evo.send_text(dest, text)
                 out["whatsapp"] = {"ok": True, "detail": f"Enviado para {dest}"}
+                commlog.record("whatsapp", "Teste de alerta", dest, "sent", None, None, client.id if client.id else None)
             except Exception as e:  # noqa: BLE001
                 out["whatsapp"] = {"ok": False, "detail": str(e)[:300]}
+                commlog.record("whatsapp", "Teste de alerta", dest, "failed", str(e), None, client.id if client.id else None)
     if rule.notify_email:
         dest = to_email or _mail_dest(rule, client if client.id else None)
         if not dest:
@@ -407,7 +410,7 @@ def test_rule(db: Session, evo, rule: AlertRule, to_whatsapp: str | None = None,
         else:
             try:
                 subject, ctx = email_ctx(ev, client, "problem", test=True)
-                mailer.send(db, "alert", dest, subject, ctx)
+                mailer.send(db, "alert", dest, subject, ctx, log="Teste de alerta", client_id=client.id if client.id else None)
                 out["email"] = {"ok": True, "detail": f"Enviado para {dest}"}
             except Exception as e:  # noqa: BLE001
                 out["email"] = {"ok": False, "detail": str(e)[:300]}
