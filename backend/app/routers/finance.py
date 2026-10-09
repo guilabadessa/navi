@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import Client, ExtTenant, FinDoc, User
+from ..models import Client, ClientPerson, ExtTenant, FinDoc, User
 from ..security import current_user, make_oauth_state, read_oauth_state, require, user_has
 from ..services import finance_service as F
 from ..services.contaazul_service import ContaAzul, ContaAzulError, DEFAULT_REDIRECT, digits
@@ -116,35 +116,65 @@ def sync(request: Request, db: Session = Depends(get_db), _=Depends(require("fin
 
 @router.get("/finance/links")
 def links(db: Session = Depends(get_db), _=Depends(require("finance.view"))):
-    """Clientes da NAVI x cadastros do Conta Azul (vinculo por CNPJ; sugestoes por nome precisam de confirmacao)."""
+    """Clientes da NAVI x cadastros (CNPJs) do Conta Azul. Um cliente pode ter varios CNPJs. O vinculo automatico e so por CNPJ
+    identico ao do cliente; as sugestoes (mesma raiz de CNPJ ou nome parecido) precisam de confirmacao."""
     sug = F.suggestions(db)
     people = {t.ext_id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.source == "contaazul"))}
+    by_client: dict[int, list] = {}
+    for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked").order_by(ClientPerson.person_id)):
+        p = people.get(cp.person_id)
+        by_client.setdefault(cp.client_id, []).append({"id": cp.person_id, "name": p.name if p else "(cadastro removido)", "doc": p.kind if p else None, "match": cp.match})
+    owner = {cp.person_id: cp.client_id for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked"))}
     rows = []
     for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
-        p = people.get(c.ca_person_id) if c.ca_person_id else None
-        rows.append({"client_id": c.id, "name": c.trade_name, "cnpj": c.cnpj, "person_id": c.ca_person_id, "match": c.ca_match,
-                     "person_name": p.name if p else None, "person_doc": p.kind if p else None,
-                     "suggestions": sug.get(c.id, []), "has_cnpj": len(digits(c.cnpj)) >= 11})
-    return {"clients": rows, "people": [{"id": t.ext_id, "name": t.name, "doc": t.kind} for t in sorted(people.values(), key=lambda x: x.name.lower()) if t.active]}
+        rows.append({"client_id": c.id, "name": c.trade_name, "cnpj": c.cnpj, "persons": by_client.get(c.id, []), "suggestions": sug.get(c.id, []),
+                     "has_cnpj": len(digits(c.cnpj)) >= 11})
+    return {"clients": rows, "people": [{"id": t.ext_id, "name": t.name, "doc": t.kind, "taken": t.ext_id in owner}
+                                        for t in sorted(people.values(), key=lambda x: x.name.lower()) if t.active]}
 
 
 @router.put("/finance/clients/{cid}/link")
 def link(cid: int, body: LinkIn, request: Request, db: Session = Depends(get_db), me=Depends(require("finance.view"))):
+    """Adiciona um cadastro (CNPJ) do Conta Azul ao cliente. Um cadastro pertence a um unico cliente."""
     if not user_has(me, "clients.edit"):
         raise HTTPException(403, "Sem permissão")
     c = db.get(Client, cid)
-    if not c:
+    if not c or not body.person_id:
         raise HTTPException(404)
-    if body.person_id:
-        if not db.scalar(select(ExtTenant.id).where(ExtTenant.source == "contaazul", ExtTenant.ext_id == body.person_id)):
-            raise HTTPException(404, "Cadastro não encontrado no Conta Azul. Sincronize e tente novamente.")
-        c.ca_person_id, c.ca_match = body.person_id, "manual"
+    if not db.scalar(select(ExtTenant.id).where(ExtTenant.source == "contaazul", ExtTenant.ext_id == body.person_id)):
+        raise HTTPException(404, "Cadastro não encontrado no Conta Azul. Sincronize e tente novamente.")
+    cp = db.get(ClientPerson, body.person_id)
+    if cp and cp.match != "blocked" and cp.client_id != cid:
+        other = db.get(Client, cp.client_id)
+        raise HTTPException(409, f"Este CNPJ já está vinculado ao cliente {other.trade_name if other else cp.client_id}. Desvincule-o de lá primeiro.")
+    if cp:
+        cp.client_id, cp.match = cid, "manual"
     else:
-        c.ca_person_id, c.ca_match = None, "manual"  # desvinculado manualmente: a busca por CNPJ nao refaz o vinculo
-    # titulos do vinculo anterior saem do cliente
-    for d in db.scalars(select(FinDoc).where(FinDoc.client_id == cid)):
-        db.delete(d)
+        db.add(ClientPerson(person_id=body.person_id, client_id=cid, match="manual"))
+    db.flush()
+    F.refresh_primary(db)
     audit.log(db, request, "contaazul_link", "client", cid, detail={"person_id": body.person_id})
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/finance/clients/{cid}/link/{person_id}")
+def unlink(cid: int, person_id: str, request: Request, db: Session = Depends(get_db), me=Depends(require("finance.view"))):
+    """Remove um CNPJ do cliente e os titulos/notas dele. O que veio por CNPJ fica marcado para nao revincular sozinho."""
+    if not user_has(me, "clients.edit"):
+        raise HTTPException(403, "Sem permissão")
+    cp = db.get(ClientPerson, person_id)
+    if not cp or cp.client_id != cid or cp.match == "blocked":
+        raise HTTPException(404)
+    if cp.match == "cnpj":
+        cp.match = "blocked"
+    else:
+        db.delete(cp)
+    for d in db.scalars(select(FinDoc).where(FinDoc.client_id == cid, FinDoc.person_id == person_id)):
+        db.delete(d)
+    db.flush()
+    F.refresh_primary(db)
+    audit.log(db, request, "contaazul_unlink", "client", cid, detail={"person_id": person_id})
     db.commit()
     return {"ok": True}
 

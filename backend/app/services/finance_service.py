@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import settings_store as S
-from ..models import Client, ExtTenant, FinDoc
+from ..models import Client, ClientPerson, ExtTenant, FinDoc
 from .contaazul_service import ContaAzul, ContaAzulError, digits
 
 log = logging.getLogger("navi.finance")
@@ -49,9 +49,25 @@ def _links(obj, depth: int = 0) -> dict:
     return out
 
 
+def person_map(db: Session) -> dict[str, int]:
+    """cadastro do Conta Azul -> cliente da NAVI (vinculos ativos)."""
+    return {cp.person_id: cp.client_id for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked"))}
+
+
+def refresh_primary(db: Session):
+    """Mantem Client.ca_person_id = primeiro cadastro vinculado (usado para saber se o financeiro esta vinculado)."""
+    first: dict[int, ClientPerson] = {}
+    for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked").order_by(ClientPerson.person_id)):
+        first.setdefault(cp.client_id, cp)
+    for c in db.scalars(select(Client)):
+        cp = first.get(c.id)
+        c.ca_person_id, c.ca_match = (cp.person_id, cp.match) if cp else (None, None)
+    db.flush()
+
+
 def sync_people(db: Session, ca: ContaAzul) -> dict:
-    """Atualiza o cadastro de pessoas do Conta Azul e vincula, automaticamente, SOMENTE por CNPJ identico.
-    Vinculos manuais nunca sao alterados. Quando o CNPJ nao casa, apenas sugere (por nome) para o usuario confirmar."""
+    """Atualiza o cadastro de pessoas do Conta Azul e vincula, automaticamente, SOMENTE por CNPJ identico ao do cliente.
+    Vinculos manuais e desvinculos nunca sao alterados. Outros CNPJs do mesmo cliente sao adicionados manualmente."""
     seen: set[str] = set()
     existing = {t.ext_id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC))}
     by_doc: dict[str, list[str]] = {}
@@ -72,32 +88,41 @@ def sync_people(db: Session, ca: ContaAzul) -> dict:
     for pid, t in existing.items():
         if pid not in seen:
             t.active = False
+    db.flush()
+    rows = {cp.person_id: cp for cp in db.scalars(select(ClientPerson))}
     linked = 0
     for c in db.scalars(select(Client).where(Client.status == "ativo")):
-        if c.ca_match == "manual":
-            continue
         doc = digits(c.cnpj)
-        pids = by_doc.get(doc) if len(doc) >= 11 else None
-        if pids:
-            c.ca_person_id, c.ca_match = pids[0], "cnpj"
-            linked += 1
-        elif c.ca_match == "cnpj" and c.ca_person_id not in seen:
-            c.ca_person_id, c.ca_match = None, None  # cadastro deixou de existir no Conta Azul
+        for pid in (by_doc.get(doc) or []) if len(doc) >= 11 else []:
+            if pid not in rows:  # cadastro livre: vincula; se ja pertence a outro cliente ou foi desvinculado, respeita
+                rows[pid] = ClientPerson(person_id=pid, client_id=c.id, match="cnpj")
+                db.add(rows[pid])
+                linked += 1
+    for pid, cp in list(rows.items()):
+        if cp.match == "cnpj" and pid not in seen:
+            db.delete(cp)  # cadastro deixou de existir no Conta Azul
     db.flush()
+    refresh_primary(db)
     return {"people": len(seen), "linked": linked}
 
 
 def suggestions(db: Session) -> dict[int, list[dict]]:
-    """Para clientes sem vinculo: cadastros do Conta Azul com nome igual/parecido (apenas sugestao)."""
-    people = list(db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.active.is_(True))))
-    taken = {c.ca_person_id for c in db.scalars(select(Client)) if c.ca_person_id}
-    idx = [(_norm(p.name), p) for p in people if p.ext_id not in taken]
+    """Cadastros ainda livres que PARECEM ser do cliente: mesma raiz de CNPJ (filiais) ou nome igual/parecido. Apenas sugestao."""
+    taken = {cp.person_id for cp in db.scalars(select(ClientPerson).where(ClientPerson.match != "blocked"))}
+    people = [p for p in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.active.is_(True))) if p.ext_id not in taken]
     out: dict[int, list[dict]] = {}
-    for c in db.scalars(select(Client).where(Client.status == "ativo", Client.ca_person_id.is_(None))):
+    for c in db.scalars(select(Client).where(Client.status == "ativo")):
         names = {n for n in (_norm(c.trade_name), _norm(c.legal_name)) if n}
-        hit = [{"id": p.ext_id, "name": p.name, "doc": p.kind} for n, p in idx if n and any(n == m or (len(m) > 5 and (m in n or n in m)) for m in names)]
+        root = digits(c.cnpj)[:8] if len(digits(c.cnpj)) == 14 else ""
+        hit = []
+        for p in people:
+            same_root = bool(root and p.kind and len(p.kind) == 14 and p.kind[:8] == root)
+            n = _norm(p.name)
+            by_name = bool(n and any(n == m or (len(m) > 5 and (m in n or n in m)) for m in names))
+            if same_root or by_name:
+                hit.append({"id": p.ext_id, "name": p.name, "doc": p.kind, "why": "mesma raiz de CNPJ" if same_root else "nome parecido"})
         if hit:
-            out[c.id] = hit[:3]
+            out[c.id] = hit[:5]
     return out
 
 
@@ -113,7 +138,7 @@ def _title_status(it: dict, today: date) -> str:
 
 
 def sync_titles(db: Session, ca: ContaAzul) -> dict:
-    pid_client = {c.ca_person_id: c.id for c in db.scalars(select(Client).where(Client.ca_person_id.is_not(None)))}
+    pid_client = person_map(db)
     if not pid_client:
         return {"titles": 0}
     today = date.today()
@@ -171,19 +196,19 @@ _NOTE_ST = {"EMITIDA": "emitida", "CANCELAMENTO_MANUAL": "cancelada", "CANCELADA
 
 def sync_notes(db: Session, ca: ContaAzul) -> dict:
     """Notas fiscais SEPARADAS das vendas: NFS-e (documento do cliente) e NF-e (destinatario por nome)."""
-    by_doc = {digits(c.cnpj): c.id for c in db.scalars(select(Client)) if len(digits(c.cnpj)) >= 11}
-    linked = list(db.scalars(select(Client).where(Client.ca_person_id.is_not(None))))
-    pid_client = {c.ca_person_id: c.id for c in linked}
+    pid_client = person_map(db)
+    by_doc: dict[str, tuple[int, str | None]] = {}
+    by_name: dict[str, tuple[int, str | None]] = {}
     for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.ext_id.in_(list(pid_client) or ["-"]))):
+        cid = pid_client[t.ext_id]
         if t.kind:
-            by_doc.setdefault(digits(t.kind), pid_client[t.ext_id])
-    by_name = {}
-    for c in linked:
+            by_doc.setdefault(digits(t.kind), (cid, t.ext_id))
+        if _norm(t.name):
+            by_name.setdefault(_norm(t.name), (cid, t.ext_id))
+    for c in db.scalars(select(Client).where(Client.id.in_(set(pid_client.values()) or {-1}))):
         for nm in (c.trade_name, c.legal_name):
             if _norm(nm):
-                by_name[_norm(nm)] = c.id
-    for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC, ExtTenant.ext_id.in_(list(pid_client) or ["-"]))):
-        by_name.setdefault(_norm(t.name), pid_client[t.ext_id])
+                by_name.setdefault(_norm(nm), (c.id, None))
     if not by_doc and not by_name:
         return {"notes": 0}
     today = date.today()
@@ -192,16 +217,17 @@ def sync_notes(db: Session, ca: ContaAzul) -> dict:
     old = {f.ext_id: f for f in db.scalars(select(FinDoc).where(FinDoc.kind == "nota"))}
     n = 0
 
-    def put(key: str, cid: int | None, **kw):
+    def put(key: str, who: tuple[int, str | None] | None, **kw):
         nonlocal n
-        if not cid:
+        if not who:
             return
+        cid, pid = who
         f = old.get(key)
         if f is None:
             f = FinDoc(kind="nota", ext_id=key)
             db.add(f)
             old[key] = f
-        f.client_id = cid
+        f.client_id, f.person_id = cid, pid
         for k_, v_ in kw.items():
             setattr(f, k_, v_)
         f.synced_at = datetime.now(timezone.utc)

@@ -447,3 +447,11 @@ class FinNotice(Base):
     ref: Mapped[str] = mapped_column(String(64))  # id do titulo ou AAAA-MM
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (UniqueConstraint("user_id", "kind", "ref"),)
+
+
+class ClientPerson(Base):
+    """Cadastros (CNPJs) do Conta Azul que pertencem a um mesmo cliente da NAVI (um cliente pode ter varios CNPJs)."""
+    __tablename__ = "client_persons"
+    person_id: Mapped[str] = mapped_column(String(64), primary_key=True)  # um cadastro pertence a um unico cliente
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    match: Mapped[str] = mapped_column(String(16), default="manual")  # cnpj | manual | blocked (desvinculado: nao revincular sozinho)

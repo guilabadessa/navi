@@ -1,25 +1,27 @@
 import React, { useState } from 'react'
-import { FlaskConical, KeyRound, Link2, RefreshCw } from 'lucide-react'
-import { get, post, put } from '../api'
+import { FlaskConical, KeyRound, Link2, Plus, RefreshCw, X } from 'lucide-react'
+import { get, post, put, del } from '../api'
 import { Card, Check, Field, Loading, Pill, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskCNPJ } from '../mask'
 
 function Links() {
-  const toast = useToast(); const { data, reload } = useLoad(() => get('/finance/links'), []); const [sel, setSel] = useState({})
+  const toast = useToast(); const { data, reload } = useLoad(() => get('/finance/links'), []); const [sel, setSel] = useState({}); const [q, setQ] = useState('')
   if (!data) return <Loading />
-  const link = async (cid, pid) => { try { await put(`/finance/clients/${cid}/link`, { person_id: pid || null }); toast(pid ? 'Cliente vinculado' : 'Vínculo removido'); reload() } catch (e) { toast(e.message, true) } }
-  return <Card title="Clientes da NAVI × cadastros do Conta Azul" pad={false}>
-    <div className="sub" style={{ padding: '10px 20px 0' }}>O vínculo é feito <b>automaticamente pelo CNPJ</b> (cadastro do cliente na NAVI × documento no Conta Azul). Quando o CNPJ não coincide, a NAVI só <b>sugere</b> por nome e você confirma.</div>
-    <Table rows={data.clients} empty="Nenhum cliente." cols={[
-      { h: 'Cliente', r: r => <b>{r.name}</b> }, { h: 'CNPJ (NAVI)', r: r => r.cnpj ? maskCNPJ(r.cnpj) : <Pill tone="warn">sem CNPJ</Pill> },
-      { h: 'Conta Azul', r: r => r.person_id ? <span>{r.person_name} <span className="sub mono">{r.person_doc ? maskCNPJ(r.person_doc) : 'sem documento'}</span></span> : <span className="sub">não vinculado</span> },
-      { h: 'Vínculo', r: r => r.person_id ? <Pill tone={r.match === 'cnpj' ? 'ok' : 'info'}>{r.match === 'cnpj' ? 'por CNPJ' : 'manual'}</Pill> : <Pill tone="mut">pendente</Pill> },
-      { h: '', r: r => r.person_id ? <button className="btn sm" onClick={() => confirm('Desvincular este cliente do Conta Azul?') && link(r.client_id, null)}>Desvincular</button>
-        : <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {r.suggestions.map(sg => <button key={sg.id} className="btn sm" title={`Confirmar: ${sg.name}`} onClick={() => link(r.client_id, sg.id)}><Link2 size={14} />{sg.name.slice(0, 28)}</button>)}
-          <select style={{ width: 190 }} value={sel[r.client_id] || ''} onChange={e => setSel({ ...sel, [r.client_id]: e.target.value })}><option value="">Escolher cadastro…</option>{data.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          <button className="btn sm" disabled={!sel[r.client_id]} onClick={() => link(r.client_id, sel[r.client_id])}>Vincular</button></div> }]} /></Card>
+  const add = async (cid, pid) => { try { await put(`/finance/clients/${cid}/link`, { person_id: pid }); toast('CNPJ vinculado ao cliente'); setSel(x => ({ ...x, [cid]: '' })); reload() } catch (e) { toast(e.message, true) } }
+  const remove = async (cid, p) => { if (!confirm(`Remover ${p.name} deste cliente? Os títulos e notas desse CNPJ saem do portal dele.`)) return; try { await del(`/finance/clients/${cid}/link/${p.id}`); toast('CNPJ removido do cliente'); reload() } catch (e) { toast(e.message, true) } }
+  const rows = data.clients.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()))
+  return <Card title="Clientes da NAVI × CNPJs do Conta Azul" pad={false} actions={<input style={{ width: 220 }} placeholder="Buscar cliente…" value={q} onChange={e => setQ(e.target.value)} />}>
+    <div className="sub" style={{ padding: '10px 20px 0' }}>O vínculo é feito <b>automaticamente pelo CNPJ</b> do cadastro do cliente. Um cliente pode ter <b>vários CNPJs</b>: adicione os demais abaixo e o portal mostra o financeiro de todos juntos. Quando o CNPJ não coincide, a NAVI apenas <b>sugere</b> (mesma raiz de CNPJ ou nome parecido) e você confirma.</div>
+    <Table rows={rows} empty="Nenhum cliente." cols={[
+      { h: 'Cliente', r: r => <><b>{r.name}</b><div className="sub mono">{r.cnpj ? maskCNPJ(r.cnpj) : <Pill tone="warn">sem CNPJ</Pill>}</div></> },
+      { h: 'CNPJs vinculados (Conta Azul)', r: r => r.persons.length ? <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{r.persons.map(p => <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span>{p.name} <span className="sub mono">{p.doc ? maskCNPJ(p.doc) : 'sem documento'}</span></span><Pill tone={p.match === 'cnpj' ? 'ok' : 'info'}>{p.match === 'cnpj' ? 'por CNPJ' : 'manual'}</Pill>
+        <button className="btn sm danger" title="Remover este CNPJ do cliente" onClick={() => remove(r.client_id, p)}><X size={13} /></button></div>)}</div> : <span className="sub">nenhum</span> },
+      { h: 'Adicionar CNPJ', r: r => <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {r.suggestions.map(sg => <button key={sg.id} className="btn sm" title={`${sg.why}: ${sg.name}`} onClick={() => add(r.client_id, sg.id)}><Link2 size={14} />{sg.name.slice(0, 30)} <span className="sub">({sg.why})</span></button>)}
+        <div style={{ display: 'flex', gap: 6 }}><select style={{ width: 200 }} value={sel[r.client_id] || ''} onChange={e => setSel({ ...sel, [r.client_id]: e.target.value })}><option value="">Escolher cadastro…</option>{data.people.filter(p => !p.taken).map(p => <option key={p.id} value={p.id}>{p.name}{p.doc ? ' · ' + p.doc : ''}</option>)}</select>
+          <button className="btn sm" disabled={!sel[r.client_id]} onClick={() => add(r.client_id, sel[r.client_id])}><Plus size={14} />Adicionar</button></div></div> }]} /></Card>
 }
 
 export default function ContaAzulTab({ edit }) {
