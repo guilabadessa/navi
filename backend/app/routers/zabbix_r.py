@@ -11,7 +11,7 @@ from ..schemas import ZabbixSettingsIn
 from ..security import require
 from ..services import event_service, factory, sync_service
 from ..services.zabbix_service import ZabbixError
-from ..util import to_dict
+from ..util import to_dict, like
 
 router = APIRouter(prefix="/zabbix", tags=["zabbix"])
 
@@ -69,7 +69,7 @@ def sync(request: Request, db: Session = Depends(get_db), _=Depends(require("set
 def groups(q: str | None = None, db: Session = Depends(get_db), _=Depends(require("monitoring.view"))):
     stmt = select(ZbxHostGroup).where(ZbxHostGroup.active.is_(True)).order_by(ZbxHostGroup.name)
     if q:
-        stmt = stmt.where(ZbxHostGroup.name.ilike(f"%{q}%"))
+        stmt = stmt.where(ZbxHostGroup.name.ilike(like(q), escape="\\"))
     owner = {}
     for r in db.execute(select(ClientHostGroup.zbx_groupid, Client.trade_name).join(Client)):
         owner.setdefault(r[0], []).append(r[1])

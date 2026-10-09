@@ -266,3 +266,11 @@ tbody tr{transition:background .12s}
 .tbl tbody tr:nth-child(even) td{background:var(--stripe)}
 .tbl tbody tr:hover td{background:var(--stripe-hover)}
 .tbl tbody tr:last-child td{border-bottom:0}
+
+/* ---- Acessibilidade: foco visivel e atalho para o conteudo ---- */
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px;border-radius:6px}
+.btn:focus-visible,.tabs button:focus-visible,.iconbtn:focus-visible{outline-offset:3px}
+.tbl tr.click:focus-visible{outline-offset:-3px}
+.skip{position:absolute;left:-999px;top:8px;z-index:100;background:var(--blue);color:#fff;padding:8px 14px;border-radius:8px;font-weight:700}
+.skip:focus{left:12px}
+.modal:focus{outline:none}

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import { SEV } from './api'
 import { X } from 'lucide-react'
 
@@ -7,7 +7,7 @@ export const useToast = () => useContext(ToastCtx)
 export function ToastProvider({ children }) {
   const [t, setT] = useState(null)
   const show = useCallback((msg, err) => { setT({ msg, err }); setTimeout(() => setT(null), err ? 7000 : 3500) }, [])
-  return <ToastCtx.Provider value={show}>{children}{t && <div className={'toast ' + (t.err ? 'err' : '')}>{t.msg}</div>}</ToastCtx.Provider>
+  return <ToastCtx.Provider value={show}>{children}{t && <div className={'toast ' + (t.err ? 'err' : '')} role={t.err ? 'alert' : 'status'} aria-live={t.err ? 'assertive' : 'polite'}>{t.msg}</div>}</ToastCtx.Provider>
 }
 
 export const Card = ({ title, actions, children, pad = true, style }) => (
@@ -24,26 +24,39 @@ export const Pill = ({ tone = 'mut', children }) => <span className={'badge b-' 
 export const StatusBadge = ({ s }) => s === 'PROBLEM' ? <Pill tone="bad"><i className="dot live" style={{ background: '#bd1723' }} />EM ABERTO</Pill> : <Pill tone="ok">RESOLVIDO</Pill>
 
 export function Field({ label, hint, children }) {
-  return <div><label className="f">{label}</label>{children}{hint && <div className="hint">{hint}</div>}</div>
+  // associa o rotulo ao campo (leitores de tela) quando o filho e um input/select/textarea
+  const id = useId(); const only = React.Children.count(children) === 1 ? React.Children.toArray(children)[0] : null
+  const native = only && typeof only.type === 'string' && ['input', 'select', 'textarea'].includes(only.type)
+  return <div><label className="f" htmlFor={native ? id : undefined}>{label}</label>
+    {native ? React.cloneElement(only, { id: only.props.id || id, 'aria-describedby': hint ? id + '-h' : undefined }) : children}
+    {hint && <div className="hint" id={id + '-h'}>{hint}</div>}</div>
 }
 export const Check = ({ label, checked, onChange }) => <label className="check"><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} />{label}</label>
 
 export function Modal({ title, onClose, children, footer, wide }) {
-  useEffect(() => { const h = e => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [onClose])
+  const ref = useRef(null); const tid = useId()
+  useEffect(() => {
+    const prev = document.activeElement
+    ref.current?.focus()
+    const h = e => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', h)
+    return () => { window.removeEventListener('keydown', h); if (prev && prev.focus) prev.focus() }  // devolve o foco a quem abriu
+  }, [onClose])
   return <div className="overlay" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-    <div className={'modal ' + (wide ? 'wide' : '')}><div className="hd"><h2 style={{ fontSize: 20 }}>{title}</h2><button className="btn sm" onClick={onClose}><X /></button></div>
+    <div className={'modal ' + (wide ? 'wide' : '')} role="dialog" aria-modal="true" aria-labelledby={tid} tabIndex={-1} ref={ref}>
+      <div className="hd"><h2 id={tid} style={{ fontSize: 20 }}>{title}</h2><button className="btn sm" onClick={onClose} aria-label="Fechar"><X /></button></div>
       <div className="bd">{children}</div>{footer && <div className="ft">{footer}</div>}</div></div>
 }
 export function Drawer({ title, onClose, children }) {
   return <><div className="overlay" style={{ padding: 0, zIndex: 29 }} onMouseDown={onClose} />
-    <div className="drawer"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}><h2>{title}</h2><button className="btn sm" onClick={onClose}><X /></button></div>{children}</div></>
+    <div className="drawer" role="dialog" aria-modal="true" aria-label={title}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}><h2>{title}</h2><button className="btn sm" onClick={onClose} aria-label="Fechar"><X /></button></div>{children}</div></>
 }
-export const Tabs = ({ tabs, value, onChange }) => <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={value === k ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>
+export const Tabs = ({ tabs, value, onChange }) => <div className="tabs" role="tablist">{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={value === k} className={value === k ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>
 
 export function Table({ cols, rows, onRow, empty = 'Nenhum registro encontrado.' }) {
   if (!rows || !rows.length) return <div className="empty">{empty}</div>
-  return <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c, i) => <th key={i} style={c.w ? { width: c.w } : null}>{c.h}</th>)}</tr></thead>
-    <tbody>{rows.map((r, i) => <tr key={r.id ?? r.hostid ?? r.client_id ?? i} className={onRow ? 'click' : ''} onClick={() => onRow && onRow(r)}>
+  return <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c, i) => <th key={i} scope="col" style={c.w ? { width: c.w } : null}>{c.h}</th>)}</tr></thead>
+    <tbody>{rows.map((r, i) => <tr key={r.id ?? r.hostid ?? r.client_id ?? i} className={onRow ? 'click' : ''} onClick={() => onRow && onRow(r)} tabIndex={onRow ? 0 : undefined} onKeyDown={onRow ? (e => { if (e.key === 'Enter' && e.target === e.currentTarget) onRow(r) }) : undefined}>
       {cols.map((c, j) => <td key={j} className={c.cls}>{c.r ? c.r(r) : r[c.k]}</td>)}</tr>)}</tbody></table></div>
 }
 export function Pager({ page, size, total, onPage }) {

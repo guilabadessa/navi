@@ -63,6 +63,7 @@ function Shell({ me, onLogout }) {
   const tips = Object.fromEntries(Object.entries(STAFF_TIPS).filter(([k]) => allowed.has(k)))
   const here = Object.keys(tips).filter(k => k === '/' ? loc.pathname === '/' : loc.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0]
   return <div className="app">
+    <a href="#conteudo" className="skip">Pular para o conteúdo</a>
     <aside className="side">
       <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="Orca TI" /><div><div className="t">NAVI</div><div className="s">Inteligência operacional<br />Orca TI</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
@@ -70,13 +71,13 @@ function Shell({ me, onLogout }) {
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
         <div style={{ marginTop: 8 }}><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
     </aside>
-    <div className="main">
+    <div className="main" id="conteudo">
       <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="searchbtn" onClick={() => setPal(true)}><Search size={16} />Buscar… <span className="kbd" style={{ marginLeft: 'auto' }}>Ctrl K</span></button>
           <StatusPills />
-          <button className="iconbtn" title={tv ? 'Sair do modo NOC (tela cheia)' : 'Modo NOC (esconde o menu)'} onClick={() => { tvMode(!tv); setTv(!tv) }}><Tv /></button>
-          <button className="iconbtn" title="Alternar tema claro/escuro" onClick={() => setTheme(toggleTheme())}>{theme === 'dark' ? <Sun /> : <Moon />}</button></div></div>
+          <button className="iconbtn" aria-label="Modo NOC (tela cheia)" title={tv ? 'Sair do modo NOC (tela cheia)' : 'Modo NOC (esconde o menu)'} onClick={() => { tvMode(!tv); setTv(!tv) }}><Tv /></button>
+          <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Alternar tema claro/escuro" onClick={() => setTheme(toggleTheme())}>{theme === 'dark' ? <Sun /> : <Moon />}</button></div></div>
       {pal && <Palette onClose={() => setPal(false)} />}
       <div className="content">
         <Routes>

@@ -103,3 +103,9 @@ def test_titlecase():
     assert titlecase("lider brasil comissaria DE avarias LTDA") == "Lider Brasil Comissaria de Avarias Ltda"
     assert titlecase("td synnex") == "TD Synnex"
     assert titlecase(None) is None and titlecase("  ") == "  "
+
+
+def test_like_escapa_curingas():
+    from app.util import like
+    assert like("a%b_c") == "%a\\%b\\_c%"
+    assert like("100") == "%100%"

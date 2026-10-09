@@ -1,4 +1,5 @@
 import logging
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -29,7 +30,11 @@ async def security_headers(request: Request, call_next):
         if api_limiter.blocked(key):
             return JSONResponse({"detail": "Limite de requisições excedido"}, status_code=429)
         api_limiter.hit(key)
+    t0 = time.monotonic()
     resp = await call_next(request)
+    dt = time.monotonic() - t0
+    if dt > 2.0 and request.url.path.startswith(f"{BASE}/api/"):
+        logging.getLogger("navi.slow").warning("requisicao lenta: %s %s levou %.1fs", request.method, request.url.path, dt)
     resp.headers.update({
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin",
         "Content-Security-Policy": CSP, "Permissions-Policy": "geolocation=(), microphone=(), camera=()",

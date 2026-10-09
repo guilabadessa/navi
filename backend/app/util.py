@@ -45,3 +45,8 @@ def titlecase(s: str | None) -> str | None:
         out.append(w)
         first = False
     return re.sub(r"\s+", " ", "".join(out))
+
+
+def like(q: str) -> str:
+    """Padrao ILIKE com %/_ do usuario tratados como texto (a busca '%' nao casa com tudo)."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

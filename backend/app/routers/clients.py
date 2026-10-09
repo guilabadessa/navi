@@ -19,7 +19,7 @@ from ..security import require, user_has
 from .. import portal_access as PA
 from ..services import event_service
 from ..services import kpi_service, maintenance_service
-from ..util import titlecase, to_dict
+from ..util import titlecase, to_dict, like
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -69,7 +69,7 @@ def _dupe_check(db: Session, name: str, cnpj: str | None, exclude_id: int | None
 def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(require("clients.view"))):
     stmt = select(Client).order_by(Client.trade_name)
     if q:
-        stmt = stmt.where(Client.trade_name.ilike(f"%{q}%") | Client.cnpj.ilike(f"%{q}%"))
+        stmt = stmt.where(Client.trade_name.ilike(like(q), escape="\\") | Client.cnpj.ilike(like(q), escape="\\"))
     open_by = dict(db.execute(select(Event.client_id, func.count()).where(Event.status == "PROBLEM")
                               .group_by(Event.client_id)).all())
     pu = dict(db.execute(select(User.client_id, func.count()).where(User.role == "CLIENTE").group_by(User.client_id)).all())

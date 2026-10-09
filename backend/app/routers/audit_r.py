@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import AuditLog
 from ..security import require
-from ..util import to_dict
+from ..util import to_dict, like
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -17,9 +17,9 @@ def list_audit(q: str | None = None, action: str | None = None, user: str | None
     if action:
         stmt = stmt.where(AuditLog.action == action)
     if user:
-        stmt = stmt.where(AuditLog.user_email.ilike(f"%{user}%"))
+        stmt = stmt.where(AuditLog.user_email.ilike(like(user), escape="\\"))
     if q:
-        stmt = stmt.where(AuditLog.resource.ilike(f"%{q}%") | AuditLog.action.ilike(f"%{q}%"))
+        stmt = stmt.where(AuditLog.resource.ilike(like(q), escape="\\") | AuditLog.action.ilike(like(q), escape="\\"))
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(AuditLog.ts.desc()).offset((page - 1) * size).limit(min(size, 200)))
     return {"total": total, "items": [to_dict(r) for r in rows],

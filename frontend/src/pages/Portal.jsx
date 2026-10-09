@@ -40,7 +40,7 @@ export default function Portal({ me, onLogout, clientId: forced, embedded, minSe
         <div className="pclient">{mine.length > 1 ? <select value={clientId || ''} onChange={e => choose(e.target.value)} title="Trocar de cliente">{mine.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select> : <b>{d ? d.client.name : ''}</b>}</div></div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
-        <button className="iconbtn" title="Tema" onClick={() => setTheme(toggleTheme())}>{dark ? <Sun /> : <Moon />}</button>
+        <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Tema" onClick={() => setTheme(toggleTheme())}>{dark ? <Sun /> : <Moon />}</button>
         <button className="btn sm" onClick={onLogout}><LogOut />Sair</button></div></div>}
     <div className={embedded ? '' : 'content'} style={{ margin: '0 auto' }}>
       {embedded && <div className="bar"><b style={{ fontSize: 18 }}>{d?.client.name}</b><div className="grow" /><select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select></div>}
