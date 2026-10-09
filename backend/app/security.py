@@ -25,10 +25,10 @@ PERMS = {
     "ADMIN": {"*"},
     "GESTOR": {"dashboard.view", "clients.view", "clients.edit", "monitoring.view", "events.view", "events.edit",
                "alerts.view", "alerts.edit", "reports.view", "reports.edit", "reports.send", "routines.view",
-               "routines.edit", "whatsapp.view", "email.view", "navi.use", "protection.run"},
+               "routines.edit", "whatsapp.view", "email.view", "navi.use", "protection.run", "cloud.run"},
     "ANALISTA_NOC": {"dashboard.view", "clients.view", "monitoring.view", "events.view", "events.edit",
                      "alerts.view", "alerts.edit", "reports.view", "reports.edit", "reports.send", "routines.view",
-                     "whatsapp.view", "email.view", "navi.use", "protection.run"},
+                     "whatsapp.view", "email.view", "navi.use", "protection.run", "cloud.run"},
     "VISUALIZADOR": {"dashboard.view", "clients.view", "monitoring.view", "events.view", "alerts.view",
                      "reports.view", "routines.view", "navi.use"},
     "CLIENTE": {"portal.view", "portal.run"},  # ve somente os dados do proprio cliente, pelo portal

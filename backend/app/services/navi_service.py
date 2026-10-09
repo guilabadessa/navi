@@ -65,7 +65,7 @@ class NaviService:
         cl = list(self.db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)))
         m = SS.of_clients(self.db, cl)
         return [{"client": c.trade_name, "infra": "sim" if m[c.id]["infra"] else "—", "backup": "sim" if m[c.id]["backup"] else "—",
-                 "endpoint": "sim" if m[c.id]["endpoint"] else "—"} for c in cl]
+                 "endpoint": "sim" if m[c.id]["endpoint"] else "—", "cloud": "sim" if m[c.id].get("cloud") else "—"} for c in cl]
 
     def _client_in(self, qn):
         best = None

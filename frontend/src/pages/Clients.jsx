@@ -4,6 +4,7 @@ import Coverage from './Coverage'
 import { DestBox } from './Dest'
 import Contracts from './Contracts'
 import { BackupPanel, EndpointsPanel, ServicesCard } from './ProtectionPanels'
+import { CloudConfig, CloudPanel } from './CloudPanel'
 import PortalAccess from './PortalAccess'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
@@ -58,7 +59,7 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Zabbix (hosts)'], ['acronis', 'Acronis'], ['ems', 'FortiClient EMS'], ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Zabbix (hosts)'], ['acronis', 'Acronis'], ['ems', 'FortiClient EMS'], ...(c.id ? [['cloud', 'Nuvem Orca']] : []), ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={look || cnpjHint(c.cnpj) || 'Ao digitar um CNPJ válido, o endereço e a razão social são preenchidos.'}><div style={{ display: 'flex', gap: 6 }}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => onCnpj(e.target.value)} placeholder="00.000.000/0000-00" /><button type="button" className="btn sm" title="Consultar e sobrescrever os dados com os da Receita" disabled={!cnpjOk(c.cnpj)} onClick={() => confirm('Substituir razão social, endereço, cidade, UF, telefone e e-mail pelos dados da Receita?') && lookup(c.cnpj, true)}>Consultar</button></div></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
@@ -69,6 +70,7 @@ function ClientForm({ initial, onClose, onSaved }) {
     {tab === 'groups' && <><p className="sub" style={{ marginBottom: 12 }}>Associe um ou mais Host Groups do Zabbix a este cliente. Eventos e relatórios dos hosts desses grupos passam a pertencer ao cliente.</p>
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
         options={groups.map(g => ({ value: g.groupid, label: g.name, sub: g.clients.length ? 'em uso: ' + g.clients.join(', ') : g.host_count + ' host(s)' }))} /> : <Loading />}</>}
+    {tab === 'cloud' && c.id && <CloudConfig clientId={c.id} />}
     {['acronis', 'ems'].includes(tab) && <>
       <p className="sub" style={{ marginBottom: 12 }}>{tab === 'acronis' ? 'Marque o(s) cliente(s) (tenant) do Acronis Cyber Protect Cloud que pertencem a este cliente. Backups, tecnologias contratadas (EDR/antimalware, RMM, DLP, backup de e-mail…), alertas, portal e relatórios passam a usar estes dados. Um cliente pode ter mais de um tenant.' : 'Marque o(s) site(s) do FortiClient EMS deste cliente. Os endpoints, o antivírus e os alertas passam a pertencer a ele no portal e nos relatórios.'}</p>
       {tenants ? <MultiPick value={c[tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']} onChange={v => setC({ ...c, [tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']: v })} placeholder={tab === 'acronis' ? 'Buscar cliente do Acronis…' : 'Buscar site do EMS…'}
@@ -137,8 +139,9 @@ export function ClientDetail() {
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
-    <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : [])]} />
-    {tab !== 'geral' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} detail /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} detail /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
+    <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Nuvem Orca']] : [])]} />
+    {tab === 'cloud' && <CloudPanel path={`/cloud/clients/${id}/overview`} powerPath={u => `/cloud/clients/${id}/instances/${u}/power`} staff />}
+    {tab !== 'geral' && tab !== 'cloud' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} detail /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} detail /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
     {tab === 'geral' && <>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>
         <Stat onClick={() => nav('/monitoramento')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />

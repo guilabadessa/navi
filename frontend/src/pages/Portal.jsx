@@ -7,6 +7,7 @@ import { getTheme, toggleTheme } from '../theme'
 import { useAuth, can } from '../App'
 import Account from './Account'
 import Contracts from './Contracts'
+import { CloudPanel } from './CloudPanel'
 import { BackupPanel, EndpointsPanel, ServicesCard } from './ProtectionPanels'
 import FinanceTab from './FinanceTab'
 import NaviGuide, { PORTAL_ASKS, PORTAL_SEV, PORTAL_TIPS } from './NaviGuide'
@@ -58,7 +59,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
   const infra = d ? d.services?.infra !== false : true
   const tabs = d ? [['geral', 'Visão geral'], ['inc', 'Incidentes'], ...(infra ? [['hosts', `Hosts (${d.hosts.length})`]] : []),
-    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
+    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Servidores']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
@@ -111,6 +112,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
             { h: 'Indisponibilidade', r: r => fmtDur(r.downtime_s) }, { h: 'Disponibilidade', r: r => r.availability == null ? '—' : fmtPct(r.availability, 3) }]} /></Card></>}
         {tab === 'bkp' && d.protection && <><ServicesCard services={d.protection.services} />{d.backup.alerts.length > 0 && <Card title="Atenção no backup" pad={false} style={{ marginBottom: 16 }}><Table rows={d.backup.alerts} cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Situação', k: 'trigger_name' }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}<BackupPanel data={d.protection} runPath={r => `/portal/backups/${r.id}/run${clientId ? '?client_id=' + clientId : ''}`} reload={reload} /></>}
         {tab === 'eps' && d.protection && <EndpointsPanel data={d.protection} />}
+        {tab === 'cloud' && <CloudPanel path={`/portal/cloud${clientId ? '?client_id=' + clientId : ''}`} powerPath={u => `/portal/cloud/${u}/power${clientId ? '?client_id=' + clientId : ''}`} />}
         {tab === 'fin' && canFin && <FinanceTab clientId={clientId} key={clientId} />}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },

@@ -396,6 +396,21 @@ class JobStatus(Base):
     ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class CloudAccount(Base):
+    """Chave de API da Nuvem Orca (BRASCLOUD) de UM cliente: a propria nuvem garante que a chave so enxerga a conta dele."""
+    __tablename__ = "cloud_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), unique=True)
+    label: Mapped[str | None] = mapped_column(String(255))
+    api_key: Mapped[str] = mapped_column(Text)  # cifrada (Fernet)
+    secret_key: Mapped[str] = mapped_column(Text)  # cifrada (Fernet)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    owner: Mapped[str | None] = mapped_column(String(255))  # usuario dono da chave na nuvem (informativo)
+    last_ok: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ClientContract(Base):
     """Contrato do Conta Azul. Guardamos apenas o necessario para mostrar os servicos contratados (sem valores)."""
     __tablename__ = "client_contracts"

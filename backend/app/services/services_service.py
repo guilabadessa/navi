@@ -3,7 +3,7 @@ backup (tenant Acronis) e estacoes (site FortiClient EMS). Um cliente pode ter q
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Client, ExtTenant
+from ..models import Client, CloudAccount, ExtTenant
 
 MODULES = ("infra", "backup", "endpoint")
 NAMES = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Endpoints"}
@@ -18,7 +18,8 @@ def of_clients(db: Session, clients: list[Client]) -> dict[int, dict]:
         linked.setdefault(t.client_id, set()).add(_SRC.get(t.source))
         if t.source == "acronis" and any(P.license_flags(t)[k] for k in ("security", "management", "dlp")):
             linked[t.client_id].add("endpoint")  # Acronis com EDR/antimalware, RMM ou DLP tambem e endpoint
-    return {c.id: {"infra": bool(c.hosts or c.groups), "backup": "backup" in linked.get(c.id, ()), "endpoint": "endpoint" in linked.get(c.id, ())}
+    cloud = set(db.scalars(select(CloudAccount.client_id).where(CloudAccount.enabled.is_(True))))
+    return {c.id: {"infra": bool(c.hosts or c.groups), "backup": "backup" in linked.get(c.id, ()), "endpoint": "endpoint" in linked.get(c.id, ()), "cloud": c.id in cloud}
             for c in clients}
 
 
