@@ -6,6 +6,8 @@ import { Card, Loading, Modal, Pill, SevBadge, Stat, StatusBadge, Table, useLoad
 import { getTheme, toggleTheme } from '../theme'
 import { useAuth, can } from '../App'
 import Account from './Account'
+import Contracts from './Contracts'
+import { BackupPanel, EndpointsPanel, ServicesCard } from './ProtectionPanels'
 import FinanceTab from './FinanceTab'
 import NaviGuide, { PORTAL_ASKS, PORTAL_SEV, PORTAL_TIPS } from './NaviGuide'
 
@@ -30,7 +32,7 @@ function ServiceStatus({ d }) {
   }
   if (d.endpoints?.enabled) {
     const a = d.endpoints.assets.filter(x => x.status !== 'ignorado'); const bad = a.filter(x => x.status !== 'online' && x.status !== 'offline').length
-    items.push({ k: 'eps', title: 'Estações e antivírus', bad: bad > 0, line: `${a.length - bad} de ${a.length} estações em conformidade`, extra: bad ? `${bad} estação(ões) com pendência` : 'Antivírus e proteção em dia' })
+    items.push({ k: 'eps', title: 'Endpoints', bad: bad > 0, line: `${a.length - bad} de ${a.length} endpoints em conformidade`, extra: bad ? `${bad} endpoint(s) com pendência` : 'Antivírus e proteção em dia' })
   }
   if (!items.length) return null
   return <div className="grid g3 svcstat" style={{ marginBottom: 16 }}>{items.map(i => <div key={i.k} className={'card svc ' + (i.bad ? 'bad' : 'ok')} style={{ padding: 16 }}>
@@ -56,7 +58,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
   const dl = (r) => download(`/portal/reports/${r.id}/download`, `${r.name}.pdf`).catch(e => toast(e.message, true))
   const infra = d ? d.services?.infra !== false : true
   const tabs = d ? [['geral', 'Visão geral'], ...(infra ? [['inc', 'Incidentes'], ['hosts', `Hosts (${d.hosts.length})`], ['grp', `Grupos (${d.groups.length})`]] : []),
-    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Estações']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
+    ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
@@ -85,10 +87,12 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
         {PORTAL_TIPS[tab] && <p className="tabhelp">{PORTAL_TIPS[tab][1]}</p>}
         {tab === 'geral' && !infra && <>
           <ServiceStatus d={d} />
+          <Contracts items={d.contracts} />
           <Card title="Alertas em andamento" pad={false}><Table rows={[...(d.backup?.alerts || []), ...(d.endpoints?.alerts || [])].filter(e => (e.severity || 0) >= d.min_sev)} empty="🎉 Nenhum alerta em andamento." cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
             { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }]} /></Card></>}
         {tab === 'geral' && infra && <>
           <ServiceStatus d={d} />
+          <Contracts items={d.contracts} />
           <Card title={`Incidentes por dia (${days} dias)`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
               <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>
@@ -113,14 +117,8 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
           <h3>{g.name}</h3><div className="sub" style={{ margin: '6px 0 10px' }}>{g.hosts} host(s)</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{g.down > 0 ? <Pill tone="bad">{g.down} indisponível(is)</Pill> : <Pill tone="ok">tudo disponível</Pill>}{g.open > 0 && <Pill tone="warn">{g.open} alerta(s)</Pill>}<Pill tone="mut">{g.incidents} incidente(s) em {days}d</Pill></div></div>)
           : <div className="empty">Nenhum grupo vinculado a este cliente.</div>}</div>}
-        {tab === 'bkp' && d.backup && <>
-          {d.backup.alerts.length > 0 && <Card title="Atenção no backup" pad={false} style={{ marginBottom: 16 }}><Table rows={d.backup.alerts} cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Situação', k: 'trigger_name' }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
-          <Card title={`Itens protegidos (${d.backup.assets.length})`} pad={false}><Table rows={d.backup.assets} empty="Nenhum item de backup." cols={[
-            { h: 'Situação', r: r => <Pill tone={r.status === 'ok' ? 'ok' : r.status === 'sem dados' ? 'mut' : r.status === 'offline' ? 'warn' : 'bad'}>{r.status === 'ok' ? 'protegido' : r.status}</Pill> },
-            { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => TYPES[r.type] || r.type }, { h: 'Último backup com sucesso', r: r => fmtDT(r.last_success_at) }]} /></Card></>}
-        {tab === 'eps' && d.endpoints && <Card title={`Estações protegidas (${d.endpoints.assets.length})`} pad={false}><Table rows={d.endpoints.assets} empty="Nenhuma estação." cols={[
-          { h: 'Situação', r: r => <Pill tone={r.status === 'online' ? 'ok' : r.status === 'offline' ? 'mut' : 'warn'}>{r.status}</Pill> }, { h: 'Estação', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
-          { h: 'Sistema', r: r => <span className="sub">{r.os}</span> }, { h: 'Último contato', r: r => fmtDT(r.last_contact) }]} /></Card>}
+        {tab === 'bkp' && d.protection && <><ServicesCard services={d.protection.services} />{d.backup.alerts.length > 0 && <Card title="Atenção no backup" pad={false} style={{ marginBottom: 16 }}><Table rows={d.backup.alerts} cols={[{ h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Situação', k: 'trigger_name' }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}<BackupPanel data={d.protection} /></>}
+        {tab === 'eps' && d.protection && <EndpointsPanel data={d.protection} />}
         {tab === 'fin' && canFin && <FinanceTab clientId={clientId} key={clientId} />}
         {tab === 'rel' && <Card title="Relatórios mensais" pad={false}><Table rows={d.reports} empty="Nenhum relatório disponível ainda." cols={[{ h: 'Relatório', r: r => <b>{r.name}</b> },
           { h: 'Período', r: r => `${fmtDT(r.period_start)} a ${fmtDT(r.period_end)}` }, { h: 'Gerado em', r: r => fmtDT(r.generated_at) },

@@ -21,7 +21,7 @@ export const Stat = ({ label, value, desc, tone }) => (
 
 export const SevBadge = ({ n }) => <span className={'badge sev' + n}>{SEV[n] ?? n}</span>
 // Etiquetas dos servicos do cliente (infraestrutura / backup / estacoes)
-export const ServiceChips = ({ s }) => { const x = [['infra', 'Infra'], ['backup', 'Backup'], ['endpoint', 'Estações']].filter(([k]) => s && s[k]); return x.length ? <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{x.map(([k, l]) => <span key={k} className="badge b-info">{l}</span>)}</span> : <span className="badge b-mut">Sem serviços</span> }
+export const ServiceChips = ({ s }) => { const x = [['infra', 'Infra'], ['backup', 'Backup'], ['endpoint', 'Endpoints']].filter(([k]) => s && s[k]); return x.length ? <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{x.map(([k, l]) => <span key={k} className="badge b-info">{l}</span>)}</span> : <span className="badge b-mut">Sem serviços</span> }
 export const Pill = ({ tone = 'mut', children }) => <span className={'badge b-' + tone}>{children}</span>
 export const StatusBadge = ({ s }) => s === 'PROBLEM' ? <Pill tone="bad"><i className="dot live" style={{ background: '#bd1723' }} />EM ABERTO</Pill> : <Pill tone="ok">RESOLVIDO</Pill>
 

@@ -33,11 +33,14 @@ def _full(db: Session, c: Client) -> dict:
     d["contacts"] = [to_dict(x) for x in c.contacts]
     d["services"] = services_service.of_client(db, c)
     d["destinations"] = destinations.describe(c)
+    tens = list(db.scalars(select(ExtTenant).where(ExtTenant.client_id == c.id)))
+    d["acronis_tenant_ids"] = [t.id for t in tens if t.source == "acronis"]
+    d["ems_tenant_ids"] = [t.id for t in tens if t.source == "ems"]
     return d
 
 
 def _apply(db: Session, c: Client, b: ClientIn):
-    for k, v in b.model_dump(exclude={"group_ids", "host_ids", "contacts"}).items():
+    for k, v in b.model_dump(exclude={"group_ids", "host_ids", "contacts", "acronis_tenant_ids", "ems_tenant_ids"}).items():
         setattr(c, k, v)
     gmap = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
     want_g, want_h = list(dict.fromkeys(b.group_ids)), list(dict.fromkeys(b.host_ids))
@@ -50,6 +53,20 @@ def _apply(db: Session, c: Client, b: ClientIn):
     c.hosts.extend(ClientHost(zbx_hostid=h) for h in want_h if h not in have)
     c.contacts = [ClientContact(name=x.get("name", "")[:255], role=x.get("role"), email=x.get("email"), phone=try_phone(x.get("phone")))
                   for x in b.contacts if x.get("name")]
+
+
+def _link_tenants(db: Session, c: Client, b: ClientIn):
+    """Associa/desassocia clientes do Acronis e sites do EMS a este cliente (marcados no cadastro, como os host groups do Zabbix)."""
+    for src, ids in (("acronis", b.acronis_tenant_ids), ("ems", b.ems_tenant_ids)):
+        if ids is None:
+            continue
+        want = set(ids)
+        for t in db.scalars(select(ExtTenant).where(ExtTenant.source == src)):
+            if t.id in want:
+                t.client_id = c.id
+            elif t.client_id == c.id:
+                t.client_id = None
+    db.flush()
 
 
 def _digits(v: str | None) -> str:
@@ -168,6 +185,7 @@ def create(body: ClientIn, request: Request, db: Session = Depends(get_db), _=De
     _apply(db, c, body)
     db.add(c)
     db.flush()
+    _link_tenants(db, c, body)
     audit.log(db, request, "client_create", "client", c.id, detail={"name": c.trade_name})
     db.commit()
     event_service.relink_events(db)
@@ -190,8 +208,11 @@ def update(cid: int, body: ClientIn, request: Request, db: Session = Depends(get
     body.trade_name, body.legal_name, body.contact_name = titlecase(body.trade_name), titlecase(body.legal_name), titlecase(body.contact_name)
     _dupe_check(db, body.trade_name, body.cnpj, cid)
     _apply(db, c, body)
+    _link_tenants(db, c, body)
     audit.log(db, request, "client_update", "client", c.id, detail={"name": c.trade_name})
     db.commit()
+    from ..services import protection_service
+    protection_service.relink(db)
     event_service.relink_events(db)
     return _full(db, c)
 
@@ -306,7 +327,8 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
 
     backup = prot("acronis", lambda a: asset_status(a, pc, nowx))
     endpoints = prot("ems", lambda a: P.ems_status(a, pc["ems_offline_days"], nowx))
-    return {"services": services_service.of_client(db, c), "backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
+    from ..services import finance_service
+    return {"contracts": finance_service.client_contracts(db, cid), "services": services_service.of_client(db, c), "backup": backup, "endpoints": endpoints, "client": to_dict(c), "kpis": k, "hosts": [{"hostid": h.hostid, "name": h.name, "ip": h.ip,
             "available": h.available, "status": h.status} for h in hosts], "active_events": active,
             "history": [to_dict(e) for e in evs[:100]], "links": len(links),
             "reports": [to_dict(r, {"kpis"}) for r in db.scalars(select(ReportRun).where(ReportRun.client_id == cid)

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { EyeOff, Eye, FlaskConical, RefreshCw, HardDrive, ShieldCheck } from 'lucide-react'
 import { get, post, put, fmtDT, fmtNum } from '../api'
 import { Card, Check, Field, Loading, PageHead, Pill, SevBadge, Stat, Table, Tabs, useLoad, useToast } from '../ui'
+import { Play } from 'lucide-react'
 import { useAuth, can } from '../App'
 
 const ST = { ok: 'ok', falha: 'bad', 'sem backup': 'bad', offline: 'warn', 'sem dados': 'mut', ignorado: 'mut' }
@@ -14,6 +15,7 @@ function Overview({ ov, clients, edit, reload }) {
   const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [ty, setTy] = useState(''); const [cl, setCl] = useState('')
   const rows = ov.assets.filter(a => (!q || (a.name + ' ' + (a.tenant || '')).toLowerCase().includes(q.toLowerCase())) && (!st || a.status === st) && (!ty || a.type === ty) && (!cl || String(a.client_id) === cl))
   const toggle = async (a) => { try { await put('/protection/assets/' + a.id, { ignored: !a.ignored }); toast(a.ignored ? 'Monitoramento reativado' : 'Item ignorado (sem alertas de backup antigo/offline)'); reload() } catch (e) { toast(e.message, true) } }
+  const run = async (r) => { if (!confirm(`Executar agora o plano de backup de “${r.name}”?`)) return; try { const x = await post(`/protection/assets/${r.id}/run-backup`); toast(x.detail); reload() } catch (e) { toast(e.message, true) } }
   const c = ov.counts
   return <>
     <div className="grid g4" style={{ marginBottom: 16 }}>
@@ -32,10 +34,10 @@ function Overview({ ov, clients, edit, reload }) {
     <Card pad={false}><Table rows={rows} empty="Nada encontrado." cols={[
       { h: 'Status', r: r => <Pill tone={ST[r.status]}>{r.status}</Pill> }, { h: 'Item', r: r => <b>{r.name}</b> }, { h: 'Tipo', r: r => TYPES[r.type] || r.type },
       { h: 'Cliente (Acronis)', r: r => <>{r.tenant}{r.client ? <div className="sub">→ {r.client}</div> : <div className="sub" style={{ color: 'var(--orange)' }}>não associado</div>}</> },
-      { h: 'Plano', r: r => <span className="sub">{r.policy || '—'}</span> }, { h: 'Último sucesso', r: r => <span title={fmtDT(r.last_success_at)}>{ago(r.last_success_at)}</span> },
+      { h: 'Proteção', r: r => <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{(r.techs || []).map(t => <span key={t} className="badge b-info">{t}</span>)}</span> }, { h: 'Plano', r: r => <span className="sub">{r.policy || '—'}</span> }, { h: 'Último sucesso', r: r => <span title={fmtDT(r.last_success_at)}>{ago(r.last_success_at)}</span> },
       { h: 'Última falha', r: r => r.last_failure_at ? <span title={fmtDT(r.last_failure_at)}>{ago(r.last_failure_at)}</span> : '—' },
       { h: 'Agente', r: r => r.online === null || r.online === undefined ? '—' : r.online ? <Pill tone="ok">online</Pill> : <Pill tone="warn">offline</Pill> },
-      { h: '', r: r => edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar (não gerar alerta de backup antigo / offline)'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button> }]} /></Card></>
+      { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}>{r.can_run && <button className="btn sm" title="Executar o plano de backup agora" onClick={() => run(r)}><Play />Executar</button>}{edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar (não gerar alerta de backup antigo / offline)'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button>}</div> }]} /></Card></>
 }
 
 const EST = { online: 'ok', offline: 'mut', 'sem contato': 'warn', 'antivírus off': 'bad', assinaturas: 'warn', quarentena: 'bad', atenção: 'warn', ignorado: 'mut' }
@@ -68,14 +70,14 @@ function Endpoints({ ov, clients, edit, reload }) {
       { h: '', r: r => edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button> }]} /></Card></>
 }
 
-function Tenants({ ov, ems, clients, edit, reload }) {
-  const toast = useToast()
-  const map = async (t, v) => { try { const r = await put('/protection/tenants/' + t.id, { client_id: v ? +v : null }); toast(`Associação salva · ${r.events_relinked} evento(s) atualizados`); reload() } catch (e) { toast(e.message, true) } }
-  return <Card title="Clientes do Acronis e sites do EMS → clientes da NAVI" pad={false}>
-    <div className="sub" style={{ padding: '10px 20px 0' }}>Associe cada cliente (tenant) do Acronis ao cliente correspondente da NAVI. É essa associação que define para quem vão os alertas de backup, o portal e os relatórios. Sem associação, o problema aparece aqui mas ninguém é avisado.</div>
-    <Table rows={[...ov.tenants.map(t => ({ ...t, src: 'Acronis' })), ...(ems?.tenants || []).map(t => ({ ...t, src: 'EMS (site)' }))]} cols={[{ h: 'Origem', r: r => <Pill tone="info">{r.src}</Pill> }, { h: 'Cliente / site na origem', r: r => <b>{r.name}</b> }, { h: 'Itens', k: 'assets' },
-      { h: 'Cliente na NAVI', r: r => <select style={{ minWidth: 240 }} disabled={!edit} value={r.client_id || ''} onChange={e => map(r, e.target.value)}><option value="">— não associado —</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select> },
-      { h: 'Estado', r: r => r.client_id ? <Pill tone="ok">associado</Pill> : <Pill tone="warn">pendente</Pill> }]} /></Card>
+function Tenants({ ov, ems }) {
+  const nav = useNavigate()
+  return <Card title="Associações: Acronis e EMS → clientes da NAVI" pad={false}>
+    <div className="sub" style={{ padding: '10px 20px 0' }}>A associação agora é feita no <b>cadastro do cliente</b>, nas abas <b>Acronis</b> e <b>FortiClient EMS</b> (igual aos hosts do Zabbix). Esta lista só mostra o estado atual — itens pendentes não geram alerta, portal nem relatório.</div>
+    <Table rows={[...ov.tenants.map(t => ({ ...t, src: 'Acronis' })), ...(ems?.tenants || []).map(t => ({ ...t, src: 'EMS (site)' }))]} onRow={r => r.client_id && nav('/clientes/' + r.client_id)} cols={[{ h: 'Origem', r: r => <Pill tone="info">{r.src}</Pill> }, { h: 'Cliente / site na origem', r: r => <b>{r.name}</b> }, { h: 'Itens', k: 'assets' },
+      { h: 'Tecnologias contratadas', r: r => <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{(r.services || []).slice(0, 6).map(t => <span key={t} className="badge b-mut">{t}</span>)}</span> },
+      { h: 'Cliente na NAVI', r: r => r.client_id ? <b>{r.client_name}</b> : <span className="sub">— não associado —</span> },
+      { h: 'Estado', r: r => r.client_id ? <Pill tone="ok">associado</Pill> : <Pill tone="warn">pendente · associe no cadastro do cliente</Pill> }]} /></Card>
 }
 
 export default function Protection() {
@@ -83,12 +85,12 @@ export default function Protection() {
   const ov = useLoad(() => get('/protection/overview'), [], 60000); const ems = useLoad(() => get('/protection/ems'), [], 60000); const clients = useLoad(() => get('/clients'), [])
   const reloadAll = () => { ov.reload(); ems.reload() }
   const edit = can(me, 'clients.edit'); const cfg = can(me, 'settings.view')
-  const tabs = [['geral', 'Backup (Acronis)'], ['eps', 'Endpoints (EMS)'], ['tenants', 'Clientes']]
+  const tabs = [['geral', 'Backup (Acronis)'], ['eps', 'Endpoints (EMS)'], ['tenants', 'Associações']]
   return <>
-    <PageHead title="Backup e Endpoints" desc="Acronis Cyber Protect (backup) e FortiClient EMS (endpoints) · consultas somente leitura"><Pill tone="info"><HardDrive size={14} />Acronis</Pill><Pill tone="info"><ShieldCheck size={14} />EMS</Pill></PageHead>
+    <PageHead title="Backup e Endpoints" desc="Acronis Cyber Protect (backup e proteção) e FortiClient EMS (endpoints)"><Pill tone="info"><HardDrive size={14} />Acronis</Pill><Pill tone="info"><ShieldCheck size={14} />EMS</Pill></PageHead>
     <Tabs value={tab} onChange={setTab} tabs={tabs} />
     {cfg && <div className="hint" style={{ marginBottom: 10 }}>As credenciais do Acronis e do EMS ficam em <a href="#" onClick={e => { e.preventDefault(); nav('/configuracoes') }}>Configurações</a>.</div>}
     {(!ov.data || !ems.data || !clients.data ? <Loading err={ov.err || ems.err} /> : tab === 'geral' ? <Overview ov={ov.data} clients={clients.data} edit={edit} reload={reloadAll} />
-      : tab === 'eps' ? <Endpoints ov={ems.data} clients={clients.data} edit={edit} reload={reloadAll} /> : <Tenants ov={ov.data} ems={ems.data} clients={clients.data} edit={edit} reload={reloadAll} />)}
+      : tab === 'eps' ? <Endpoints ov={ems.data} clients={clients.data} edit={edit} reload={reloadAll} /> : <Tenants ov={ov.data} ems={ems.data} />)}
 </>
 }

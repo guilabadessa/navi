@@ -174,7 +174,7 @@ def resolve_modules(db: Session, rep: Report, client: Client | None) -> list[str
     have = services_service.active_list(services_service.of_client(db, client))
     mods = [m for m in (rep.modules or have) if m in have]
     if not mods:
-        raise ValueError("O cliente não possui o(s) serviço(s) selecionado(s) (infraestrutura, backup ou estações) associado(s) ao cadastro.")
+        raise ValueError("O cliente não possui o(s) serviço(s) selecionado(s) (infraestrutura, backup ou endpoints) associado(s) ao cadastro.")
     return mods
 
 
@@ -232,33 +232,25 @@ def backup_section(db: Session, client_id: int | None, z, start=None, end=None) 
 
 
 def endpoint_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
-    """Estacoes (FortiClient EMS) do cliente: situacao atual + estatisticas; None se nao houver site associado."""
+    """Endpoints do cliente (FortiClient EMS e/ou protecao do Acronis): situacao atual + estatisticas; None se nao houver."""
     if not client_id:
         return None
     from collections import Counter
 
-    from ..models import ExtAsset, ExtTenant
     from . import protection_service as P
-    tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == client_id, ExtTenant.source == "ems")))
-    if not tids:
+    raw = P.endpoint_rows(db, client_id)
+    if not raw:
         return None
-    days, now = P.cfg(db)["ems_offline_days"], datetime.now(timezone.utc)
-    rows, oses = [], Counter()
-    for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
-        st = P.ems_status(a, days, now)
-        rows.append({"name": a.name, "user": (a.meta or {}).get("user") or "—", "status": st.capitalize(), "ok": st in ("online", "offline"),
-                     "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—"})
-        os_ = ((a.meta or {}).get("os") or "").split(" ")[0:2]
-        if os_:
-            oses[" ".join(os_)] += 1
-    if not rows:
-        return None
+    fmt = lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—"  # noqa: E731
+    rows = [{"name": r["name"], "user": r["user"] or "—", "source": r["source"], "techs": ", ".join(r["techs"]), "status": r["status"].capitalize(), "ok": r["ok"], "last": fmt(r["last"])} for r in raw]
     n_ok = sum(1 for r in rows if r["ok"])
     rows.sort(key=lambda r: (r["ok"], r["name"].lower()))
     tone = {"Online": "ok", "Offline": "mut", "Atenção": "warn", "Assinaturas": "warn"}
+    techs = Counter(t for r in raw for t in r["techs"])
     return {"total": len(rows), "online": sum(1 for r in rows if r["status"] == "Online"), "ok": n_ok, "problems": len(rows) - n_ok,
             "pct": round(100 * n_ok / len(rows), 1), "dist": _dist(Counter(r["status"] for r in rows), {**tone, **{k: "bad" for k in ("Sem contato", "Antivírus off", "Quarentena")}}),
-            "os": oses.most_common(4), "rows": rows[:80], "inc": period_incidents(db, client_id, "endpoint", start, end, z) if start else None}
+            "techs": techs.most_common(), "sources": sorted({r["source"] for r in rows}), "rows": rows[:100],
+            "inc": period_incidents(db, client_id, "endpoint", start, end, z) if start else None}
 
 
 def _n(v) -> str:
@@ -287,9 +279,9 @@ def highlights(mods, k, backup, endpoints, infra_on) -> list[dict]:
             out.append({"tone": "ok", "text": f"Todos os {backup['total']} itens de backup estão protegidos e em dia."})
     if endpoints:
         if endpoints["problems"]:
-            out.append({"tone": "warn", "text": f"{endpoints['problems']} de {endpoints['total']} estação(ões) com pendência (sem contato, antivírus desligado ou assinaturas)."})
+            out.append({"tone": "warn", "text": f"{endpoints['problems']} de {endpoints['total']} endpoint(s) com pendência (sem contato, antivírus desligado ou assinaturas)."})
         else:
-            out.append({"tone": "ok", "text": f"Todas as {endpoints['total']} estações estão em conformidade."})
+            out.append({"tone": "ok", "text": f"Todos os {endpoints['total']} endpoints estão em conformidade."})
     return out[:6]
 
 
@@ -362,7 +354,7 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         backup = backup_section(db, rep.client_id, z, start, end) if "backup" in mods else None
         endpoints = endpoint_section(db, rep.client_id, z, start, end) if "endpoint" in mods else None
         title = ("Relatório de Disponibilidade" if mods == ["infra"] else
-                 "Relatório de Backup" if mods == ["backup"] else "Relatório de Estações e Antivírus" if mods == ["endpoint"] else
+                 "Relatório de Backup" if mods == ["backup"] else "Relatório de Endpoints" if mods == ["endpoint"] else
                  "Relatório de Serviços Gerenciados")
         html = env.get_template("report.html").render(hl=highlights(mods, k, backup, endpoints, infra_on), backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
             report_title=title,

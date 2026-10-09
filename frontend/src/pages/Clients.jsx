@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom'
 import Coverage from './Coverage'
 import { DestBox } from './Dest'
+import Contracts from './Contracts'
+import { BackupPanel, EndpointsPanel, ServicesCard } from './ProtectionPanels'
 import PortalAccess from './PortalAccess'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Plus, Pencil, Trash2, Users, Eye } from 'lucide-react'
@@ -24,12 +26,13 @@ export async function deleteClient(c, toast) {
 
 const blank = { trade_name: '', legal_name: '', cnpj: '', state_registration: '', address: '', city: '', state: '', contact_name: '', email: '', phone: '',
   whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', service_hours: '', status: 'ativo', wa_enabled: false,
-  wa_min_severity: 3, wa_delay_s: 0, wa_send_recovery: true, wa_hours: '', group_ids: [], host_ids: [], contacts: [] }
+  wa_min_severity: 3, wa_delay_s: 0, wa_send_recovery: true, wa_hours: '', group_ids: [], host_ids: [], contacts: [], acronis_tenant_ids: [], ems_tenant_ids: [] }
 
 function ClientForm({ initial, onClose, onSaved }) {
   const [c, setC] = useState({ ...blank, ...initial }); const [tab, setTab] = useState('dados'); const toast = useToast(); const [busy, setBusy] = useState(false)
   const { data: groups } = useLoad(() => get('/zabbix/groups'), [])
   const { data: tpls } = useLoad(() => get('/alerts/templates'), [])
+  const { data: tenants } = useLoad(() => get('/protection/tenants').catch(() => []), [])
   const set = (k) => (e) => setC({ ...c, [k]: e && e.target ? e.target.value : e })
   const [look, setLook] = useState('')
   // Consulta o CNPJ na Receita (via servidor) e preenche o cadastro. Automatico: so campos vazios; pelo botao: sobrescreve (com confirmacao).
@@ -55,7 +58,7 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Zabbix (hosts)'], ['acronis', 'Acronis'], ['ems', 'FortiClient EMS'], ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={look || cnpjHint(c.cnpj) || 'Ao digitar um CNPJ válido, o endereço e a razão social são preenchidos.'}><div style={{ display: 'flex', gap: 6 }}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => onCnpj(e.target.value)} placeholder="00.000.000/0000-00" /><button type="button" className="btn sm" title="Consultar e sobrescrever os dados com os da Receita" disabled={!cnpjOk(c.cnpj)} onClick={() => confirm('Substituir razão social, endereço, cidade, UF, telefone e e-mail pelos dados da Receita?') && lookup(c.cnpj, true)}>Consultar</button></div></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
@@ -66,6 +69,10 @@ function ClientForm({ initial, onClose, onSaved }) {
     {tab === 'groups' && <><p className="sub" style={{ marginBottom: 12 }}>Associe um ou mais Host Groups do Zabbix a este cliente. Eventos e relatórios dos hosts desses grupos passam a pertencer ao cliente.</p>
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
         options={groups.map(g => ({ value: g.groupid, label: g.name, sub: g.clients.length ? 'em uso: ' + g.clients.join(', ') : g.host_count + ' host(s)' }))} /> : <Loading />}</>}
+    {['acronis', 'ems'].includes(tab) && <>
+      <p className="sub" style={{ marginBottom: 12 }}>{tab === 'acronis' ? 'Marque o(s) cliente(s) (tenant) do Acronis Cyber Protect Cloud que pertencem a este cliente. Backups, tecnologias contratadas (EDR/antimalware, RMM, DLP, backup de e-mail…), alertas, portal e relatórios passam a usar estes dados. Um cliente pode ter mais de um tenant.' : 'Marque o(s) site(s) do FortiClient EMS deste cliente. Os endpoints, o antivírus e os alertas passam a pertencer a ele no portal e nos relatórios.'}</p>
+      {tenants ? <MultiPick value={c[tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']} onChange={v => setC({ ...c, [tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']: v })} placeholder={tab === 'acronis' ? 'Buscar cliente do Acronis…' : 'Buscar site do EMS…'}
+        options={tenants.filter(t => t.source === tab).map(t => ({ value: t.id, label: t.name, sub: t.client_id && t.client_id !== c.id ? 'em uso: ' + t.client_name : t.assets + ' item(ns)' }))} /> : <Loading />}</>}
     {tab === 'wa' && <>
       <DestBox c={c} only={['wa', 'alert']} title="Destinos dos alertas deste cliente" />
       <div className="row" style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} />
@@ -119,6 +126,7 @@ export function Clients() {
 export function ClientDetail() {
   const { id } = useParams(); const me = useAuth(); const toast = useToast(); const nav = useNavigate(); const [preview, setPreview] = useState(false); const [days, setDays] = useState(30); const [edit, setEdit] = useState(null)
   const { data: d, err, reload } = useLoad(() => get(`/clients/${id}/dashboard?days=${days}`), [id, days], 30000)
+  const [tab, setTab] = useState('geral'); const prot = useLoad(() => get(`/protection/client/${id}`), [id], 60000)
   if (!d) return <Loading err={err} />
   const s = d.kpis.summary; const c = d.client; const infra = !!d.services?.infra
   const dd = Object.entries(d.kpis.by_day).map(([k, v]) => ({ d: k.slice(5).split('-').reverse().join('/'), v }))
@@ -129,20 +137,16 @@ export function ClientDetail() {
       {can(me, 'clients.edit') && <button className="btn primary" onClick={async () => setEdit(await get('/clients/' + id))}><Pencil />Editar</button>}
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
+    <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : [])]} />
+    {tab !== 'geral' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
+    {tab === 'geral' && <>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>
         <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
         <Stat label="Incidentes" value={s.incidents} desc={`${s.resolved} resolvidos · ${s.open} em aberto`} tone={s.open ? 'warn' : ''} />
         <Stat label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
         <Stat label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
-      </div> : <p className="sub" style={{ marginBottom: 16 }}>Este cliente não possui hosts de infraestrutura monitorados — o acompanhamento é feito pelos serviços de backup e estações abaixo.</p>}
-    {(d.backup?.enabled || d.endpoints?.enabled) && <div className="grid g2" style={{ marginBottom: 16 }}>
-      {d.backup?.enabled && <Card title="Backup (Acronis)" actions={<Link className="btn sm" to="/protecao">Abrir painel</Link>}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>{Object.entries(d.backup.counts).map(([k, v]) => <Pill key={k} tone={k === 'ok' ? 'ok' : k === 'sem dados' || k === 'ignorado' ? 'mut' : 'bad'}>{v} {k === 'ok' ? 'em dia' : k}</Pill>)}</div>
-        {d.backup.alerts.length ? d.backup.alerts.slice(0, 5).map(a => <div key={a.id} className="sub" style={{ padding: '3px 0' }}><SevBadge n={a.severity} /> <b>{a.host}</b> — {a.trigger_name}</div>) : <div className="sub">✅ Nenhum problema de backup.</div>}</Card>}
-      {d.endpoints?.enabled && <Card title="Estações (FortiClient EMS)" actions={<Link className="btn sm" to="/protecao">Abrir painel</Link>}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>{Object.entries(d.endpoints.counts).map(([k, v]) => <Pill key={k} tone={k === 'online' ? 'ok' : k === 'offline' || k === 'ignorado' ? 'mut' : 'warn'}>{v} {k}</Pill>)}</div>
-        {d.endpoints.alerts.length ? d.endpoints.alerts.slice(0, 5).map(a => <div key={a.id} className="sub" style={{ padding: '3px 0' }}><SevBadge n={a.severity} /> <b>{a.host}</b> — {a.trigger_name}</div>) : <div className="sub">✅ Nenhum problema nas estações.</div>}</Card>}
-    </div>}
+      </div> : <p className="sub" style={{ marginBottom: 16 }}>Este cliente não possui hosts de infraestrutura monitorados — o acompanhamento é feito pelas abas de backup e endpoints.</p>}
+    <Contracts items={d.contracts} title="Serviços contratados (Conta Azul)" />
     <div className="grid g-2-1" style={{ marginBottom: 16 }}>
       {infra && <Card title="Incidentes por dia"><div style={{ height: 230 }}><ResponsiveContainer><BarChart data={dd}><CartesianGrid vertical={false} stroke="#eef1f8" /><XAxis dataKey="d" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>}
       <Card title="Configuração de alertas"><div className="kv"><b>WhatsApp</b><span>{c.wa_enabled ? 'ativo' : 'desligado'}</span><b>Grupo</b><span className="mono" style={{ fontSize: 13 }}>{c.whatsapp_group_jid || '—'}</span>
@@ -155,6 +159,7 @@ export function ClientDetail() {
         <Card title="Histórico recente" pad={false}><Table rows={d.history.slice(0, 15)} cols={[{ h: 'Host', k: 'host' }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Duração', r: r => fmtDur(r.duration_s) }, { h: '', r: r => <StatusBadge s={r.status} /> }]} /></Card>
       </div>}
     {can(me, 'clients.edit') && <div style={{ marginTop: 16 }}><PortalAccess client={c} /></div>}
+    </>}
     {preview && <Modal wide title={`Portal de ${c.trade_name} (pré-visualização)`} onClose={() => setPreview(false)}><div className="portal-embed"><Portal clientId={c.id} embedded /></div></Modal>}
     {edit && <ClientForm initial={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload() }} />}</>
 }

@@ -145,6 +145,21 @@ class ContaAzul:
                 return
             page += 1
 
+    def contracts(self):
+        """Contratos (GET): lista paginada + detalhe de cada um (o campo observacoes so vem no detalhe)."""
+        page = 1
+        while True:
+            d = self.get("/v1/contratos", pagina=page, tamanho_pagina=100, data_inicio="2000-01-01", data_fim="2100-12-31")
+            items = d.get("itens") or []
+            for it in items:
+                try:
+                    yield self.get(f"/v1/contratos/{it['id']}") | {"_list": it}
+                except ContaAzulError:
+                    yield {"_list": it}
+            if len(items) < 100:
+                return
+            page += 1
+
     def installment(self, ext_id: str) -> dict:
         return self.get(f"/v1/financeiro/eventos-financeiros/parcelas/{ext_id}")
 

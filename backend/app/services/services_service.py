@@ -6,15 +6,18 @@ from sqlalchemy.orm import Session
 from ..models import Client, ExtTenant
 
 MODULES = ("infra", "backup", "endpoint")
-NAMES = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Estações"}
+NAMES = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Endpoints"}
 _SRC = {"acronis": "backup", "ems": "endpoint"}
 
 
 def of_clients(db: Session, clients: list[Client]) -> dict[int, dict]:
     """{client_id: {"infra": bool, "backup": bool, "endpoint": bool}} com uma unica consulta aos tenants."""
+    from . import protection_service as P
     linked: dict[int, set] = {}
-    for cid, src in db.execute(select(ExtTenant.client_id, ExtTenant.source).where(ExtTenant.client_id.is_not(None), ExtTenant.active.is_(True))):
-        linked.setdefault(cid, set()).add(_SRC.get(src))
+    for t in db.scalars(select(ExtTenant).where(ExtTenant.client_id.is_not(None), ExtTenant.active.is_(True))):
+        linked.setdefault(t.client_id, set()).add(_SRC.get(t.source))
+        if t.source == "acronis" and any(P.license_flags(t)[k] for k in ("security", "management", "dlp")):
+            linked[t.client_id].add("endpoint")  # Acronis com EDR/antimalware, RMM ou DLP tambem e endpoint
     return {c.id: {"infra": bool(c.hosts or c.groups), "backup": "backup" in linked.get(c.id, ()), "endpoint": "endpoint" in linked.get(c.id, ())}
             for c in clients}
 

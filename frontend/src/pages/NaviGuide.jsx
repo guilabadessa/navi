@@ -52,7 +52,7 @@ export const PORTAL_TIPS = {
   hosts: ['Hosts', 'Seus servidores e equipamentos monitorados, com estado atual e disponibilidade. Filtre por grupo ou procure pelo nome/IP.'],
   grp: ['Grupos', 'Seus ambientes agrupados. Clique em um grupo para ver só os hosts dele.'],
   bkp: ['Backup', 'Quando foi o último backup com sucesso de cada servidor e se há algum alerta aberto.'],
-  eps: ['Estações', 'As estações protegidas (antivírus/FortiClient) e quando cada uma falou conosco pela última vez.'],
+  eps: ['Endpoints', 'Os equipamentos protegidos (antivírus, EDR, DLP, RMM) e quando cada um falou conosco pela última vez. Use os filtros por tecnologia e situação.'],
   rel: ['Relatórios', 'Os relatórios mensais em PDF. É só clicar para baixar.'],
   fin: ['Financeiro', 'Boletos e notas fiscais do mês. Troque o mês no seletor; o que estiver vencido de meses anteriores aparece em destaque.'],
 }
@@ -61,11 +61,11 @@ export const PORTAL_SEV = { label: 'O que são as severidades?', text: 'As sever
 
 // ---- Conteudo do painel da equipe (por rota) ----
 export const STAFF_TIPS = {
-  '/': ['Dashboard', 'Visão geral do NOC em tempo real: incidentes abertos, saúde por cliente, backup e estações. Use os filtros e os cartões para abrir os detalhes.'],
+  '/': ['Dashboard', 'Visão geral do NOC em tempo real: incidentes abertos, saúde por cliente, backup e endpoints. Use os filtros e os cartões para abrir os detalhes.'],
   '/clientes': ['Clientes', 'Cadastro dos clientes, vínculo com Host Groups do Zabbix, Acronis, EMS e Conta Azul. Aqui você também convida os usuários do portal de cada cliente.'],
   '/monitoramento': ['Monitoramento', 'Hosts e Host Groups sincronizados do Zabbix. Veja quais ainda não estão associados a um cliente.'],
   '/eventos': ['Eventos', 'Todos os incidentes (PROBLEM e RESOLVED), com filtros por cliente, severidade, origem e período. Dá para exportar em CSV.'],
-  '/protecao': ['Backup e Endpoints', 'Itens protegidos pelo Acronis e estações do FortiClient EMS. Associe cada tenant a um cliente para os alertas chegarem à pessoa certa.'],
+  '/protecao': ['Backup e Endpoints', 'Itens protegidos pelo Acronis e endpoints (FortiClient EMS e proteção Acronis). Associe cada tenant a um cliente para os alertas chegarem à pessoa certa.'],
   '/portal': ['Portal do cliente', 'Veja o portal exatamente como o cliente vê, trocando de cliente e de severidade exibida.'],
   '/alertas': ['Alertas', 'Regras por cliente, host e severidade; templates de mensagem; escalonamento; manutenção e modo sombra. Use "Testar" antes de ativar.'],
   '/relatorios': ['Relatórios', 'Relatórios executivos e técnicos em PDF, com envio por e-mail. Guardamos os 2 mais recentes por cliente.'],

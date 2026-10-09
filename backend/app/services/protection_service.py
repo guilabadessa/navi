@@ -88,6 +88,100 @@ def sync_tenants(db: Session, svc) -> tuple[dict, dict]:
     return by_uuid, by_name
 
 
+# ---------------- servicos contratados (licencas/uso) ----------------
+# (fragmento do nome do item, rotulo, grupo). A ordem importa: o primeiro que casar vale.
+CATALOG = [
+    ("pack_adv_security_awareness", "Treinamento de conscientização em segurança", "Segurança"),
+    ("pack_adv_security_m365", "Advanced Security — Microsoft 365", "Segurança"),
+    ("pack_adv_security", "Advanced Security (antimalware + EDR)", "Segurança"),
+    ("pack_adv_email_security_m365", "Advanced Email Security — apps Microsoft 365", "E-mail"),
+    ("pack_adv_email_security", "Advanced Email Security", "E-mail"),
+    ("pack_adv_management_m365", "Advanced Management — Microsoft 365", "Gerenciamento"),
+    ("pack_adv_management", "Advanced Management (RMM, patch, inventário)", "Gerenciamento"),
+    ("pack_adv_dlp", "Advanced DLP (prevenção de vazamento de dados)", "DLP"),
+    ("pack_adv_backup_m365", "Advanced Backup — Microsoft 365", "Backup"),
+    ("pack_adv_backup_gworkspace", "Advanced Backup — Google Workspace", "Backup"),
+    ("pack_adv_backup_workstations", "Advanced Backup — estações", "Backup"),
+    ("pack_adv_backup_servers", "Advanced Backup — servidores", "Backup"),
+    ("pack_adv_backup_vms", "Advanced Backup — VMs", "Backup"),
+    ("pack_adv_dr_azure", "Disaster Recovery (Azure)", "Continuidade"),
+    ("m365_email_archiving", "Arquivamento de e-mail Microsoft 365", "E-mail"),
+    ("m365_sharepoint_sites", "Backup de SharePoint (sites)", "Backup"),
+    ("m365_teams", "Backup do Microsoft Teams", "Backup"),
+    ("m365_seats", "Backup de caixas Microsoft 365", "Backup"),
+    ("gworkspace_seats", "Backup do Google Workspace", "Backup"),
+    ("hosted_exchange", "Backup de Exchange hospedado", "Backup"),
+    ("web_hosting_servers", "Backup de servidores de hospedagem web", "Backup"),
+    ("_workstations", "Backup de estações de trabalho", "Backup"),
+    ("_servers", "Backup de servidores", "Backup"),
+    ("_vms", "Backup de máquinas virtuais", "Backup"),
+    ("_mobiles", "Backup de dispositivos móveis", "Backup"),
+    ("_nas", "Backup de NAS", "Backup"),
+    ("adv_dr_", "Disaster Recovery", "Continuidade"),
+]
+_SKIP = ("fc_seats", "secondary", "archiving_storage", "c2c_storage", "fc_storage", "fc_notarizations", "fc_esignatures", "drives_shipped", "local_storage", "public_ips", "compute_points", "cloud_servers", "dr_storage", "ms_powered")
+
+
+def contracted_services(usages: list[dict]) -> list[dict]:
+    """Itens realmente contratados (cota definida ou em uso), com nome claro. Itens padrao do parceiro com cota/uso zero ficam de fora."""
+    out, seen = [], set()
+    for u in usages:
+        name = u.get("name") or ""
+        if any(s in name for s in _SKIP) or name.endswith("_storage") and "base_storage" not in name:
+            continue
+        quota = ((u.get("offering_item") or {}).get("quota") or {}).get("value")
+        val = u.get("value") or 0
+        if (u.get("offering_item") or {}).get("status") != 1:
+            continue
+        if name.endswith("base_storage"):
+            if val > 0:
+                out.append({"key": "storage", "label": "Armazenamento em nuvem (backup)", "group": "Backup", "used": val, "quota": quota, "unit": "bytes"})
+            continue
+        if not (quota is not None or val > 0):
+            continue
+        for frag, label, group in CATALOG:
+            if frag in name:
+                if label in seen:
+                    break
+                seen.add(label)
+                out.append({"key": name, "label": label, "group": group, "used": val, "quota": quota, "unit": u.get("measurement_unit") or "quantity"})
+                break
+    return out
+
+
+def sync_usages(db: Session, svc, tenants: list[ExtTenant]):
+    """Atualiza ext_tenants.info (servicos contratados). Falha aqui nao impede o restante da sincronizacao."""
+    try:
+        by_id = {t.ext_id: t for t in tenants}
+        for it in svc.usages(list(by_id)):
+            t = by_id.get(it.get("tenant"))
+            if t is not None:
+                t.info = {"services": contracted_services(it.get("usages") or []), "updated": datetime.now(timezone.utc).isoformat()}
+        db.flush()
+    except Exception as e:  # noqa: BLE001
+        log.warning("acronis: servicos contratados indisponiveis: %s", e)
+
+
+def license_flags(t: ExtTenant | None) -> dict:
+    labels = {s["label"] for s in ((t.info or {}).get("services") or [])} if t else set()
+    has = lambda *k: any(any(x in l for x in k) for l in labels)  # noqa: E731
+    return {"security": has("Advanced Security"), "management": has("Advanced Management"), "dlp": has("DLP"), "email": has("Email Security")}
+
+
+UNIT_TECH = {"content-analyzer-edr": "EDR", "dlp-unit": "DLP", "active_protection": "Antimalware", "cyber-scripting-executor": "RMM", "remote-shell-agent": "RMM"}
+
+
+def device_techs(units: list[str], flags: dict) -> list[str]:
+    """Tecnologias efetivamente ativas no equipamento: unidade instalada no agente E licenca contratada pelo cliente."""
+    need = {"EDR": "security", "Antimalware": "security", "DLP": "dlp", "RMM": "management"}
+    out = []
+    for u in units:
+        t = UNIT_TECH.get(u)
+        if t and flags.get(need[t]) and t not in out:
+            out.append(t)
+    return out
+
+
 # ---------------- ativos e atividades ----------------
 def _asset(db: Session, cache: dict, ext_id: str, name: str, typ: str, tenant: ExtTenant | None) -> ExtAsset:
     ext_id = ext_id.lower()
@@ -108,11 +202,15 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
     agents = {a["id"]: a for a in svc.agents()}
     now = datetime.now(timezone.utc)
     cfg_ = cfg(db)
+    tflags = {t.id: license_flags(t) for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC))}
     for r in svc.resources("resource.machine"):
         tn = by_name.get((r.get("tenant_name") or "").strip().lower())
         a = _asset(db, cache, r["id"], r.get("user_defined_name") or r.get("name") or r["id"], "machine", tn)
         ag = agents.get(r.get("agent_id"))
         if ag is not None:
+            units = [u.get("name") for u in ag.get("units") or []]
+            a.meta = {**(a.meta or {}), "techs": device_techs(units, tflags.get(a.ext_tenant_id or (tn.id if tn else None), {})),
+                      "agent_version": ((ag.get("core_version") or {}).get("current") or {}).get("release_id"), "hostname": ag.get("hostname")}
             if a.ext_tenant_id is None:
                 t2 = by_name.get(((ag.get("tenant") or {}).get("name") or "").strip().lower())
                 a.ext_tenant_id = t2.id if t2 else None
@@ -144,6 +242,8 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
                     nm = f"{nm} ({mach})"
             a = _asset(db, cache, res["id"], nm, rtype, t)
         a.policy_name = (act.get("policy") or {}).get("name") or a.policy_name
+        if (act.get("policy") or {}).get("id"):
+            a.meta = {**(a.meta or {}), "policy_id": act["policy"]["id"]}
         if act.get("state") != "completed":
             continue
         done = _dt(act.get("completedAt")) or _dt(act.get("startedAt"))
@@ -246,6 +346,7 @@ def sync_acronis(db: Session, svc) -> dict:
     if not svc.configured or not cfg(db)["acronis_enabled"]:
         return {"skipped": True}
     by_uuid, by_name = sync_tenants(db, svc)
+    sync_usages(db, svc, list({t.id: t for t in by_uuid.values()}.values()))
     cache = sync_assets(db, svc, by_uuid, by_name)
     db.commit()
     desired = _desired(db, svc, cache, by_uuid, by_name)
@@ -365,3 +466,29 @@ def sync_ems(db: Session, svc) -> dict:
         db.merge(h)
         db.commit()
         raise
+
+
+# ======================= Endpoints (EMS + dispositivos protegidos pelo Acronis) =======================
+def endpoint_rows(db: Session, client_id: int) -> list[dict]:
+    """Endpoints do cliente, venham do FortiClient EMS ou do Acronis (EDR/antimalware/DLP/RMM). Mesmo formato para portal, relatorio e telas."""
+    from ..routers.protection import asset_status
+    now, c = datetime.now(timezone.utc), cfg(db)
+    rows = []
+    tens = list(db.scalars(select(ExtTenant).where(ExtTenant.client_id == client_id, ExtTenant.active.is_(True))))
+    ems_ids = [t.id for t in tens if t.source == EMS]
+    ac = {t.id: t for t in tens if t.source == SRC}
+    if ems_ids:
+        for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(ems_ids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
+            m, st = a.meta or {}, ems_status(a, c["ems_offline_days"], now)
+            rows.append({"id": a.id, "name": a.name, "user": m.get("user"), "os": m.get("os"), "source": "FortiClient EMS", "techs": ["Antivírus (FortiClient)"],
+                         "status": st, "ok": st in ("online", "offline"), "last": a.last_success_at, "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok")})
+    flagged = {tid for tid, t in ac.items() if any(license_flags(t)[k] for k in ("security", "management", "dlp"))}
+    if flagged:
+        for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(list(flagged)), ExtAsset.type == "machine", ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
+            techs = (a.meta or {}).get("techs") or []
+            if not techs:
+                continue
+            st = "sem contato" if asset_status(a, c, now) == "offline" else ("online" if a.online else "offline")
+            rows.append({"id": a.id, "name": a.name, "user": (a.meta or {}).get("hostname"), "os": None, "source": "Acronis", "techs": techs, "status": st,
+                         "ok": st in ("online", "offline"), "last": a.last_success_at, "av_enabled": None, "sig_ok": None})
+    return rows

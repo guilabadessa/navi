@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..models import Client, Event, ExtAsset, ExtTenant
-from ..security import require
+from ..security import current_user, require
+from ..security import RateLimiter, user_has
 from ..services import factory, protection_service as P
 from ..util import titlecase, to_dict
 
@@ -42,9 +43,12 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
         ids = {t.id for t in tenants if t.client_id == client_id}
         assets = [a for a in assets if a.ext_tenant_id in ids]
     rows = []
+    actions = S.get(db, "acronis.actions") == "1"
     for a in assets:
         t = tmap.get(a.ext_tenant_id)
-        rows.append({"id": a.id, "name": a.name, "type": a.type, "tenant": titlecase(t.name) if t else None, "client_id": t.client_id if t else None,
+        st_ = asset_status(a, c, now)
+        rows.append({"techs": (a.meta or {}).get("techs") or [], "can_run": bool(actions and a.type == "machine" and (a.meta or {}).get("policy_id") and st_ in ("falha", "sem backup")),
+                     "id": a.id, "name": a.name, "type": a.type, "tenant": titlecase(t.name) if t else None, "client_id": t.client_id if t else None,
                      "client": cn.get(t.client_id) if t else None, "policy": a.policy_name,
                      "last_success_at": a.last_success_at.isoformat() if a.last_success_at else None,
                      "last_failure_at": a.last_failure_at.isoformat() if a.last_failure_at else None, "last_result": a.last_result,
@@ -59,7 +63,8 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
         cnt_assets[a.ext_tenant_id] = cnt_assets.get(a.ext_tenant_id, 0) + 1
     return {"counts": counts, "assets": rows, "alerts": alerts,
             "tenants": [{"id": t.id, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": t.enabled,
-                         "assets": cnt_assets.get(t.id, 0)} for t in tenants],
+                         "assets": cnt_assets.get(t.id, 0),
+                         "services": [s["label"] for s in ((t.info or {}).get("services") or [])]} for t in tenants],
             "thresholds": c, "failed_24h": db.scalar(select(func.count()).select_from(ExtAsset).where(
                 ExtAsset.source == P.SRC, ExtAsset.last_failure_at >= now - timedelta(hours=24))) or 0}
 
@@ -109,13 +114,14 @@ class CfgIn(BaseModel):
     ems_user: str = ""
     ems_password: str | None = None
     ems_enabled: bool = False
+    acronis_actions: bool = False  # permite o botao "Executar backup agora" (unica escrita feita no Acronis)
 
 
 @router.get("/config")
 def get_cfg(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
     c = P.cfg(db)
     return {"acronis_url": S.get(db, "acronis.url"), "acronis_client_id": S.get(db, "acronis.client_id"), "acronis_secret_set": bool(S.get(db, "acronis.secret")),
-            "acronis_enabled": c["acronis_enabled"], "stale_h": c["stale_h"], "offline_min": c["offline_min"],
+            "acronis_enabled": c["acronis_enabled"], "acronis_actions": S.get(db, "acronis.actions") == "1", "stale_h": c["stale_h"], "offline_min": c["offline_min"],
             "ems_host": S.get(db, "ems.host"), "ems_port": int(S.get(db, "ems.port") or 443), "ems_offline_days": c["ems_offline_days"],
             "ems_blocked": S.get(db, "ems.auth_blocked") == "1",
             "ems_enabled": S.get(db, "ems.enabled") == "1", "ems_user": S.get(db, "ems.user"), "ems_password_set": bool(S.get(db, "ems.password"))}
@@ -131,6 +137,7 @@ def put_cfg(body: CfgIn, request: Request, db: Session = Depends(get_db), me=Dep
     if body.acronis_secret:
         S.put(db, "acronis.secret", body.acronis_secret.strip(), em)
     S.put(db, "protection.acronis_enabled", "1" if body.acronis_enabled else "0", em)
+    S.put(db, "acronis.actions", "1" if body.acronis_actions else "0", em)
     S.put(db, "protection.stale_h", str(body.stale_h), em)
     S.put(db, "protection.offline_min", str(body.offline_min), em)
     S.put(db, "ems.host", body.ems_host.strip(), em)
@@ -220,3 +227,70 @@ def ems_overview(client_id: int | None = None, db: Session = Depends(get_db), _=
             "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": True,
                          "assets": sum(1 for a in assets if a.ext_tenant_id == t.id)} for t in tenants],
             "offline_days": days, "blocked": S.get(db, "ems.auth_blocked") == "1"}
+
+
+# ---------------- visao por cliente (telas do cliente e portal) ----------------
+@router.get("/tenants")
+def list_tenants(db: Session = Depends(get_db), _=Depends(require("clients.view"))):
+    """Clientes do Acronis e sites do EMS (para associar ao cliente no cadastro)."""
+    cn = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    n = dict(db.execute(select(ExtAsset.ext_tenant_id, func.count()).where(ExtAsset.active.is_(True)).group_by(ExtAsset.ext_tenant_id)).all())
+    return [{"id": t.id, "source": t.source, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "assets": n.get(t.id, 0)}
+            for t in db.scalars(select(ExtTenant).where(ExtTenant.active.is_(True)).order_by(ExtTenant.source, ExtTenant.name))]
+
+
+_run_limiter = RateLimiter(1, 600)  # um disparo por item a cada 10 minutos
+
+
+@router.post("/assets/{aid}/run-backup")
+def run_backup(aid: int, request: Request, db: Session = Depends(get_db), user=Depends(require("protection.run"))):
+    """Executa o plano de backup do item agora (Acronis). Exige habilitar a acao em Configuracoes e permissao protection.run."""
+    if S.get(db, "acronis.actions") != "1":
+        raise HTTPException(409, "A execução de backups pela NAVI está desativada. Um administrador pode habilitar em Configurações → Acronis.")
+    a = db.get(ExtAsset, aid)
+    pid = (a.meta or {}).get("policy_id") if a else None
+    if not a or a.source != P.SRC or a.type != "machine" or not pid:
+        raise HTTPException(422, "Este item não permite execução manual (só máquinas com plano de backup conhecido).")
+    key = f"a{aid}"
+    if _run_limiter.blocked(key):
+        raise HTTPException(429, "Um backup já foi solicitado para este item há poucos minutos. Aguarde antes de repetir.")
+    try:
+        res = factory.acronis(db).run_policy(pid, a.ext_id)
+    except Exception as e:  # noqa: BLE001
+        audit.log(db, request, "backup_run", "ext_asset", aid, result="falha", detail={"item": a.name, "error": str(e)[:200]})
+        db.commit()
+        raise HTTPException(502, f"O Acronis recusou a execução: {str(e)[:200]}") from None
+    _run_limiter.hit(key)
+    audit.log(db, request, "backup_run", "ext_asset", aid, detail={"item": a.name, "plano": a.policy_name, "status": res["status"]})
+    db.commit()
+    return {"ok": True, "detail": f"Backup solicitado ao Acronis para {a.name}. O resultado aparece aqui na próxima sincronização."}
+
+
+@router.get("/client/{cid}")
+def client_view(cid: int, db: Session = Depends(get_db), _=Depends(require("clients.view"))):
+    """Tudo de Acronis/EMS de UM cliente: servicos contratados, backup, endpoints e alertas (tela do cliente)."""
+    return client_protection(db, cid, admin=True)
+
+
+def client_protection(db: Session, cid: int, admin: bool = False) -> dict:
+    now, c = datetime.now(timezone.utc), P.cfg(db)
+    tens = list(db.scalars(select(ExtTenant).where(ExtTenant.client_id == cid, ExtTenant.active.is_(True))))
+    ac_ids = [t.id for t in tens if t.source == P.SRC]
+    names = {"machine": "Máquina", "database": "Banco de dados", "mailbox": "Caixa de e-mail", "drive": "OneDrive", "site": "SharePoint", "team": "Teams"}
+    actions = admin and S.get(db, "acronis.actions") == "1"
+    backups = []
+    if ac_ids:
+        for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(ac_ids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
+            st = asset_status(a, c, now)
+            backups.append({"id": a.id, "name": a.name, "type": a.type, "type_label": names.get(a.type, a.type), "status": st, "policy": a.policy_name,
+                            "last_success_at": a.last_success_at.isoformat() if a.last_success_at else None,
+                            "last_failure_at": a.last_failure_at.isoformat() if a.last_failure_at else None, "online": a.online,
+                            "techs": (a.meta or {}).get("techs") or [],
+                            "can_run": bool(actions and a.type == "machine" and (a.meta or {}).get("policy_id") and st in ("falha", "sem backup"))})
+    services = []
+    for t in tens:
+        if t.source == P.SRC:
+            services += [{**s, "tenant": titlecase(t.name)} for s in ((t.info or {}).get("services") or [])]
+    eps = [{**r, "last": r["last"].isoformat() if r["last"] else None} for r in P.endpoint_rows(db, cid)]
+    return {"backups": backups, "endpoints": eps, "services": services, "actions": actions,
+            "tenants": [{"id": t.id, "source": t.source, "name": titlecase(t.name)} for t in tens]}

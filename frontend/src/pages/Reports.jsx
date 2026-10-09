@@ -6,7 +6,7 @@ import { useAuth, can } from '../App'
 import { ResolvedLine } from './Dest'
 import { maskCNPJ, maskTarget, cnpjHint } from '../mask'
 
-const MODS = [['infra', 'Infraestrutura (disponibilidade por equipamento)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Estações e antivírus (FortiClient EMS)']]
+const MODS = [['infra', 'Infraestrutura (disponibilidade por equipamento)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Endpoints (FortiClient EMS e proteção Acronis)']]
 const iso = (d) => d ? new Date(d).toISOString() : null
 const loc = (v) => v ? new Date(new Date(v).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
 

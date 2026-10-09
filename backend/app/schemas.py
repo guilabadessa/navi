@@ -75,6 +75,8 @@ class ClientIn(BaseModel):
     wa_recovery_template_id: int | None = None
     mail_enabled: bool = False
     alert_emails: str | None = None
+    acronis_tenant_ids: list[int] | None = None  # None = nao alterar
+    ems_tenant_ids: list[int] | None = None
     group_ids: list[str] = []
     host_ids: list[str] = []
     contacts: list[dict] = []

@@ -12,7 +12,7 @@ from .. import portal_access as PA
 from ..db import get_db
 from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
 from ..security import current_user, has_perm, require
-from ..services import kpi_service, maintenance_service, services_service
+from ..services import finance_service, kpi_service, maintenance_service, services_service
 from .clients import client_hosts
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -130,12 +130,11 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
                  for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.client_id == c.id))]
     ep_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
                  for e in db.scalars(select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM", Event.client_id == c.id))]
-    etids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == c.id, ExtTenant.source == "ems")))
-    ems_days = pc["ems_offline_days"]
-    from ..models import ExtAsset as _A
-    ep_assets = [] if not etids else [{"name": a.name, "user": (a.meta or {}).get("user"), "os": (a.meta or {}).get("os"), "status": P.ems_status(a, ems_days, now),
-                                       "last_contact": a.last_success_at.isoformat() if a.last_success_at else None}
-                                      for a in db.scalars(select(_A).where(_A.ext_tenant_id.in_(etids), _A.active.is_(True), _A.ignored.is_(False)).order_by(_A.name))]
+    ep_rows = P.endpoint_rows(db, c.id)
+    ep_assets = [{"name": r["name"], "user": r["user"], "os": r["os"], "status": r["status"], "source": r["source"], "techs": r["techs"],
+                  "last_contact": r["last"].isoformat() if r["last"] else None} for r in ep_rows]
+    from .protection import client_protection
+    prot = client_protection(db, c.id)
     runs = db.scalars(select(ReportRun).where(ReportRun.client_id == c.id, ReportRun.file_path.is_not(None)).order_by(ReportRun.generated_at.desc()).limit(2))
     return {
         "client": {"name": c.trade_name},
@@ -146,8 +145,10 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
         "active": [_ev(e) for e in vis if e.status == "PROBLEM"],
         "history": [_ev(e) for e in vis[:300]],
         "backup": {"enabled": bool(tids), "assets": bk_assets, "alerts": bk_alerts},
-        "endpoints": {"enabled": bool(etids), "assets": ep_assets, "alerts": ep_alerts},
+        "endpoints": {"enabled": bool(ep_assets), "assets": ep_assets, "alerts": ep_alerts},
+        "protection": prot,
         "services": services_service.of_client(db, c),
+        "contracts": finance_service.client_contracts(db, c.id),
         "maintenance": sorted(upcoming, key=lambda x: x["start"])[:5],
         "reports": [{"id": r.id, "name": r.name, "period_start": r.period_start.isoformat() if r.period_start else None,
                      "period_end": r.period_end.isoformat() if r.period_end else None, "generated_at": r.generated_at.isoformat()} for r in runs]}

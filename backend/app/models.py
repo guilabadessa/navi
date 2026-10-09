@@ -210,6 +210,7 @@ class ExtTenant(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    info: Mapped[dict | None] = mapped_column(JSON)  # Acronis: servicos contratados (licencas/uso)
     __table_args__ = (UniqueConstraint("source", "ext_id"),)
 
 
@@ -393,6 +394,21 @@ class JobStatus(Base):
     ack_sig: Mapped[str | None] = mapped_column(String(255))  # assinatura da falha que o operador deu ciencia
     ack_by: Mapped[str | None] = mapped_column(String(255))
     ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ClientContract(Base):
+    """Contrato do Conta Azul. Guardamos apenas o necessario para mostrar os servicos contratados (sem valores)."""
+    __tablename__ = "client_contracts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ext_id: Mapped[str] = mapped_column(String(64), unique=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    person_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    number: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str | None] = mapped_column(String(16))  # ATIVO | INATIVO | ...
+    description: Mapped[str | None] = mapped_column(Text)  # campo "observacoes" (detalhes) do contrato
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CommLog(Base):

@@ -1,4 +1,5 @@
-"""Cliente da API do Acronis Cyber Protect Cloud (somente leitura: apenas GET, alem da emissao do token)."""
+"""Cliente da API do Acronis Cyber Protect Cloud. Consultas (GET) + UMA acao opcional: iniciar um plano de backup (run_policy),
+usada apenas pelo botao "Executar backup agora" e somente se habilitada em Configuracoes."""
 import time
 from datetime import datetime, timezone
 
@@ -79,6 +80,21 @@ class AcronisService:
             # atividades de backup: tem plano (policy) do tipo backup; maquinas aparecem como resource.type "instance"
             if (a.get("policy") or {}).get("type") == "backup" and a.get("resource"):
                 yield a
+
+    def usages(self, tenant_ids: list[str]) -> list[dict]:
+        """Licencas/uso por tenant (servicos contratados)."""
+        out = []
+        for i in range(0, len(tenant_ids), 20):
+            out += self.get("/api/2/tenants/usages", tenants=",".join(tenant_ids[i:i + 20])).get("items", [])
+        return out
+
+    def run_policy(self, policy_id: str, resource_id: str) -> dict:
+        """Executa um plano (backup) agora em um recurso. PUT /api/policy_management/v4/applications/run (resposta 202)."""
+        r = self.http.put(f"{self.base}/api/policy_management/v4/applications/run", json={"state": "running", "policy_id": policy_id, "context_ids": [resource_id]},
+                          headers={"Authorization": f"Bearer {self.token()}"})
+        if r.status_code not in (200, 202, 204):
+            raise AcronisError(f"HTTP {r.status_code} {r.text[:200]}")
+        return {"status": r.status_code}
 
     def test(self) -> str:
         tid = self.root_tenant()

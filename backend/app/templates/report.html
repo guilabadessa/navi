@@ -147,8 +147,8 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
   <div class="m"><b>{{ backup.pct|string|replace('.', ',') }}%</b> de conformidade</div>
   <div class="m"><b>{{ backup.inc.total if backup.inc else 0 }}</b> ocorrência(s) no período</div></div></td>{% endif %}
 {% if endpoints %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#6d5bd0">
-  <div class="l">Estações e antivírus</div>
-  <div class="v">{{ endpoints.ok }}<small> / {{ endpoints.total }}</small></div><div class="d">estações em conformidade</div>
+  <div class="l">Endpoints</div>
+  <div class="v">{{ endpoints.ok }}<small> / {{ endpoints.total }}</small></div><div class="d">endpoints em conformidade</div>
   <table class="trk"><tr><td class="f" style="width:{{ endpoints.pct }}%;background:{{ '#16a34a' if not endpoints.problems else '#d97706' }}"></td><td class="r"></td></tr></table>
   {% if endpoints.problems %}<span class="pill warn">{{ endpoints.problems }} COM PENDÊNCIA</span>{% else %}<span class="pill ok">TUDO EM CONFORMIDADE</span>{% endif %}
   <div class="m"><b>{{ endpoints.online }}</b> online agora</div>
@@ -162,7 +162,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 
 <div class="blk">Neste relatório</div>
 <table class="meta" style="margin:0;border-top:none"><tr>
-{% set secs = ([('Infraestrutura', 'Disponibilidade, incidentes, hosts e eventos')] if infra_on else []) + ([('Backup', 'Itens protegidos, conformidade e ocorrências')] if backup else []) + ([('Estações e antivírus', 'Conformidade, situação por estação e ocorrências')] if endpoints else []) %}
+{% set secs = ([('Infraestrutura', 'Disponibilidade, incidentes, hosts e eventos')] if infra_on else []) + ([('Backup', 'Itens protegidos, conformidade e ocorrências')] if backup else []) + ([('Endpoints', 'Conformidade, proteção por equipamento e ocorrências')] if endpoints else []) %}
 {% for t, d in secs %}<td style="width:{{ (100 / (secs|length))|round(2) }}%;padding-right:4mm"><b>{{ '%02d'|format(loop.index) }} · {{ t }}</b><span style="font-weight:400;color:#6b7390;font-size:9pt">{{ d }}</span></td>{% endfor %}
 </tr></table>
 
@@ -238,9 +238,9 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 {% if endpoints %}
 {% set ns.n = ns.n + 1 %}
 {% if ns.n > 1 %}<div class="pb"></div>{% endif %}
-<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Estações e antivírus<small>FortiClient EMS</small></td></tr></table></div>
+<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Endpoints<small>{{ endpoints.sources|join(" · ") }}</small></td></tr></table></div>
 <table class="kp"><tr>
-  <td><div class="l">Estações</div><div class="v">{{ endpoints.total }}</div></td>
+  <td><div class="l">Endpoints</div><div class="v">{{ endpoints.total }}</div></td>
   <td><div class="l">Online agora</div><div class="v ok">{{ endpoints.online }}</div></td>
   <td><div class="l">Em conformidade</div><div class="v">{{ endpoints.ok }}</div></td>
   <td><div class="l">Com pendência</div><div class="v {{ 'bad' if endpoints.problems else '' }}">{{ endpoints.problems }}</div></td>
@@ -248,11 +248,11 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
   <td><div class="l">Ocorrências</div><div class="v">{{ endpoints.inc.total if endpoints.inc else 0 }}</div></td>
 </tr></table>
 {{ distbar(endpoints) }}
-{% if endpoints.os %}<p class="note" style="margin-top:0">Sistemas: {% for o, n in endpoints.os %}{{ o }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
-<div class="sub2">Estações e situação atual<span style="font:400 8.5pt Afacad;color:#6b7390"> · estações com pendência primeiro</span></div>
-<table class="data"><thead><tr><th>Estação</th><th>Usuário</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
-{% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.last }}</td><td><span class="st {{ 'ok' if b.status == 'Online' else ('mut' if b.status == 'Offline' else ('bad' if b.status in ('Sem contato', 'Antivírus off', 'Quarentena') else 'warn')) }}">{{ b.status }}</span></td></tr>{% endfor %}</tbody></table>
-{{ incidents(endpoints, 'estações/antivírus') }}
+{% if endpoints.techs %}<p class="note" style="margin-top:0">Tecnologias de proteção: {% for o, n in endpoints.techs %}{{ o }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+<div class="sub2">Endpoints e situação atual<span style="font:400 8.5pt Afacad;color:#6b7390"> · com pendência primeiro</span></div>
+<table class="data"><thead><tr><th>Endpoint</th><th>Usuário / host</th><th>Proteção</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
+{% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.techs }}</td><td>{{ b.last }}</td><td><span class="st {{ 'ok' if b.status == 'Online' else ('mut' if b.status == 'Offline' else ('bad' if b.status in ('Sem contato', 'Antivírus off', 'Quarentena') else 'warn')) }}">{{ b.status }}</span></td></tr>{% endfor %}</tbody></table>
+{{ incidents(endpoints, 'endpoints') }}
 {% endif %}
 
 {% if notes %}<div class="sub2">Observações</div><div class="summary" style="margin-top:0">{{ notes }}</div>{% endif %}

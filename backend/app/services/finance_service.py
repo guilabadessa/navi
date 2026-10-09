@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import settings_store as S
-from ..models import Client, ClientPerson, ExtTenant, FinDoc
+from ..models import Client, ClientContract, ClientPerson, ExtTenant, FinDoc
 from ..util import titlecase
 from .contaazul_service import ContaAzul, ContaAzulError, digits
 
@@ -253,11 +253,47 @@ def sync_notes(db: Session, ca: ContaAzul) -> dict:
     return {"notes": n}
 
 
+def sync_contracts(db: Session, ca: ContaAzul) -> dict:
+    """Contratos do Conta Azul -> servicos contratados do cliente (vinculo pelo mesmo cadastro/CNPJ das notas e boletos)."""
+    pm = person_map(db)
+    have = {c.ext_id: c for c in db.scalars(select(ClientContract))}
+    seen, n = set(), 0
+    for ct in ca.contracts():
+        lst = ct.get("_list") or {}
+        eid = ct.get("id") or lst.get("id")
+        if not eid:
+            continue
+        seen.add(eid)
+        pid = ((ct.get("cliente") or lst.get("cliente") or {}).get("id"))
+        row = have.get(eid) or ClientContract(ext_id=eid)
+        terms = ct.get("termos") or {}
+        row.person_id, row.client_id = pid, pm.get(pid)
+        row.number = terms.get("numero") or lst.get("numero")
+        row.status = (ct.get("status") or lst.get("status") or "")[:16]
+        row.description = ((ct.get("observacoes") or "").strip() or None) if "observacoes" in ct else row.description
+        row.start_date = _d(terms.get("data_inicio") or lst.get("data_inicio"))
+        row.end_date = _d(terms.get("data_fim") or (lst.get("termos") or {}).get("data_fim"))
+        row.synced_at = datetime.now(timezone.utc)
+        db.add(row)
+        n += 1
+    for eid, row in have.items():  # contrato que deixou de existir no Conta Azul
+        if eid not in seen:
+            db.delete(row)
+    return {"contracts": n}
+
+
+def client_contracts(db: Session, client_id: int) -> list[dict]:
+    """Servicos contratados (contratos ativos): numero, vigencia e descricao. Sem valores."""
+    rows = db.scalars(select(ClientContract).where(ClientContract.client_id == client_id, ClientContract.status == "ATIVO").order_by(ClientContract.number))
+    return [{"number": r.number, "start": r.start_date.isoformat() if r.start_date else None, "end": r.end_date.isoformat() if r.end_date else None,
+             "lines": [ln.strip(" -•\t") for ln in (r.description or "").splitlines() if ln.strip()]} for r in rows]
+
+
 def sync_all(db: Session, ca: ContaAzul) -> dict:
     if not ca.configured or not ca.authorized or S.get(db, "contaazul.enabled") != "1":
         return {"skipped": True}
     res = {}
-    for fn in (sync_people, sync_titles, sync_notes):
+    for fn in (sync_people, sync_titles, sync_notes, sync_contracts):
         res.update(fn(db, ca))
         db.commit()
     S.put(db, "contaazul.last_sync", datetime.now(timezone.utc).isoformat(), "contaazul")
