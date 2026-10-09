@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, EyeOff, Lock, Mail } from 'lucide-react'
 import { post } from '../api'
 import AuthShell from '../auth/AuthShell'
 
@@ -43,7 +43,6 @@ export default function Login({ onLogin }) {
       <Err />
       <button className={'lg-btn' + (done ? ' done' : '')} disabled={busy || done}>{done ? <><CheckCircle2 size={19} />Acesso confirmado</> : busy ? <><i className="lg-spin" />Entrando…</> : 'Entrar'}</button>
       <div className="lg-center"><button type="button" className="lg-link" onClick={() => { setForgot(true); setErr('') }}>Esqueci minha senha</button></div>
-      <div className="lg-secure"><ShieldCheck size={13} />Conexão segura · sessão protegida</div>
     </form>}</div>
   </AuthShell>
 }

@@ -1,12 +1,29 @@
 /* Login / convite / redefinicao: layout simples e corporativo */
-.lg-root{min-height:100vh;display:flex;flex-direction:column;background:#071a5a;color:#fff}
-.lg-top{padding:26px 36px}.lg-top img{height:38px;display:block}
-.lg-main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:8px 20px 28px}
-.lg-title{text-align:center;margin-bottom:6px}
-.lg-title h1{font:700 40px/1 var(--head);letter-spacing:.24em;margin:0 0 0 .24em;color:#fff}
-.lg-title p{margin:10px 0 0;color:#a9c0f5;font-size:16px}
-.lg-card{width:100%;max-width:400px;background:#fff;color:#141a2e;border-radius:10px;padding:32px 32px 26px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
-.lg-card h2{font:700 22px var(--head);color:#071a5a;margin:0 0 6px}
+.lg-root{min-height:100vh;display:grid;grid-template-columns:minmax(420px,.9fr) 1.1fr;background:#fff;color:#141a2e}
+.lg-form{display:flex;flex-direction:column;padding:28px 48px 18px;min-width:0}
+.lg-form header img{height:34px;display:block}
+.lg-form main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px 0}
+.lg-card{width:100%;max-width:380px;background:none;box-shadow:none;border-radius:0;padding:0;color:#141a2e}
+.lg-form footer{text-align:center;font-size:12.5px;color:#7a84a3;display:grid;gap:5px}
+.lg-form footer .lg-secure{margin:0 0 4px;color:#5b6684}
+.lg-brandpanel{background:linear-gradient(155deg,#0a2a8f 0%,#071a5a 55%,#050f3a 100%);color:#fff;display:flex;align-items:center;justify-content:center;padding:48px 56px;position:relative;overflow:hidden}
+.lg-brandpanel:before{content:"";position:absolute;inset:0;background:url(/cliente/brand/simbolo_branco.png) no-repeat 112% 118%/520px;opacity:.06;pointer-events:none}
+.lg-bp{position:relative;max-width:560px;width:100%}
+.lg-prod{font:700 15px var(--head);letter-spacing:.3em;color:#fff;display:flex;flex-direction:column;gap:6px;margin-bottom:26px}
+.lg-prod span{font:500 13px var(--body);letter-spacing:.04em;color:#9fb8f2}
+.lg-bp h2{text-wrap:balance;font:700 34px/1.2 var(--head);color:#fff;margin:0 0 22px;letter-spacing:0}
+.lg-bp ul{list-style:none;margin:0 0 30px;padding:0;display:grid;gap:11px}
+.lg-bp li{display:flex;gap:10px;align-items:center;font-size:16px;color:#d5e1ff}.lg-bp li svg{color:#5fd6a0;flex:none}
+.lg-preview{background:#fff;color:#141a2e;border-radius:12px;padding:16px 18px 14px;box-shadow:0 18px 44px rgba(0,0,0,.28)}
+.lg-pv-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid #e6eaf5;margin-bottom:4px}
+.lg-pv-head b{font:700 15px var(--head);color:#071a5a}
+.lg-pv-head span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#16803c;font-weight:600}
+.lg-pv-head span i,.lg-pv-row em i{width:8px;height:8px;border-radius:50%;background:#16a34a;display:inline-block}
+.lg-pv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eef1f8;font-size:14.5px}
+.lg-pv-row svg{color:#1e73f8}.lg-pv-row span{flex:1;font-weight:600;color:#1b2547}
+.lg-pv-row em{font-style:normal;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#16803c;background:#e8f7ee;padding:3px 10px;border-radius:99px}
+.lg-pv-foot{display:flex;align-items:center;gap:7px;padding-top:12px;font-size:12.5px;color:#6b7596}.lg-pv-foot svg{color:#8892b0}.lg-pv-foot span{width:1px;height:12px;background:#d5dbec;margin:0 6px}
+.lg-card h2{font:700 26px var(--head);color:#071a5a;margin:0 0 6px}
 .lg-card .lg-brand{display:none}
 .lg-card .lg-sub{color:#566182;font-size:14.5px;line-height:1.45;margin:0 0 20px}
 .lg-kicker{display:none}
@@ -36,9 +53,9 @@
 .lg-link:hover{text-decoration:underline}
 .lg-center{text-align:center;margin-top:10px}
 .lg-secure{display:flex;gap:6px;align-items:center;justify-content:center;margin-top:8px;font-size:12.5px;color:#7a84a3}
-.lg-help{font-size:13px;color:#8fa6d6;text-align:center}
-.lg-foot{text-align:center;padding:0 20px 22px;font-size:12.5px;color:#7f97d0}
 .lg-rules{margin:0 0 16px;font-size:13.5px;display:grid;gap:3px}
 .lg-rules div{display:flex;gap:8px;align-items:center;color:#8892b0}.lg-rules div.ok{color:#16803c}
 @keyframes lg-rot{to{transform:rotate(360deg)}}
-@media (max-width:480px){.lg-top{padding:18px 20px}.lg-card{padding:26px 20px 22px}.lg-title h1{font-size:34px}}
+@media (max-width:1180px){.lg-bp h2{font-size:28px}.lg-brandpanel{padding:40px 36px}}
+@media (max-width:900px){.lg-root{grid-template-columns:1fr}.lg-brandpanel{display:none}.lg-form{padding:24px 22px 20px}.lg-form main{align-items:flex-start;padding-top:36px}}
+@media (max-height:780px){.lg-brandpanel{padding:24px 56px}.lg-bp h2{font-size:28px;margin-bottom:14px}.lg-bp ul{margin-bottom:18px;gap:7px}.lg-prod{margin-bottom:16px}.lg-pv-row{padding:8px 0}}
