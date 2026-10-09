@@ -114,6 +114,10 @@ class CfgIn(BaseModel):
     ems_user: str = ""
     ems_password: str | None = None
     ems_enabled: bool = False
+    acronis2_url: str = ""
+    acronis2_client_id: str = ""
+    acronis2_secret: str | None = None
+    acronis2_enabled: bool = True
     acronis_actions: bool = False  # permite o botao "Executar backup agora" (unica escrita feita no Acronis)
 
 
@@ -121,7 +125,8 @@ class CfgIn(BaseModel):
 def get_cfg(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
     c = P.cfg(db)
     return {"acronis_url": S.get(db, "acronis.url"), "acronis_client_id": S.get(db, "acronis.client_id"), "acronis_secret_set": bool(S.get(db, "acronis.secret")),
-            "acronis_enabled": c["acronis_enabled"], "acronis_actions": S.get(db, "acronis.actions") == "1", "stale_h": c["stale_h"], "offline_min": c["offline_min"],
+            "acronis2_url": S.get(db, "acronis2.url"), "acronis2_client_id": S.get(db, "acronis2.client_id"), "acronis2_secret_set": bool(S.get(db, "acronis2.secret")),
+            "acronis2_enabled": S.get(db, "protection.acronis2_enabled") != "0", "acronis_enabled": c["acronis_enabled"], "acronis_actions": S.get(db, "acronis.actions") == "1", "stale_h": c["stale_h"], "offline_min": c["offline_min"],
             "ems_host": S.get(db, "ems.host"), "ems_port": int(S.get(db, "ems.port") or 443), "ems_offline_days": c["ems_offline_days"],
             "ems_blocked": S.get(db, "ems.auth_blocked") == "1",
             "ems_enabled": S.get(db, "ems.enabled") == "1", "ems_user": S.get(db, "ems.user"), "ems_password_set": bool(S.get(db, "ems.password"))}
@@ -137,6 +142,11 @@ def put_cfg(body: CfgIn, request: Request, db: Session = Depends(get_db), me=Dep
     if body.acronis_secret:
         S.put(db, "acronis.secret", body.acronis_secret.strip(), em)
     S.put(db, "protection.acronis_enabled", "1" if body.acronis_enabled else "0", em)
+    S.put(db, "acronis2.url", body.acronis2_url.strip().rstrip("/"), em)
+    S.put(db, "acronis2.client_id", body.acronis2_client_id.strip(), em)
+    if body.acronis2_secret:
+        S.put(db, "acronis2.secret", body.acronis2_secret.strip(), em)
+    S.put(db, "protection.acronis2_enabled", "1" if body.acronis2_enabled else "0", em)
     S.put(db, "acronis.actions", "1" if body.acronis_actions else "0", em)
     S.put(db, "protection.stale_h", str(body.stale_h), em)
     S.put(db, "protection.offline_min", str(body.offline_min), em)
@@ -158,6 +168,8 @@ def test(source: str, db: Session = Depends(get_db), _=Depends(require("settings
     try:
         if source == "acronis":
             return {"ok": True, "detail": factory.acronis(db).test()}
+        if source == "acronis2":
+            return {"ok": True, "detail": factory.acronis2(db).test()}
         if source == "ems":
             r = factory.ems(db).test()
             S.put(db, "ems.auth_blocked", "0")
@@ -175,7 +187,7 @@ def test(source: str, db: Session = Depends(get_db), _=Depends(require("settings
 @router.post("/sync/acronis")
 def sync_now(request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
     try:
-        res = P.sync_acronis(db, factory.acronis(db))
+        res = P.sync_acronis(db)
     except Exception as e:  # noqa: BLE001
         db.rollback()
         raise HTTPException(502, f"Falha na sincronização: {str(e)[:300]}") from None
@@ -235,7 +247,7 @@ def list_tenants(db: Session = Depends(get_db), _=Depends(require("clients.view"
     """Clientes do Acronis e sites do EMS (para associar ao cliente no cadastro)."""
     cn = dict(db.execute(select(Client.id, Client.trade_name)).all())
     n = dict(db.execute(select(ExtAsset.ext_tenant_id, func.count()).where(ExtAsset.active.is_(True)).group_by(ExtAsset.ext_tenant_id)).all())
-    return [{"id": t.id, "source": t.source, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "assets": n.get(t.id, 0)}
+    return [{"id": t.id, "source": t.source, "dc": (t.info or {}).get("dc", "br") if t.source == "acronis" else None, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "assets": n.get(t.id, 0)}
             for t in db.scalars(select(ExtTenant).where(ExtTenant.active.is_(True)).order_by(ExtTenant.source, ExtTenant.name))]
 
 
@@ -255,7 +267,7 @@ def run_backup(aid: int, request: Request, db: Session = Depends(get_db), user=D
     if _run_limiter.blocked(key):
         raise HTTPException(429, "Um backup já foi solicitado para este item há poucos minutos. Aguarde antes de repetir.")
     try:
-        res = factory.acronis(db).run_policy(pid, a.ext_id)
+        res = factory.acronis_for(db, (a.meta or {}).get("dc")).run_policy(pid, a.ext_id)
     except Exception as e:  # noqa: BLE001
         audit.log(db, request, "backup_run", "ext_asset", aid, result="falha", detail={"item": a.name, "error": str(e)[:200]})
         db.commit()

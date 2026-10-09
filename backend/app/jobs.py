@@ -94,7 +94,7 @@ def dispatch_alerts(db):
 
 @tracked("sync_acronis")
 def sync_acronis(db):
-    res = protection_service.sync_acronis(db, factory.acronis(db))
+    res = protection_service.sync_acronis(db)
     if not res.get("skipped"):
         log.info("acronis: %s", res)
 

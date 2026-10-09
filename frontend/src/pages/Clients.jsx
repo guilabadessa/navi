@@ -72,7 +72,7 @@ function ClientForm({ initial, onClose, onSaved }) {
     {['acronis', 'ems'].includes(tab) && <>
       <p className="sub" style={{ marginBottom: 12 }}>{tab === 'acronis' ? 'Marque o(s) cliente(s) (tenant) do Acronis Cyber Protect Cloud que pertencem a este cliente. Backups, tecnologias contratadas (EDR/antimalware, RMM, DLP, backup de e-mail…), alertas, portal e relatórios passam a usar estes dados. Um cliente pode ter mais de um tenant.' : 'Marque o(s) site(s) do FortiClient EMS deste cliente. Os endpoints, o antivírus e os alertas passam a pertencer a ele no portal e nos relatórios.'}</p>
       {tenants ? <MultiPick value={c[tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']} onChange={v => setC({ ...c, [tab === 'acronis' ? 'acronis_tenant_ids' : 'ems_tenant_ids']: v })} placeholder={tab === 'acronis' ? 'Buscar cliente do Acronis…' : 'Buscar site do EMS…'}
-        options={tenants.filter(t => t.source === tab).map(t => ({ value: t.id, label: t.name, sub: t.client_id && t.client_id !== c.id ? 'em uso: ' + t.client_name : t.assets + ' item(ns)' }))} /> : <Loading />}</>}
+        options={tenants.filter(t => t.source === tab).map(t => ({ value: t.id, label: t.name, sub: (t.dc === 'us' ? 'Phoenix (EUA) · ' : '') + (t.client_id && t.client_id !== c.id ? 'em uso: ' + t.client_name : t.assets + ' item(ns)') }))} /> : <Loading />}</>}
     {tab === 'wa' && <>
       <DestBox c={c} only={['wa', 'alert']} title="Destinos dos alertas deste cliente" />
       <div className="row" style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} />
@@ -138,7 +138,7 @@ export function ClientDetail() {
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
     <Tabs value={tab} onChange={setTab} tabs={[['geral', 'Visão geral'], ...(d.services?.backup ? [['backup', 'Backup (Acronis)']] : []), ...(d.services?.endpoint ? [['eps', 'Endpoints']] : [])]} />
-    {tab !== 'geral' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
+    {tab !== 'geral' && (prot.data ? <>{tab === 'backup' && <><ServicesCard services={prot.data.services} detail /><BackupPanel data={prot.data} reload={prot.reload} /></>}{tab === 'eps' && <><ServicesCard services={prot.data.services} detail /><EndpointsPanel data={prot.data} /></>}</> : <Loading err={prot.err} />)}
     {tab === 'geral' && <>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>
         <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />

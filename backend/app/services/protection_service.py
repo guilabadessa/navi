@@ -53,7 +53,7 @@ def _dt(v) -> datetime | None:
 
 
 # ---------------- tenants ----------------
-def sync_tenants(db: Session, svc) -> tuple[dict, dict]:
+def sync_tenants(db: Session, svc, dc: str = "br") -> tuple[dict, dict]:
     tree = svc.tenant_tree()
     by_id = {t["id"]: t for t in tree}
 
@@ -71,12 +71,13 @@ def sync_tenants(db: Session, svc) -> tuple[dict, dict]:
             continue
         x = existing.get(t["id"]) or ExtTenant(source=SRC, ext_id=t["id"], name=t["name"])
         x.name, x.kind, x.enabled, x.active, x.synced_at = t["name"], "customer", bool(t.get("enabled", True)), True, now
+        x.info = {**(x.info or {}), "dc": dc}
         if x.id is None:
             db.add(x)
             existing[t["id"]] = x
         seen_ids.add(t["id"])
     for k, x in existing.items():
-        if k not in seen_ids:
+        if k not in seen_ids and (x.info or {}).get("dc", "br") == dc:  # so desativa os tenants deste datacenter
             x.active = False
     db.flush()
     by_uuid, by_name = {}, {}
@@ -127,15 +128,11 @@ def contracted_services(usages: list[dict]) -> list[dict]:
     out, seen = [], set()
     for u in usages:
         name = u.get("name") or ""
-        if any(s in name for s in _SKIP) or name.endswith("_storage") and "base_storage" not in name:
+        if any(s in name for s in _SKIP) or name.endswith("_storage"):
             continue
         quota = ((u.get("offering_item") or {}).get("quota") or {}).get("value")
         val = u.get("value") or 0
         if (u.get("offering_item") or {}).get("status") != 1:
-            continue
-        if name.endswith("base_storage"):
-            if val > 0:
-                out.append({"key": "storage", "label": "Armazenamento em nuvem (backup)", "group": "Backup", "used": val, "quota": quota, "unit": "bytes"})
             continue
         if not (quota is not None or val > 0):
             continue
@@ -156,7 +153,7 @@ def sync_usages(db: Session, svc, tenants: list[ExtTenant]):
         for it in svc.usages(list(by_id)):
             t = by_id.get(it.get("tenant"))
             if t is not None:
-                t.info = {"services": contracted_services(it.get("usages") or []), "updated": datetime.now(timezone.utc).isoformat()}
+                t.info = {**(t.info or {}), "services": contracted_services(it.get("usages") or []), "updated": datetime.now(timezone.utc).isoformat()}
         db.flush()
     except Exception as e:  # noqa: BLE001
         log.warning("acronis: servicos contratados indisponiveis: %s", e)
@@ -197,7 +194,7 @@ def _asset(db: Session, cache: dict, ext_id: str, name: str, typ: str, tenant: E
     return a
 
 
-def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
+def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict, dc: str = "br"):
     cache = {a.ext_id: a for a in db.scalars(select(ExtAsset).where(ExtAsset.source == SRC))}
     agents = {a["id"]: a for a in svc.agents()}
     now = datetime.now(timezone.utc)
@@ -209,7 +206,7 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
         ag = agents.get(r.get("agent_id"))
         if ag is not None:
             units = [u.get("name") for u in ag.get("units") or []]
-            a.meta = {**(a.meta or {}), "techs": device_techs(units, tflags.get(a.ext_tenant_id or (tn.id if tn else None), {})),
+            a.meta = {**(a.meta or {}), "dc": dc, "techs": device_techs(units, tflags.get(a.ext_tenant_id or (tn.id if tn else None), {})),
                       "agent_version": ((ag.get("core_version") or {}).get("current") or {}).get("release_id"), "hostname": ag.get("hostname")}
             if a.ext_tenant_id is None:
                 t2 = by_name.get(((ag.get("tenant") or {}).get("name") or "").strip().lower())
@@ -221,7 +218,8 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
                 a.offline_since = None
             a.online = online
     # atividades de backup: ultimo sucesso/falha por recurso
-    cur = S.get(db, "acronis.activity_cursor")
+    ckey = "acronis.activity_cursor" + ("" if dc == "br" else "." + dc)
+    cur = S.get(db, ckey)
     since = (_dt(cur) - timedelta(minutes=30)) if cur else now - timedelta(days=8)
     started = now
     by_name_asset = {}
@@ -243,7 +241,7 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
             a = _asset(db, cache, res["id"], nm, rtype, t)
         a.policy_name = (act.get("policy") or {}).get("name") or a.policy_name
         if (act.get("policy") or {}).get("id"):
-            a.meta = {**(a.meta or {}), "policy_id": act["policy"]["id"]}
+            a.meta = {**(a.meta or {}), "policy_id": act["policy"]["id"], "dc": dc}
         if act.get("state") != "completed":
             continue
         done = _dt(act.get("completedAt")) or _dt(act.get("startedAt"))
@@ -254,7 +252,7 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict):
                 a.last_success_at = done
         elif not a.last_failure_at or done > a.last_failure_at:
             a.last_failure_at = done
-    S.put(db, "acronis.activity_cursor", started.isoformat())
+    S.put(db, ckey, started.isoformat())
     db.flush()
     return cache
 
@@ -342,18 +340,25 @@ def relink(db: Session) -> int:
     return n
 
 
-def sync_acronis(db: Session, svc) -> dict:
-    if not svc.configured or not cfg(db)["acronis_enabled"]:
+def sync_acronis(db: Session) -> dict:
+    """Sincroniza todos os datacenters do Acronis configurados (ex.: Brasil e Phoenix/EUA) em uma unica rodada de alertas."""
+    from . import factory
+    if not cfg(db)["acronis_enabled"]:
         return {"skipped": True}
-    by_uuid, by_name = sync_tenants(db, svc)
-    sync_usages(db, svc, list({t.id: t for t in by_uuid.values()}.values()))
-    cache = sync_assets(db, svc, by_uuid, by_name)
-    db.commit()
-    desired = _desired(db, svc, cache, by_uuid, by_name)
+    accounts = factory.acronis_all(db)
+    if not accounts:
+        return {"skipped": True}
+    desired, total_assets, total_tenants = {}, 0, 0
+    for dc, sv in accounts:
+        by_uuid, by_name = sync_tenants(db, sv, dc)
+        sync_usages(db, sv, list({t.id: t for t in by_uuid.values()}.values()))
+        cache = sync_assets(db, sv, by_uuid, by_name, dc)
+        db.commit()
+        desired.update(_desired(db, sv, cache, by_uuid, by_name))
+        total_assets, total_tenants = len(cache), total_tenants + len(by_uuid)
     stats = reconcile(db, desired)
     relink(db)
-    return {**stats, "assets": len(cache), "tenants": len(by_uuid)}
-
+    return {**stats, "assets": total_assets, "tenants": total_tenants, "datacenters": [dc for dc, _ in accounts]}
 
 
 # ======================= FortiClient EMS (endpoints) =======================

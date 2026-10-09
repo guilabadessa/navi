@@ -5,10 +5,10 @@ import { Card, Check, Field, Loading, useLoad, useToast } from '../ui'
 
 export default function ProtectionConfig({ section }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/protection/config'), []); const [x, setX] = useState(null); const [busy, setBusy] = useState('')
-  React.useEffect(() => { if (data && !x) setX({ ...data, acronis_secret: '', ems_password: '' }) }, [data]) // eslint-disable-line
+  React.useEffect(() => { if (data && !x) setX({ ...data, acronis_secret: '', acronis2_secret: '', ems_password: '' }) }, [data]) // eslint-disable-line
   if (!x) return <Loading />
   const set = (k, v) => setX({ ...x, [k]: v })
-  const save = async () => { try { await put('/protection/config', { ...x, acronis_secret: x.acronis_secret || null, ems_password: x.ems_password || null, ems_offline_days: +x.ems_offline_days, stale_h: +x.stale_h, offline_min: +x.offline_min, ems_port: +x.ems_port }); toast('Configuração salva'); setX(null); reload() } catch (e) { toast(e.message, true) } }
+  const save = async () => { try { await put('/protection/config', { ...x, acronis_secret: x.acronis_secret || null, acronis2_secret: x.acronis2_secret || null, ems_password: x.ems_password || null, ems_offline_days: +x.ems_offline_days, stale_h: +x.stale_h, offline_min: +x.offline_min, ems_port: +x.ems_port }); toast('Configuração salva'); setX(null); reload() } catch (e) { toast(e.message, true) } }
   const test = async (s) => { setBusy(s); try { const r = await post('/protection/test/' + s); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } finally { setBusy('') } }
   const syncEms = async () => { setBusy('syncems'); try { const r = await post('/protection/sync/ems'); toast(`Sincronizado · ${r.endpoints} endpoints · ${r.new} novo(s) problema(s) · ${r.resolved} resolvido(s)`) } catch (e) { toast(e.message, true) } finally { setBusy('') } }
   const sync = async () => { setBusy('sync'); try { const r = await post('/protection/sync/acronis'); toast(`Sincronizado · ${r.assets} itens · ${r.new} novo(s) problema(s) · ${r.resolved} resolvido(s)`) } catch (e) { toast(e.message, true) } finally { setBusy('') } }
@@ -22,6 +22,12 @@ export default function ProtectionConfig({ section }) {
         <Field label="ALERTAR AGENTE OFFLINE APÓS (MINUTOS)"><input type="number" min="5" value={x.offline_min} onChange={e => set('offline_min', e.target.value)} /></Field></div>
       <Check label={'Permitir o botão “Executar backup agora” (a NAVI passa a poder iniciar um plano de backup)'} checked={!!x.acronis_actions} onChange={v => set('acronis_actions', v)} />
       <p className="hint">Por padrão a NAVI só consulta o Acronis (GET). Se ativar a opção acima, o usuário de API precisa de permissão para executar planos; cada execução fica registrada na auditoria e é limitada a 1 por item a cada 10 minutos.</p></Card>}
+    {section === 'acronis' && <Card title="Acronis — segundo datacenter (ex.: Phoenix / EUA)" actions={<button className="btn sm" disabled={!!busy} onClick={() => test('acronis2')}><FlaskConical />{busy === 'acronis2' ? 'Testando…' : 'Testar conexão'}</button>}>
+      <Check label="Monitorar também este datacenter" checked={x.acronis2_enabled} onChange={v => set('acronis2_enabled', v)} />
+      <div className="row r3" style={{ marginTop: 12 }}><Field label="URL DO DATACENTER"><input value={x.acronis2_url} onChange={e => set('acronis2_url', e.target.value)} placeholder="https://us-cloud.acronis.com" /></Field>
+        <Field label="ID DO CLIENTE (API)"><input value={x.acronis2_client_id} onChange={e => set('acronis2_client_id', e.target.value)} /></Field>
+        <Field label="SEGREDO" hint={x.acronis2_secret_set ? 'Já configurado — deixe em branco para manter.' : ''}><input type="password" autoComplete="new-password" value={x.acronis2_secret} onChange={e => set('acronis2_secret', e.target.value)} placeholder={x.acronis2_secret_set ? '••••••••' : ''} /></Field></div>
+      <p className="hint">Os clientes deste datacenter aparecem junto com os demais (aba Acronis do cadastro do cliente) e entram na mesma sincronização.</p></Card>}
     {section === 'ems' && <Card title="FortiClient EMS (endpoints)" actions={<><button className="btn sm" disabled={!!busy} onClick={() => test('ems')}><FlaskConical />{busy === 'ems' ? 'Testando…' : 'Testar conexão'}</button><button className="btn sm" disabled={!!busy} onClick={syncEms}><RefreshCw />{busy === 'syncems' ? 'Sincronizando…' : 'Sincronizar agora'}</button></>}>
       {x.ems_blocked && <div className="banner bad"><div className="grow">O EMS recusou o login anterior. Informe a senha correta, salve e teste.</div></div>}
       <Check label="Monitorar o EMS" checked={x.ems_enabled} onChange={v => set('ems_enabled', v)} />

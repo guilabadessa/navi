@@ -153,12 +153,27 @@ class ContaAzul:
             items = d.get("itens") or []
             for it in items:
                 try:
-                    yield self.get(f"/v1/contratos/{it['id']}") | {"_list": it}
+                    det = self.get(f"/v1/contratos/{it['id']}")
                 except ContaAzulError:
                     yield {"_list": it}
+                    continue
+                det["_items"] = self.contract_items(det)
+                yield det | {"_list": it}
             if len(items) < 100:
                 return
             page += 1
+
+    def contract_items(self, contract: dict) -> list[dict] | None:
+        """Servicos do contrato = itens da proxima venda agendada (ou da ultima confirmada). None se nao foi possivel ler."""
+        for sid in (contract.get("id_proxima_venda_agendada"), contract.get("id_ultima_venda_confirmada")):
+            if not sid:
+                continue
+            try:
+                d = self.get(f"/v1/venda/{sid}/itens")
+            except ContaAzulError:
+                continue
+            return [{"name": (i.get("nome") or "").strip(), "desc": (i.get("descricao") or "").strip(), "qty": i.get("quantidade")} for i in d.get("itens") or []]
+        return None
 
     def installment(self, ext_id: str) -> dict:
         return self.get(f"/v1/financeiro/eventos-financeiros/parcelas/{ext_id}")

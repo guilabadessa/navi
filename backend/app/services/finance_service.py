@@ -271,6 +271,8 @@ def sync_contracts(db: Session, ca: ContaAzul) -> dict:
         row.number = terms.get("numero") or lst.get("numero")
         row.status = (ct.get("status") or lst.get("status") or "")[:16]
         row.description = ((ct.get("observacoes") or "").strip() or None) if "observacoes" in ct else row.description
+        if ct.get("_items") is not None:
+            row.items = ct["_items"]
         row.start_date = _d(terms.get("data_inicio") or lst.get("data_inicio"))
         row.end_date = _d(terms.get("data_fim") or (lst.get("termos") or {}).get("data_fim"))
         row.synced_at = datetime.now(timezone.utc)
@@ -285,7 +287,8 @@ def sync_contracts(db: Session, ca: ContaAzul) -> dict:
 def client_contracts(db: Session, client_id: int) -> list[dict]:
     """Servicos contratados (contratos ativos): numero, vigencia e descricao. Sem valores."""
     rows = db.scalars(select(ClientContract).where(ClientContract.client_id == client_id, ClientContract.status == "ATIVO").order_by(ClientContract.number))
-    return [{"number": r.number, "start": r.start_date.isoformat() if r.start_date else None, "end": r.end_date.isoformat() if r.end_date else None,
+    return [{"items": [{"name": i.get("desc") or i.get("name"), "detail": i.get("name") if i.get("desc") and i.get("name") != i.get("desc") else None, "qty": i.get("qty")} for i in (r.items or [])],
+             "number": r.number, "start": r.start_date.isoformat() if r.start_date else None, "end": r.end_date.isoformat() if r.end_date else None,
              "lines": [ln.strip(" -•\t") for ln in (r.description or "").splitlines() if ln.strip()]} for r in rows]
 
 

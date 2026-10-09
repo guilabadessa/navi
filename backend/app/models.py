@@ -406,6 +406,7 @@ class ClientContract(Base):
     number: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str | None] = mapped_column(String(16))  # ATIVO | INATIVO | ...
     description: Mapped[str | None] = mapped_column(Text)  # campo "observacoes" (detalhes) do contrato
+    items: Mapped[list | None] = mapped_column(JSON)  # servicos da venda do contrato: [{name, desc, qty}] (sem valores)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

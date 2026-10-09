@@ -4,17 +4,16 @@ import { post, fmtDT } from '../api'
 import { Card, Pill, Stat, Table, useToast } from '../ui'
 
 const ago = (v) => { if (!v) return '—'; const h = (Date.now() - new Date(v).getTime()) / 36e5; return h < 1 ? 'há ' + Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? 'há ' + Math.round(h) + ' h' : 'há ' + Math.round(h / 24) + ' d' }
-const gb = (b) => b >= 1e12 ? (b / 1e12).toFixed(2).replace('.', ',') + ' TB' : (b / 1e9).toFixed(1).replace('.', ',') + ' GB'
 const BST = { ok: ['ok', 'protegido'], falha: ['bad', 'com falha'], 'sem backup': ['bad', 'sem backup recente'], offline: ['warn', 'agente offline'], 'sem dados': ['mut', 'sem dados'] }
 const EST = { online: 'ok', offline: 'mut', 'sem contato': 'bad', 'antivírus off': 'bad', quarentena: 'bad', assinaturas: 'warn', atenção: 'warn' }
 
 // Servicos contratados no Acronis, agrupados por tecnologia (Backup, Seguranca/EDR, Gerenciamento/RMM, DLP...)
-export function ServicesCard({ services }) {
+export function ServicesCard({ services, detail = false }) {
   if (!services || !services.length) return null
   const groups = {}; services.forEach(s => { (groups[s.group] = groups[s.group] || []).push(s) })
-  return <Card title="Tecnologias contratadas (Acronis)" style={{ marginBottom: 16 }}>
+  return <Card title="Tecnologias habilitadas (Acronis)" style={{ marginBottom: 16 }}>
     <div className="grid g3">{Object.entries(groups).map(([g, items]) => <div key={g}><div className="l" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--mut)', fontWeight: 600, marginBottom: 6 }}>{g}</div>
-      {items.map(s => <div key={s.label} style={{ fontSize: 13.5, padding: '3px 0' }}><b>{s.label}</b><div className="sub">{s.unit === 'bytes' ? `${gb(s.used)} em uso` : `${s.used}${s.quota != null ? ' de ' + s.quota : ''} em uso`}</div></div>)}</div>)}</div></Card>
+      {items.map(s => <div key={s.label} style={{ fontSize: 13.5, padding: '3px 0' }}><b>{s.label}</b>{detail && s.unit !== 'bytes' && <div className="sub">{`${s.used}${s.quota != null ? ' de ' + s.quota : ''} em uso`}</div>}</div>)}</div>)}</div></Card>
 }
 
 // Backup: filtros por situacao e tipo; botao "Executar backup agora" (quando habilitado e permitido)
