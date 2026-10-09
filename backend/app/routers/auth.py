@@ -46,7 +46,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     if needs_rehash(u.password_hash):
         u.password_hash = hash_password(body.password)
     u.last_login = datetime.now(timezone.utc)
-    token, csrf = make_session(u.id)
+    token, csrf = make_session(u.id, u.password_hash[-12:])
     st = get_settings()
     response.set_cookie(COOKIE, token, httponly=True, secure=st.NAVI_COOKIE_SECURE, samesite="lax",
                         max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
@@ -73,7 +73,7 @@ def me(request: Request, user: User = Depends(current_user), db: Session = Depen
 
 
 @router.post("/change-password")
-def change_password(body: PasswordChange, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def change_password(body: PasswordChange, request: Request, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if not verify_password(body.current_password, user.password_hash):
         audit.log(db, request, "change_password", "user", user.id, result="falha")
         db.commit()
@@ -81,7 +81,11 @@ def change_password(body: PasswordChange, request: Request, user: User = Depends
     user.password_hash, user.must_change_password = hash_password(body.new_password), False
     audit.log(db, request, "change_password", "user", user.id)
     db.commit()
-    return {"ok": True}
+    # sessoes antigas deixam de valer; esta recebe uma nova
+    token, csrf = make_session(user.id, user.password_hash[-12:])
+    st = get_settings()
+    response.set_cookie(COOKIE, token, httponly=True, secure=st.NAVI_COOKIE_SECURE, samesite="lax", max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
+    return {"ok": True, "csrf": csrf}
 
 
 @router.get("/invite/{token}")
@@ -108,7 +112,7 @@ def accept_invite(body: AcceptInviteIn, request: Request, response: Response, db
     u.password_hash = hash_password(body.password)  # muda o carimbo: o link nao pode ser reutilizado
     u.invite_pending, u.must_change_password = False, False
     u.last_login = datetime.now(timezone.utc)
-    token, csrf = make_session(u.id)
+    token, csrf = make_session(u.id, u.password_hash[-12:])
     st = get_settings()
     response.set_cookie(COOKIE, token, httponly=True, secure=st.NAVI_COOKIE_SECURE, samesite="lax",
                         max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)

@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import secrets
 import time
 from collections import defaultdict
@@ -133,9 +134,13 @@ def _ser() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(get_settings().NAVI_SECRET_KEY, salt="navi-session")
 
 
-def make_session(user_id: int) -> tuple[str, str]:
+def make_session(user_id: int, fp: str | None = None) -> tuple[str, str]:
+    """fp = carimbo do hash da senha: trocar/redefinir a senha invalida as sessoes antigas."""
     csrf = secrets.token_urlsafe(24)
-    return _ser().dumps({"uid": user_id, "csrf": csrf}), csrf
+    d = {"uid": user_id, "csrf": csrf}
+    if fp:
+        d["fp"] = fp
+    return _ser().dumps(d), csrf
 
 
 def read_session(token: str | None) -> dict | None:
@@ -147,11 +152,31 @@ def read_session(token: str | None) -> dict | None:
         return None
 
 
+_CF_NETS = [ipaddress.ip_network(n) for n in (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20",
+    "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32")]
+
+
+def _is_cf(ip: str) -> bool:
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(a in n for n in _CF_NETS)
+
+
 def client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "-"
+    """IP real do cliente sem confiar em cabecalhos forjaveis: o Apache ACRESCENTA o IP de quem o acessou ao fim de X-Forwarded-For,
+    entao so a ultima entrada e confiavel. Se esse par for a Cloudflare, vale o CF-Connecting-IP (que so ela define)."""
+    peer = request.client.host if request.client else "-"
+    xff = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+    last = xff[-1] if xff else peer
+    if _is_cf(last):
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if cf:
+            return cf
+    return last
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
@@ -165,6 +190,8 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, sess["uid"])
     if not user or not user.active:
         raise HTTPException(401, "Usuário inativo")
+    if sess.get("fp") and sess["fp"] != user.password_hash[-12:]:
+        raise HTTPException(401, "Sessão expirada. Entre novamente.")
     request.state.user = user
     return user
 
