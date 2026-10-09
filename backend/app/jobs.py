@@ -108,8 +108,8 @@ def sync_ems(db):
 
 @tracked("sync_finance")
 def sync_finance(db):
-    from ..services import finance_service
-    from ..services.contaazul_service import ContaAzul
+    from .services import finance_service
+    from .services.contaazul_service import ContaAzul
     res = finance_service.sync_all(db, ContaAzul(db))
     if not res.get("skipped"):
         log.info("contaazul: %s", res)
@@ -120,7 +120,7 @@ def notices(db):
     from datetime import datetime as _dt
     if not 9 <= _dt.now().hour <= 16:  # horario comercial (fuso do servidor: America/Sao_Paulo)
         return
-    from ..services import notice_service
+    from .services import notice_service
     a, b = notice_service.send_boletos(db), notice_service.send_monthly(db)
     if a["sent"] or b["sent"]:
         log.info("avisos ao cliente: boletos=%s mensal=%s", a["sent"], b["sent"])
