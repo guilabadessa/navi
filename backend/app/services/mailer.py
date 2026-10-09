@@ -128,7 +128,7 @@ def new_user_ctx(name: str, email: str, password: str, role: str, reset: bool = 
     url = get_settings().NAVI_PUBLIC_URL
     intro = ("Sua senha de acesso à plataforma NAVI foi redefinida pela administração. Use os dados abaixo para entrar."
              if reset else "Sua conta na plataforma NAVI — o centro de inteligência do NOC da Orca TI — foi criada. Seguem os dados de acesso.")
-    return {"title": "Redefinição de acesso" if reset else "Bem-vindo à NAVI", "subtitle": "Navegação, Orientação e Assistência",
+    return {"title": "Redefinição de acesso" if reset else "Bem-vindo à NAVI", "subtitle": "Inteligência operacional Orca TI",
             "tag": "Acesso · NAVI", "preheader": "Seus dados de acesso à NAVI", "name": name, "email": email, "password": password,
             "role": role, "url": url, "intro": intro}
 
@@ -147,6 +147,6 @@ def invite_ctx(name: str, role: str, link: str, reset: bool = False, client_name
         intro = f"Você foi convidado(a) para acompanhar o monitoramento de {client_name} no portal da NAVI, a plataforma de inteligência do NOC da Orca TI."
     else:
         intro = "Você foi convidado(a) para a NAVI, a plataforma de inteligência do NOC da Orca TI. Crie sua senha para ativar o acesso."
-    return {"title": "Redefinir acesso" if reset else "Convite de acesso", "subtitle": "Navegação, Orientação e Assistência", "tag": "Acesso · NAVI",
+    return {"title": "Redefinir acesso" if reset else "Convite de acesso", "subtitle": "Inteligência operacional Orca TI", "tag": "Acesso · NAVI",
             "preheader": "Defina sua senha de acesso à NAVI", "name": name, "role": role, "intro": intro, "link": link,
             "hours": INVITE_HOURS, "reset": reset}

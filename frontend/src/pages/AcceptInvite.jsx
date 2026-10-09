@@ -17,7 +17,7 @@ export default function AcceptInvite({ onLogin }) {
   }
   return <div className="login"><div className="art">
     <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
-    <div className="hero"><div className="eyebrow">Plataforma de inteligência operacional</div><h1>NAVI</h1><div className="tag">Navegação, Orientação e Assistência</div><p>Falta só um passo: crie a sua senha para ativar o acesso.</p></div>
+    <div className="hero"><div className="eyebrow">Centro de operações de TI</div><h1>NAVI</h1><div className="tag">Inteligência operacional Orca TI</div><p>Falta só um passo: crie a sua senha para ativar o acesso.</p></div>
     <div style={{ fontSize: 13, color: '#8fa8ee' }}>© {new Date().getFullYear()} Orca TI</div></div>
     <div className="form"><div className="box">
       {!info && !err && <p className="sub">Validando convite…</p>}

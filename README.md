@@ -1,4 +1,4 @@
-# NAVI — Navegação, Orientação e Assistência
+# NAVI — Inteligência operacional Orca TI
 Plataforma de NOC da **Orca TI**: monitoramento (Zabbix), incidentes, SLA/KPIs, alertas por WhatsApp (Evolution API),
 relatórios executivos/técnicos em PDF e rotinas agendadas. Acesso: `https://navi.orcati.com.br/cliente/`.
 

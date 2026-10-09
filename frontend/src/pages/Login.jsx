@@ -28,9 +28,9 @@ export default function Login({ onLogin }) {
     <div className="art">
       <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 46, alignSelf: 'flex-start' }} />
       <div className="hero">
-        <div className="eyebrow">Plataforma de inteligência operacional</div>
+        <div className="eyebrow">Centro de operações de TI</div>
         <h1>NAVI</h1>
-        <div className="tag">Navegação, Orientação e Assistência</div>
+        <div className="tag">Inteligência operacional Orca TI</div>
         <p>Do incidente ao faturamento: toda a operação de TI dos seus clientes, com visibilidade em tempo real e relatórios prontos para a decisão.</p>
         <div className="caps">{CAPS.map(([I, t, d]) => <div className="cap" key={t}><I /><div><b>{t}</b><span>{d}</span></div></div>)}</div>
       </div>

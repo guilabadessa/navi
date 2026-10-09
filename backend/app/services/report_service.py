@@ -28,7 +28,7 @@ NAVY, BLUE, RED = "#071a5a", "#1e73f8", "#bd1723"
 SEV_COLORS = {"Não classificado": "#97aab3", "Informação": "#7499ff", "Atenção": "#e0a800", "Média": "#f08a24",
               "Alta": "#e45959", "Desastre": "#bd1723"}
 LH_DEFAULT = {"company": "Orca TI", "cnpj": "", "address": "", "phone": "", "site": "orcati.com.br",
-              "text": "Relatório gerado automaticamente pela plataforma NAVI — Navegação, Orientação e Assistência."}
+              "text": "Relatório gerado automaticamente pela plataforma NAVI — Inteligência operacional Orca TI."}
 
 
 def letterhead(db: Session) -> dict:

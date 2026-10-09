@@ -64,7 +64,7 @@ function Shell({ me, onLogout }) {
   const here = Object.keys(tips).filter(k => k === '/' ? loc.pathname === '/' : loc.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0]
   return <div className="app">
     <aside className="side">
-      <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="Orca TI" /><div><div className="t">NAVI</div><div className="s">Navegação, Orientação<br />e Assistência</div></div></div>
+      <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="Orca TI" /><div><div className="t">NAVI</div><div className="s">Inteligência operacional<br />Orca TI</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
