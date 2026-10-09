@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..util import ITEM_LABEL, KIND_LABEL
 from ..models import SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
 from . import commlog, destinations
 from .email_service import split_addrs
@@ -17,8 +18,9 @@ ALERT_WINDOW_S = 20 * 60  # igual a event_service.ALERT_WINDOW
 DEFAULT_PROBLEM = """🚨 *ALERTA — {SEVERIDADE}*
 
 🏢 {CLIENTE}
+🧩 {ORIGEM}
 
-🌐 {HOST}
+🖥️ {HOST}
 📍 IP: {HOST.IP}
 
 *Problema:*
@@ -35,8 +37,9 @@ DEFAULT_PROBLEM = """🚨 *ALERTA — {SEVERIDADE}*
 DEFAULT_RECOVERY = """✅ *RESTABELECIDO*
 
 🏢 {CLIENTE}
+🧩 {ORIGEM}
 
-🌐 {HOST}
+🖥️ {HOST}
 📍 IP: {HOST.IP}
 
 *Problema:*
@@ -48,7 +51,7 @@ DEFAULT_RECOVERY = """✅ *RESTABELECIDO*
 🟢 *Retorno:*
 {RECOVERY.TIME}
 
-⏱️ *Indisponibilidade:*
+⏱️ *Duração:*
 {DURATION}"""
 
 
@@ -90,11 +93,12 @@ def render(body: str, ev: Event, client: Client | None) -> str:
         "{EVENT.DATE}": started.astimezone(tz()).strftime("%d/%m/%Y"), "{EVENT.TIME}": started.astimezone(tz()).strftime("%H:%M:%S"),
         "{SEVERIDADE}": SEVERITIES.get(ev.severity, str(ev.severity)).upper(), "{OPDATA}": ev.opdata or "-",
         "{DURATION}": fmt_duration(dur), "{PROBLEM.TIME}": fmt_dt(started), "{RECOVERY.TIME}": fmt_dt(rec),
-        "{TAGS}": tags or "-", "{EVENT.ID}": ev.zbx_eventid,
+        "{TAGS}": tags or "-", "{EVENT.ID}": ev.zbx_eventid, "{ORIGEM}": KIND_LABEL.get(ev.kind or "infra", "-"),
     }
     for k, v in m.items():
         body = body.replace(k, str(v))
-    return body
+    # tecnologias sem IP (backup, cloud...): nao mostra a linha vazia "IP: -"
+    return "\n".join(ln for ln in body.split("\n") if not (ln.strip().endswith("IP: -") and "{" not in ln)).replace("\n\n\n", "\n\n")
 
 
 def _match(pattern: str | None, value: str | None) -> bool:
@@ -140,6 +144,8 @@ def _mail_dest(rule: AlertRule | None, client: Client | None) -> str | None:
 def _rule_miss(r: AlertRule, ev: Event) -> list[str]:
     """Motivos pelos quais a regra NAO se aplica ao evento (lista vazia = aplica)."""
     miss = []
+    if r.kinds and (ev.kind or "infra") not in r.kinds:
+        miss.append(f"origem {KIND_LABEL.get(ev.kind or 'infra')} fora de [{', '.join(KIND_LABEL.get(k, k) for k in r.kinds)}]")
     if not _match(r.host_pattern, ev.host):
         miss.append(f"host não contém “{r.host_pattern}”")
     if not _match(r.trigger_pattern, ev.trigger_name):
@@ -240,18 +246,23 @@ def email_ctx(ev: Event, client: Client | None, kind: str, test: bool = False) -
     rec = kind == "recovery"
     esc = kind == "escalation"
     dur = ev.duration_s if ev.duration_s is not None else int((datetime.now(timezone.utc) - ev.started_at).total_seconds())
-    rows = [("Cliente", cname), ("Host", ev.host or "—"), ("IP", ev.ip or "—"), ("Problema", ev.trigger_name or "—"), ("Item", ev.item_name or "—")]
+    k = ev.kind or "infra"
+    rows = [("Cliente", cname), ("Origem", KIND_LABEL.get(k, k)), (ITEM_LABEL.get(k, "Host"), ev.host or "—")]
+    if ev.ip:
+        rows.append(("IP", ev.ip))
+    rows += [("Problema", ev.trigger_name or "—"), ("Detalhe" if k != "infra" else "Item", ev.item_name or "—")]
     if ev.opdata:
         rows.append(("Valor", ev.opdata))
     rows.append(("Início", fmt_dt(ev.started_at)))
     if rec:
-        rows += [("Recuperação", fmt_dt(ev.recovered_at)), ("Indisponibilidade", fmt_duration(dur))]
+        rows += [("Recuperação", fmt_dt(ev.recovered_at)), ("Duração", fmt_duration(dur))]
     prefix = "[TESTE] " if test else ""
-    subject = (f"{prefix}[RESTABELECIDO] {cname} — {ev.host}" if rec else
-               f"{prefix}[ESCALONADO] {cname} — {ev.host}" if esc else f"{prefix}[ALERTA {sev.upper()}] {cname} — {ev.host}")
+    org = f" ({KIND_LABEL.get(k, k)})" if k != "infra" else ""
+    subject = (f"{prefix}[RESTABELECIDO] {cname} — {ev.host}{org}" if rec else
+               f"{prefix}[ESCALONADO] {cname} — {ev.host}{org}" if esc else f"{prefix}[ALERTA {sev.upper()}] {cname} — {ev.host}{org}")
     if esc:
         rows.insert(0, ("Situação", f"Sem recuperação há {fmt_duration(dur)} — escalonado para o NOC"))
-    ctx = {"title": ("Serviço restabelecido" if rec else "Escalonamento — problema sem recuperação" if esc else f"Alerta — {sev}"), "tag": "Alerta · NAVI", "subtitle": f"{cname} · {ev.host}",
+    ctx = {"title": ("Serviço restabelecido" if rec else "Escalonamento — problema sem recuperação" if esc else f"Alerta — {sev}"), "tag": "Alerta · NAVI", "subtitle": f"{cname} · {ev.host}" + (f" · {KIND_LABEL.get(k, k)}" if k != "infra" else ""),
            "preheader": subject, "rows": rows, "badge": ("RESTABELECIDO" if rec else sev.upper()),
            "badge_color": "#16a34a" if rec else SEV_COLORS.get(ev.severity, "#1e73f8"), "test": test}
     return subject, ctx
@@ -259,8 +270,9 @@ def email_ctx(ev: Event, client: Client | None, kind: str, test: bool = False) -
 
 def escalation_text(ev: Event, client: Client | None) -> str:
     dur = fmt_duration(int((datetime.now(timezone.utc) - ev.started_at).total_seconds()))
-    return (f"⏰ *ESCALONAMENTO — sem recuperação há {dur}*\n\n🏢 *Cliente:* {client.trade_name if client else '—'}\n"
-            f"🖥️ *Host:* {ev.host}\n🌐 *IP:* {ev.ip or '—'}\n⚠️ *Problema:* {ev.trigger_name}\n"
+    k = ev.kind or "infra"
+    return (f"⏰ *ESCALONAMENTO — sem recuperação há {dur}*\n\n🏢 *Cliente:* {client.trade_name if client else '—'}\n🧩 *Origem:* {KIND_LABEL.get(k, k)}\n"
+            f"🖥️ *{ITEM_LABEL.get(k, 'Host')}:* {ev.host}\n" + (f"🌐 *IP:* {ev.ip}\n" if ev.ip else "") + f"⚠️ *Problema:* {ev.trigger_name}\n"
             f"🔔 *Severidade:* {SEVERITIES.get(ev.severity, ev.severity)}\n🕐 *Início:* {fmt_dt(ev.started_at)}")
 
 
@@ -434,8 +446,9 @@ def explain(db: Session, ev: Event) -> dict:
         add("Cliente", True, client.trade_name)
     else:
         grp = ", ".join(ev.group_names or []) or "sem grupo"
-        add("Cliente", False, f"O host não pertence a nenhum cliente da NAVI (grupos: {grp}). Associe o host group a um cliente em Clientes → Host Groups. "
-                              "Regras sem cliente só enviam se tiverem destino próprio.")
+        how = {"backup": "Associe o cliente do Acronis ao cliente da NAVI no cadastro (aba Acronis).", "endpoint": "Associe o site do EMS (ou o cliente do Acronis) ao cliente da NAVI no cadastro.",
+               "cloud": "Vincule a conta Cloud Orca ao cliente no cadastro."}.get(ev.kind or "infra", "Associe o host group a um cliente em Clientes → Zabbix (hosts).")
+        add("Cliente", False, f"O evento ({KIND_LABEL.get(ev.kind or 'infra')} · {grp}) não pertence a nenhum cliente da NAVI. {how} Regras sem cliente só enviam se tiverem destino próprio.")
     if client and client.maintenance_until and client.maintenance_until > now:
         add("Manutenção", False, f"Cliente em manutenção até {fmt_dt(client.maintenance_until)}.")
         blocked = True

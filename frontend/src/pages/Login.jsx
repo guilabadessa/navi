@@ -6,7 +6,7 @@ const CAPS = [
   [Gauge, 'Monitoramento 24x7', 'Hosts, links e serviços de todos os clientes em tempo real.'],
   [BarChart3, 'Relatórios executivos', 'Disponibilidade, backup e endpoints do seu ambiente, em PDF.'],
   [Bell, 'Alertas inteligentes', 'WhatsApp e e-mail por cliente, severidade e horário.'],
-  [HardDrive, 'Backup e estações', 'Acronis e FortiClient EMS integrados ao mesmo painel.'],
+  [HardDrive, 'Backup e endpoints', 'Acronis e FortiClient EMS integrados ao mesmo painel.'],
   [Building2, 'Portal do cliente', 'Cada cliente acompanha apenas o seu ambiente.'],
   [Receipt, 'Financeiro integrado', 'Boletos e notas fiscais do mês, direto do faturamento.'],
 ]

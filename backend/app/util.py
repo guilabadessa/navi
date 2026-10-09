@@ -50,3 +50,8 @@ def titlecase(s: str | None) -> str | None:
 def like(q: str) -> str:
     """Padrao ILIKE com %/_ do usuario tratados como texto (a busca '%' nao casa com tudo)."""
     return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+# Origem do evento (tecnologia) e como chamar o "host" em cada uma
+KIND_LABEL = {"infra": "Infraestrutura", "backup": "Backup", "endpoint": "Endpoint", "cloud": "Cloud Orca"}
+ITEM_LABEL = {"infra": "Host", "backup": "Item de backup", "endpoint": "Endpoint", "cloud": "Máquina"}

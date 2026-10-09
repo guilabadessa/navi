@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { FlaskConical, Plus, Pencil, Trash2 } from 'lucide-react'
 import { get, post, put, del, fmtDT, SEV } from '../api'
 import { SeverityTab, MigrationTab, MaintenanceTab, NocTab } from './AlertsExtra'
-import { Card, Check, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
+import { Card, Check, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast, KIND } from '../ui'
 import { useAuth, can } from '../App'
 import { DestBox } from './Dest'
 import { maskTarget } from '../mask'
 
 const DELAYS = [[0, 'Imediato'], [60, '1 minuto'], [120, '2 minutos'], [300, '5 minutos'], [600, '10 minutos'], [900, '15 minutos']]
-const MACROS = ['{CLIENTE}', '{HOST}', '{HOST.IP}', '{TRIGGER.NAME}', '{ITEM.NAME}', '{SEVERIDADE}', '{OPDATA}', '{EVENT.DATE}', '{EVENT.TIME}', '{PROBLEM.TIME}', '{RECOVERY.TIME}', '{DURATION}', '{TAGS}']
+const MACROS = ['{CLIENTE}', '{ORIGEM}', '{HOST}', '{HOST.IP}', '{TRIGGER.NAME}', '{ITEM.NAME}', '{SEVERIDADE}', '{OPDATA}', '{EVENT.DATE}', '{EVENT.TIME}', '{PROBLEM.TIME}', '{RECOVERY.TIME}', '{DURATION}', '{TAGS}']
 
 function RuleForm({ r, clients, tpls, onClose, onSaved }) {
   const [x, setX] = useState({ name: '', client_id: null, host_pattern: '', trigger_pattern: '', severities: [], min_severity: 3, on_problem: true, on_recovery: true, delay_s: 0, dest_jid: '', problem_template_id: null, recovery_template_id: null, quote_recovery: true, notify_whatsapp: true, notify_email: false, email_to: '', enabled: true, ...r })
@@ -17,7 +17,7 @@ function RuleForm({ r, clients, tpls, onClose, onSaved }) {
   const sevs = x.severities || []
   const toggleSev = i => setX({ ...x, severities: sevs.includes(i) ? sevs.filter(s => s !== i) : [...sevs, i] })
   const [tw, setTw] = useState(''); const [te, setTe] = useState(''); const [tres, setTres] = useState(null); const [testing, setTesting] = useState(false)
-  const payload = () => ({ ...x, severities: sevs.length ? sevs : null, dest_jid: x.dest_jid || null, host_pattern: x.host_pattern || null, trigger_pattern: x.trigger_pattern || null, email_to: x.email_to || null })
+  const payload = () => ({ ...x, kinds: (x.kinds || []).length ? x.kinds : null, severities: sevs.length ? sevs : null, dest_jid: x.dest_jid || null, host_pattern: x.host_pattern || null, trigger_pattern: x.trigger_pattern || null, email_to: x.email_to || null })
   const save = async () => { try { const b = payload(); x.id ? await put('/alerts/rules/' + x.id, b) : await post('/alerts/rules', b); toast('Regra salva'); onSaved() } catch (e) { toast(e.message, true) } }
   const test = async () => { setTesting(true); setTres(null); try { setTres(await post('/alerts/test-rule', { ...payload(), to_whatsapp: tw || null, to_email: te || null })) } catch (e) { toast(e.message, true) } finally { setTesting(false) } }
   const cl = clients.find(c => c.id === x.client_id)
@@ -29,6 +29,7 @@ function RuleForm({ r, clients, tpls, onClose, onSaved }) {
     <div className="row r3"><Field label="SEVERIDADE MÍNIMA" hint="“Média” = Média, Alta e Desastre."><select value={x.min_severity} onChange={num('min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s} ou maior</option>)}</select></Field>
       <Field label="ENVIAR SE O PROBLEMA PERSISTIR POR"><select value={DELAYS.some(d => d[0] === x.delay_s) ? x.delay_s : 'c'} onChange={e => e.target.value !== 'c' && setX({ ...x, delay_s: +e.target.value })}>{DELAYS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}<option value="c">Personalizado…</option></select></Field>
       <Field label="ATRASO PERSONALIZADO (segundos)"><input type="number" min="0" value={x.delay_s} onChange={num('delay_s')} /></Field></div>
+    <Field label="ORIGEM DOS ALERTAS (vazio = todas)"><div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>{Object.entries(KIND).map(([k, l]) => <Check key={k} label={l} checked={(x.kinds || []).includes(k)} onChange={v => setX({ ...x, kinds: v ? [...(x.kinds || []), k] : (x.kinds || []).filter(a => a !== k) })} />)}</div></Field>
     <details style={{ marginBottom: 14 }}><summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--blue)' }}>Filtrar por severidades específicas (opcional)</summary>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10 }}>{SEV.map((s, i) => <Check key={i} label={s} checked={sevs.includes(i)} onChange={() => toggleSev(i)} />)}</div>
       <p className="hint">Se marcar severidades aqui, elas substituem a “severidade mínima”.</p></details>
@@ -79,11 +80,11 @@ export default function Alerts() {
       {edit && tab === 'tpl' && <button className="btn primary" onClick={() => setTed({})}><Plus />Novo template</button>}</PageHead>
     <Tabs value={tab} onChange={setTab} tabs={[['rules', 'Regras'], ['sev', 'Severidades'], ['tpl', 'Templates de mensagem'], ['maint', 'Manutenção'], ['noc', 'NOC e escalonamento'], ['mig', 'Migração / modo sombra']]} />
     {tab === 'rules' && <Card pad={false}>{rules.data ? <Table rows={rules.data} empty="Nenhuma regra personalizada. Os clientes usam a configuração padrão de WhatsApp definida no cadastro." cols={[
-      { h: 'Regra', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || 'Todos' }, { h: 'Host', r: r => r.host_pattern || '*' }, { h: 'Trigger', r: r => r.trigger_pattern || '*' },
-      { h: 'Severidade', r: r => r.severities ? r.severities.map(s => SEV[s]).join(', ') : '≥ ' + SEV[r.min_severity] }, { h: 'Atraso', r: r => r.delay_s ? r.delay_s + 's' : 'imediato' },
-      { h: 'Canais', r: r => <>{r.notify_whatsapp && <Pill tone="ok">WhatsApp</Pill>} {r.notify_email && <Pill tone="info">E-mail</Pill>}</> }, { h: 'Envia', r: r => [r.on_problem && 'PROBLEM', r.on_recovery && 'RESOLVED'].filter(Boolean).join(' + ') }, { h: 'Estado', r: r => <Pill tone={r.enabled ? 'ok' : 'mut'}>{r.enabled ? 'ativa' : 'desligada'}</Pill> },
+      { h: 'Regra', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || 'Todos' }, { h: 'Origem', r: r => r.kinds?.length ? r.kinds.map(k => KIND[k]).join(', ') : 'Todas' }, { h: 'Filtro (host / problema)', r: r => <><div className="trunc" style={{ maxWidth: 220 }} title={r.host_pattern || '*'}>{r.host_pattern || '*'}</div><div className="sub trunc" style={{ maxWidth: 220 }} title={r.trigger_pattern || '*'}>{r.trigger_pattern || '*'}</div></> },
+      { h: 'Severidade e atraso', r: r => <>{r.severities ? r.severities.map(s => SEV[s]).join(', ') : '≥ ' + SEV[r.min_severity]}<div className="sub">{r.delay_s ? 'após ' + r.delay_s + 's' : 'imediato'}</div></> },
+      { h: 'Canais', r: r => <><span style={{ display: 'inline-flex', gap: 4 }}>{r.notify_whatsapp && <Pill tone="ok">WhatsApp</Pill>}{r.notify_email && <Pill tone="info">E-mail</Pill>}</span><div className="sub">{[r.on_problem && 'problema', r.on_recovery && 'recuperação'].filter(Boolean).join(' + ')}</div></> }, { h: 'Estado', r: r => <Pill tone={r.enabled ? 'ok' : 'mut'}>{r.enabled ? 'ativa' : 'desligada'}</Pill> },
       { h: 'Últimas 24h', r: r => { const s = r.stats_24h || {}; const t = Object.values(s).reduce((a, b) => a + b, 0); return t ? <span title={JSON.stringify(s)}><b>{s.sent || 0}</b> env.{s.failed ? <> · <span style={{ color: 'var(--crit)' }}>{s.failed} falha(s)</span></> : null}</span> : <span className="sub">sem disparos</span> } },
-      { h: '', r: r => edit && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title="Enviar teste desta regra" onClick={async () => { try { const { id, created_at, client_name, stats_24h, ...b } = r; const o = await post('/alerts/test-rule', b); toast(['whatsapp', 'email', 'aviso'].filter(k => o[k]).map(k => `${k}: ${o[k].detail}`).join(' · '), !['whatsapp', 'email'].some(k => o[k]?.ok)) } catch (e) { toast(e.message, true) } }}><FlaskConical /></button><button className="btn sm" onClick={() => setEd(r)}><Pencil /></button><button className="btn sm danger" onClick={async () => { if (confirm('Excluir regra?')) { await del('/alerts/rules/' + r.id); rules.reload() } }}><Trash2 /></button></div> }]} /> : <Loading />}</Card>}
+      { h: '', cls: 'nw', r: r => edit && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" title="Enviar teste desta regra" onClick={async () => { try { const { id, created_at, client_name, stats_24h, ...b } = r; const o = await post('/alerts/test-rule', b); toast(['whatsapp', 'email', 'aviso'].filter(k => o[k]).map(k => `${k}: ${o[k].detail}`).join(' · '), !['whatsapp', 'email'].some(k => o[k]?.ok)) } catch (e) { toast(e.message, true) } }}><FlaskConical /></button><button className="btn sm" onClick={() => setEd(r)}><Pencil /></button><button className="btn sm danger" onClick={async () => { if (confirm('Excluir regra?')) { await del('/alerts/rules/' + r.id); rules.reload() } }}><Trash2 /></button></div> }]} /> : <Loading />}</Card>}
     {tab === 'sev' && <SeverityTab edit={edit} />}
     {tab === 'maint' && <MaintenanceTab edit={edit} />}
     {tab === 'noc' && <NocTab edit={edit} />}

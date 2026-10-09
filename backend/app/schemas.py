@@ -105,6 +105,7 @@ class RuleIn(BaseModel):
     host_pattern: str | None = Field(default=None, max_length=255)
     trigger_pattern: str | None = Field(default=None, max_length=255)
     severities: list[int] | None = None
+    kinds: list[Literal["infra", "backup", "endpoint", "cloud"]] | None = None
     min_severity: int = Field(default=0, ge=0, le=5)
     on_problem: bool = True
     on_recovery: bool = True

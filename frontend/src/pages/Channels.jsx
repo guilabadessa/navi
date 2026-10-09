@@ -47,5 +47,5 @@ export function Email() {
       { h: 'Quando', r: r => fmtDT(r.ts) }, { h: 'Origem', r: r => <Pill tone={/Alerta|Escalon/.test(r.origin) ? 'bad' : 'info'}>{r.origin}</Pill> }, { h: 'Cliente', r: r => r.client || '—' },
       { h: 'Assunto / alerta', r: r => <div className="trunc" title={r.what}>{r.what || '—'}</div> }, { h: 'Destino', r: r => <div className="trunc mono sub" style={{ maxWidth: 220 }} title={r.dest}>{r.dest || '—'}</div> },
       { h: 'Status', r: r => <Pill tone={r.status === 'sent' ? 'ok' : r.status === 'failed' ? 'bad' : 'warn'}>{r.status === 'sent' ? 'enviado' : r.status === 'failed' ? 'falha' : r.status}</Pill> }, { h: 'Detalhe do erro', r: r => <div className="trunc sub" style={{ maxWidth: 260, color: r.status === 'failed' ? 'var(--crit)' : undefined }} title={r.error}>{r.error}</div> }]} />
-      <div style={{ padding: '0 16px 12px' }}><Pager page={page} size={30} total={sent.data.total} onPage={setPage} /></div></> : <Loading err={sent.err} />}</Card></>
+      <div style={{ padding: '0 16px 12px' }}><Pager page={page} size={40} total={sent.data.total} onPage={setPage} /></div></> : <Loading err={sent.err} />}</Card></>
 }

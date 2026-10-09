@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Bookmark } from 'lucide-react'
 import { get, put, download, fmtDT, fmtDur, SEV } from '../api'
-import { Card, Drawer, LiveDur, Loading, PERIODS, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
+import { Card, Drawer, KIND, KindPill, LiveDur, Loading, PERIODS, PageHead, Pager, Pill, SevBadge, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 
 function Diag({ id }) {
@@ -19,9 +19,10 @@ function Detail({ id, onClose }) {
   const me = useAuth(); const toast = useToast(); const { data: e, err } = useLoad(() => get('/events/' + id), [id]); const [n, setN] = useState(null)
   return <Drawer title={`Evento ${e ? e.zbx_eventid : ''}`} onClose={onClose}>{!e ? <Loading err={err} /> : <>
     <div style={{ marginBottom: 14, display: 'flex', gap: 8 }}><StatusBadge s={e.status} /><SevBadge n={e.severity} /></div>
-    <div className="kv"><b>Host</b><span>{e.host}</span><b>IP</b><span>{e.ip || '—'}</span><b>Trigger</b><span>{e.trigger_name}</span><b>Item</b><span>{e.item_name || '—'}</span>
+    <div className="kv"><b>Cliente</b><span>{e.client_id ? <a href={`/cliente/clientes/${e.client_id}`} onClick={ev => { ev.preventDefault(); window.location.assign(`/cliente/clientes/${e.client_id}`) }}>{e.client_name}</a> : <span style={{ color: 'var(--orange)' }}>sem cliente associado</span>}</span>
+      <b>Tecnologia</b><span><KindPill k={e.kind} /></span><b>{ITEM[e.kind || 'infra']}</b><span>{e.host}</span>{e.ip && <><b>IP</b><span>{e.ip}</span></>}<b>{(e.kind || 'infra') === 'infra' ? 'Trigger' : 'Problema'}</b><span>{e.trigger_name}</span><b>{(e.kind || 'infra') === 'infra' ? 'Item' : 'Detalhe'}</b><span>{e.item_name || '—'}</span>
       <b>Grupos</b><span>{(e.group_names || []).map(g => <span className="chip" key={g}>{g}</span>)}</span><b>Início</b><span>{fmtDT(e.started_at)}</span><b>Recuperação</b><span>{e.recovered_at ? fmtDT(e.recovered_at) : 'em aberto'}</span>
-      <b>Duração</b><span>{e.status === 'PROBLEM' ? <LiveDur since={e.started_at} /> : fmtDur(e.duration_s)}</span><b>Valor</b><span>{e.opdata || '—'}</span><b>Origem</b><span>{e.source}</span><b>WhatsApp</b><span>{e.wa_status || '—'} {e.wa_message_id && <span className="sub mono">· {e.wa_message_id.slice(0, 14)}…</span>}</span></div>
+      <b>Duração</b><span>{e.status === 'PROBLEM' ? <LiveDur since={e.started_at} /> : fmtDur(e.duration_s)}</span><b>Valor</b><span>{e.opdata || '—'}</span><b>Fonte</b><span>{e.source}</span><b>WhatsApp</b><span>{e.wa_status || '—'} {e.wa_message_id && <span className="sub mono">· {e.wa_message_id.slice(0, 14)}…</span>}</span></div>
     <Diag id={id} />
     <h3 style={{ margin: '22px 0 8px' }}>Mensagens enviadas</h3>
     {e.dispatches.length ? e.dispatches.map(d => <div key={d.id} className="card" style={{ padding: 14, marginBottom: 10 }}><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><Pill tone={d.kind === 'problem' ? 'bad' : 'ok'}>{d.kind}</Pill><Pill tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Pill><span className="sub">{fmtDT(d.sent_at || d.due_at)}</span></div>
@@ -32,6 +33,7 @@ function Detail({ id, onClose }) {
   </>}</Drawer>
 }
 
+const ITEM = { infra: 'Host', backup: 'Item de backup', endpoint: 'Endpoint', cloud: 'Máquina' }
 const SAVED = 'navi.events.saved'
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || '[]') } catch { return [] } }
 
@@ -58,7 +60,7 @@ export default function Events() {
       <button className="btn" onClick={saveFilter}><Bookmark />Salvar filtro</button>
       <button className="btn" onClick={() => download(`/events-export?${qs}`, 'eventos-navi.csv').catch(e => toast(e.message, true))}><Download />Exportar CSV</button></PageHead>
     <div className="bar"><div className="grow"><input placeholder="Buscar host, IP, trigger ou item…" value={q} onChange={e => { setQ(e.target.value); setPage(1) }} /></div>
-      <select value={kind} onChange={e => { setKind(e.target.value); setPage(1) }}><option value="">Todas as origens</option><option value="infra">Infraestrutura (Zabbix)</option><option value="backup">Backup (Acronis)</option><option value="endpoint">Endpoints (EMS)</option><option value="cloud">Cloud Orca</option></select>
+      <select value={kind} onChange={e => { setKind(e.target.value); setPage(1) }}><option value="">Todas as origens</option><option value="infra">Infraestrutura (Zabbix)</option><option value="backup">Backup (Acronis)</option><option value="endpoint">Endpoints (EMS e Acronis)</option><option value="cloud">Cloud Orca</option></select>
       <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">Todos</option><option value="PROBLEM">Em aberto</option><option value="RESOLVED">Resolvidos</option></select>
       <select value={sev} onChange={e => { setSev(e.target.value); setPage(1) }}><option value="">Qualquer severidade</option>{SEV.map((s, i) => <option key={i} value={i}>≥ {s}</option>)}</select>
       <select value={cl} onChange={e => { setCl(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
@@ -66,9 +68,11 @@ export default function Events() {
       {dirty && <button className="btn sm" onClick={clear}>Limpar filtros</button>}</div>
     {saved.length > 0 && <div style={{ marginBottom: 14 }}><span className="sub">Filtros salvos: </span>{saved.map(f => <span key={f.name} className="chip" style={{ cursor: 'pointer' }} onClick={() => apply(f)}>{f.name} <span title="Remover" onClick={e => { e.stopPropagation(); rmFilter(f.name) }}>✕</span></span>)}</div>}
     <Card pad={false}>{data ? <><Table rows={data.items} onRow={r => setSel(r.id)} cols={[
-      { h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Host', r: r => <><b>{r.host}</b>{r.kind && r.kind !== 'infra' && <div><Pill tone="info">{r.kind === 'backup' ? 'backup' : 'endpoint'}</Pill></div>}</> }, { h: 'IP', k: 'ip', cls: 'mono' },
-      { h: 'Trigger', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at) },
-      { h: 'Duração', r: r => r.status === 'PROBLEM' ? <LiveDur since={r.started_at} /> : fmtDur(r.duration_s), cls: 'mono' }, { h: 'WA', r: r => r.wa_status ? <Pill tone={r.wa_status === 'failed' ? 'bad' : 'ok'}>{r.wa_status}</Pill> : '—' }]} />
+      { h: 'Status', r: r => <StatusBadge s={r.status} /> }, { h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Origem', r: r => <KindPill k={r.kind} /> },
+      { h: 'Cliente', r: r => r.client_name ? <div className="trunc" style={{ maxWidth: 190 }} title={r.client_name}><b>{r.client_name}</b></div> : <span style={{ color: 'var(--orange)' }}>sem cliente</span> },
+      { h: 'Host / item', r: r => <><div className="trunc" style={{ maxWidth: 200 }} title={r.host}><b>{r.host}</b></div>{r.ip && <div className="sub mono">{r.ip}</div>}</> },
+      { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at), cls: 'nw' }, { h: 'Recuperação', r: r => fmtDT(r.recovered_at), cls: 'nw' },
+      { h: 'Duração', r: r => r.status === 'PROBLEM' ? <LiveDur since={r.started_at} /> : fmtDur(r.duration_s), cls: 'mono nw' }, { h: 'WhatsApp', r: r => r.wa_status ? <Pill tone={r.wa_status === 'failed' ? 'bad' : r.wa_status === 'sent' ? 'ok' : 'warn'}>{r.wa_status}</Pill> : '—' }]} />
       <div style={{ padding: '0 16px 12px' }}><Pager page={page} size={50} total={data.total} onPage={setPage} /></div></> : <Loading err={err} />}</Card>
     {sel && <Detail id={sel} onClose={() => setSel(null)} />}</>
 }

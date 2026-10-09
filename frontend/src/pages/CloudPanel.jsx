@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Play, Power, RotateCw, ShieldAlert } from 'lucide-react'
+import { BellOff, BellRing, Play, Power, RotateCw, ShieldAlert } from 'lucide-react'
 import { get, post, put, del } from '../api'
 import { Card, Field, Loading, Pill, Stat, Table, useLoad, useToast } from '../ui'
 
@@ -13,11 +13,11 @@ const confirmText = (name, action, label) => `${label} a máquina “${name}”?
 // Botoes de acao de uma maquina (ligar / reiniciar / desligar [/ forcar]), todos com confirmacao
 function VmActions({ vm, busy, onAct, staff }) {
   const run = vm.state === 'RUNNING'; const off = ['STOPPED', 'SHUTOFF'].includes(vm.state); const b = busy === vm.uuid || (vm.reboot && ['parando', 'ligando'].includes(vm.reboot.phase))
-  return <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+  return <div className="vm-actions">
     {off && <button className="btn sm primary" disabled={b} onClick={() => onAct(vm, 'start', 'Ligar')}><Play />Ligar</button>}
     {run && <button className="btn sm" disabled={b} onClick={() => onAct(vm, 'reboot', 'Reiniciar')}><RotateCw />Reiniciar</button>}
     {run && <button className="btn sm danger" disabled={b} onClick={() => onAct(vm, 'stop', 'Desligar')}><Power />Desligar</button>}
-    {run && staff && <button className="btn sm danger" disabled={b} title="Desligamento forçado (equivale a puxar o cabo)" onClick={() => onAct(vm, 'force-stop', 'Desligar à força')}><ShieldAlert />Forçar</button>}
+    {run && staff && <button className="btn sm danger" disabled={b} title="Desligamento forçado (equivale a puxar o cabo de energia)" aria-label="Desligar à força" onClick={() => onAct(vm, 'force-stop', 'Desligar à força')}><ShieldAlert /></button>}
     {!run && !off && <span className="sub">aguarde…</span>}</div>
 }
 const StateCell = ({ r }) => r.reboot && ['parando', 'ligando'].includes(r.reboot.phase) ? <Pill tone="warn">reiniciando ({r.reboot.phase})…</Pill> : r.reboot?.phase === 'erro' ? <Pill tone="bad">erro ao reiniciar</Pill> : <Pill tone={(ST[r.state] || ['mut'])[0]}>{(ST[r.state] || [0, r.state])[1]}</Pill>
@@ -50,9 +50,9 @@ export function CloudPanel({ path, powerPath }) {
       <button className="btn sm" onClick={() => reload()} title="Atualizar agora"><RotateCw />Atualizar</button></div>
     <Card pad={false}><Table rows={rows} empty="Nenhuma máquina encontrada." cols={[
       { h: 'Estado', r: r => <StateCell r={r} /> },
-      { h: 'Máquina', r: r => <><b>{r.name}</b><div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB` },
+      { h: 'Máquina', r: r => <><b>{r.name}</b><div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB`, cls: 'nw' },
       { h: 'Rede', r: r => <><span className="mono">{r.ip || '—'}</span><div className="sub">{r.network}</div></> }, { h: 'Zona', k: 'zone' },
-      { h: 'Ações', r: r => d.can_run ? <VmActions vm={r} busy={busy} onAct={act} staff={d.staff} /> : <span className="sub">somente consulta</span> }]} /></Card>
+      { h: 'Ações', cls: 'nw', r: r => d.can_run ? <VmActions vm={r} busy={busy} onAct={act} staff={d.staff} /> : <span className="sub">somente consulta</span> }]} /></Card>
     <p className="hint" style={{ marginTop: 8 }}>Atualizado automaticamente a cada 15 segundos. Máquinas desligadas pela NAVI não geram alerta; as desligadas por outros meios geram um incidente na categoria Cloud Orca.</p></>
 }
 
@@ -83,10 +83,10 @@ export function CloudFleet() {
       <select value={st} onChange={e => setSt(e.target.value)}><option value="">Todas</option><option value="on">Ligadas</option><option value="off">Desligadas / com problema</option></select></div>
     <Card pad={false}><Table rows={rows} empty="Nenhuma máquina encontrada. Vincule a conta Cloud Orca no cadastro do cliente." cols={[
       { h: 'Estado', r: r => <><Pill tone={(ST[r.state] || ['mut'])[0]}>{(ST[r.state] || [0, r.state])[1]}</Pill>{r.state !== 'RUNNING' && r.since && <div className="sub">{ago(r.since)}{r.expected_off ? ' · desligada pela NAVI' : r.ignored ? ' · ignorada' : ''}</div>}</> },
-      { h: 'Cliente', r: r => <b>{r.client}</b> }, { h: 'Máquina', r: r => <>{r.name}<div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB` },
-      { h: 'IP', r: r => <span className="mono">{r.ip || '—'}</span> }, { h: 'Zona', k: 'zone' },
-      { h: 'Ações', r: r => <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{d.can_run && <VmActions vm={r} busy={busy} onAct={act} staff />}
-        <button className="btn sm" title={r.ignored ? 'Voltar a alertar quando desligada' : 'Não alertar quando esta máquina estiver desligada'} onClick={() => ign(r)}>{r.ignored ? 'Alertar' : 'Ignorar'}</button></div> }]} /></Card></>
+      { h: 'Cliente', r: r => <b>{r.client}</b> }, { h: 'Máquina', r: r => <>{r.name}<div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB`, cls: 'nw' },
+      { h: 'IP', r: r => <span className="mono">{r.ip || '—'}</span>, cls: 'nw' }, { h: 'Zona', k: 'zone' },
+      { h: 'Ações', cls: 'nw', r: r => <div className="vm-actions">{d.can_run && <VmActions vm={r} busy={busy} onAct={act} staff />}
+        <button className="btn sm" title={r.ignored ? 'Voltar a alertar quando desligada' : 'Não alertar quando esta máquina estiver desligada'} aria-label={r.ignored ? 'Voltar a alertar' : 'Ignorar alertas desta máquina'} onClick={() => ign(r)}>{r.ignored ? <BellRing size={15} /> : <BellOff size={15} />}</button></div> }]} /></Card></>
 }
 
 // Configuracao da chave de API da conta do cliente (cadastro do cliente)

@@ -273,6 +273,7 @@ class AlertRule(Base):
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
     host_pattern: Mapped[str | None] = mapped_column(String(255))  # substring/glob, case-insensitive
     trigger_pattern: Mapped[str | None] = mapped_column(String(255))
+    kinds: Mapped[list | None] = mapped_column(JSON)  # origens (infra|backup|endpoint|cloud); vazio = todas
     severities: Mapped[list | None] = mapped_column(JSON)  # lista de ints; vazio = qualquer >= min_severity
     min_severity: Mapped[int] = mapped_column(Integer, default=0)
     on_problem: Mapped[bool] = mapped_column(Boolean, default=True)

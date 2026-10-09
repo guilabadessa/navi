@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, Globe, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
-  HardDrive, Search, UserRound, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
+  HardDrive, Menu, Search, UserRound, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
 import Login from './pages/Login'
@@ -51,11 +51,11 @@ function StatusPills() {
   const [st, setSt] = useState({})
   useEffect(() => { const f = () => get('/settings/status').then(setSt).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t) }, [])
   const P = ({ k, label }) => <div className={'pill ' + (st[k] ? (st[k].ok ? 'ok' : 'bad') : '')} title={st[k]?.detail || 'sem verificação ainda'}><i />{label}</div>
-  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" />{st.acronis && <P k="acronis" label="Acronis" />}{st.ems && <P k="ems" label="EMS" />}<P k="navi" label="NAVI" /></div>
+  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" />{st.acronis && <P k="acronis" label={st.acronis_us ? 'Acronis BR' : 'Acronis'} />}{st.acronis_us && <P k="acronis_us" label="Acronis EUA" />}{st.ems && <P k="ems" label="EMS" />}{st.cloud && <P k="cloud" label="Cloud Orca" />}{st.contaazul && <P k="contaazul" label="Conta Azul" />}<P k="navi" label="NAVI" /></div>
 }
 
 function Shell({ me, onLogout, reloadMe }) {
-  const loc = useLocation(); const navTo = useNavigate(); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
+  const loc = useLocation(); const navTo = useNavigate(); const [menu, setMenu] = useState(false); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
   useEffect(() => { const h = e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPal(p => !p) } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [])
   const cur = loc.pathname === '/conta' ? ['/conta', 'Minha conta'] : NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
   useEffect(() => { if (me.must_change_password && loc.pathname !== '/conta') navTo('/conta') }, [me.must_change_password, loc.pathname])
@@ -64,7 +64,8 @@ function Shell({ me, onLogout, reloadMe }) {
   const here = Object.keys(tips).filter(k => k === '/' ? loc.pathname === '/' : loc.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0]
   return <div className="app">
     <a href="#conteudo" className="skip">Pular para o conteúdo</a>
-    <aside className="side">
+    {menu && <div className="scrim" onClick={() => setMenu(false)} />}
+    <aside className={'side' + (menu ? ' open' : '')} onClick={e => e.target.closest('a') && setMenu(false)}>
       <div className="brand"><img src="/cliente/brand/simbolo_branco.png" alt="Orca TI" /><div><div className="t">NAVI</div><div className="s">Inteligência operacional<br />Orca TI</div></div></div>
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
@@ -72,12 +73,12 @@ function Shell({ me, onLogout, reloadMe }) {
         <div style={{ marginTop: 8, display: 'flex', gap: 14 }}><NavLink to="/conta" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }}><UserRound size={15} />Minha conta</NavLink><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
     </aside>
     <div className="main" id="conteudo">
-      <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="top"><div className="tleft" style={{ display: 'flex', alignItems: 'center', gap: 10 }}><button className="iconbtn menu-btn" aria-label="Abrir menu" onClick={() => setMenu(true)}><Menu /></button><h1>{cur ? cur[1] : 'NAVI'}</h1></div>
+        <div className="topr">
           <button className="searchbtn" onClick={() => setPal(true)}><Search size={16} />Buscar… <span className="kbd" style={{ marginLeft: 'auto' }}>Ctrl K</span></button>
-          <StatusPills />
           <button className="iconbtn" aria-label="Modo NOC (tela cheia)" title={tv ? 'Sair do modo NOC (tela cheia)' : 'Modo NOC (esconde o menu)'} onClick={() => { tvMode(!tv); setTv(!tv) }}><Tv /></button>
-          <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Alternar tema claro/escuro" onClick={() => setTheme(toggleTheme())}>{theme === 'dark' ? <Sun /> : <Moon />}</button></div></div>
+          <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Alternar tema claro/escuro" onClick={() => setTheme(toggleTheme())}>{theme === 'dark' ? <Sun /> : <Moon />}</button>
+          <StatusPills /></div></div>
       {pal && <Palette onClose={() => setPal(false)} />}
       <div className="content">
         <Routes>

@@ -47,7 +47,7 @@ export default function NaviGuide({ tips, current, asks = [], go, tour = [], use
 
 // ---- Conteudo do portal do cliente (por aba) ----
 export const PORTAL_TIPS = {
-  geral: ['Visão geral', 'Disponibilidade do período, incidentes por dia e os problemas em andamento agora. O período (7, 30 ou 90 dias) é escolhido no topo.'],
+  geral: ['Visão geral', 'Disponibilidade do período, incidentes por dia e os problemas em andamento agora. O período (1 hora, 24 horas, 7, 30 ou 90 dias) é escolhido no topo.'],
   inc: ['Incidentes', 'O histórico de ocorrências do seu ambiente. Filtre por severidade, situação, host ou texto para achar o que precisa.'],
   hosts: ['Hosts', 'Seus servidores e equipamentos monitorados, com estado atual e disponibilidade. Filtre por grupo ou procure pelo nome/IP.'],
   grp: ['Grupos', 'Seus ambientes agrupados. Clique em um grupo para ver só os hosts dele.'],

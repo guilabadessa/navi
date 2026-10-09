@@ -153,7 +153,7 @@ def sync_all(db: Session) -> dict:
             acc.fails, acc.last_error = (acc.fails or 0) + 1, str(e)[:500]
             stats["errors"] += 1
             if acc.fails >= 3:  # so alerta depois de 3 falhas seguidas (evita oscilacao)
-                desired[f"api:{acc.client_id}"] = {"host": "Cloud Orca", "hostid": f"cloud-api-{acc.client_id}", "tenant": tenant, "triggerid": "CloudApi", "trigger_name": "Cloud Orca inacessível pela NAVI",
+                desired[f"api:{acc.client_id}"] = {"host": "Conta Cloud Orca", "hostid": f"cloud-api-{acc.client_id}", "tenant": tenant, "triggerid": "CloudApi", "trigger_name": "Cloud Orca inacessível pela NAVI",
                                                    "item_name": None, "severity": 3, "started_at": acc.last_ok or now, "type": "CloudApi", "opdata": acc.last_error[:200]}
             continue
         have = {v.uuid: v for v in db.scalars(select(CloudVm).where(CloudVm.client_id == acc.client_id))}

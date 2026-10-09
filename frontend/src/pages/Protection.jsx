@@ -58,12 +58,12 @@ export function Endpoints({ ov, clients, edit, reload }) {
     </div>
     {ov.alerts.length > 0 && <Card title={`Problemas de endpoints em aberto (${ov.alerts.length})`} pad={false} style={{ marginBottom: 16 }}>
       <Table rows={ov.alerts} onRow={r => nav(`/eventos?kind=endpoint&q=${encodeURIComponent(r.host || '')}&days=`)} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Cliente', r: r => r.client_name || <Pill tone="warn">sem cliente</Pill> },
-        { h: 'Estação', r: r => <b>{r.host}</b> }, { h: 'Problema', r: r => r.trigger_name }, { h: 'Detalhe', r: r => <span className="sub">{r.opdata || ''}</span> }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
-    <div className="bar"><div className="grow"><input placeholder="Buscar estação, usuário ou site…" value={q} onChange={e => setQ(e.target.value)} /></div>
+        { h: 'Endpoint', r: r => <b>{r.host}</b> }, { h: 'Problema', r: r => r.trigger_name }, { h: 'Detalhe', r: r => <span className="sub">{r.opdata || ''}</span> }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
+    <div className="bar"><div className="grow"><input placeholder="Buscar endpoint, usuário ou site…" value={q} onChange={e => setQ(e.target.value)} /></div>
       <select value={cl} onChange={e => setCl(e.target.value)}><option value="">Todos os clientes</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select>
       <select value={st} onChange={e => setSt(e.target.value)}><option value="">Todos os status</option>{Object.keys(EST).map(k => <option key={k}>{k}</option>)}</select></div>
     <Card pad={false}><Table rows={rows} empty="Nenhum endpoint (a integração está ativa e já sincronizou?)." cols={[
-      { h: 'Status', r: r => <Pill tone={EST[r.status]}>{r.status}</Pill> }, { h: 'Estação', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
+      { h: 'Status', r: r => <Pill tone={EST[r.status]}>{r.status}</Pill> }, { h: 'Endpoint', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
       { h: 'Site (EMS)', r: r => <>{r.site}{r.client ? <div className="sub">→ {r.client}</div> : <div className="sub" style={{ color: 'var(--orange)' }}>não associado</div>}</> },
       { h: 'Sistema', r: r => <span className="sub">{(r.os || '').replace('Microsoft ', '').replace(' Edition, 64-bit', '').slice(0, 38)}</span> },
       { h: 'FortiClient', r: r => <span className="sub">{r.fct_version || '—'}</span> }, { h: 'Antivírus', r: r => r.av_enabled === false ? <Pill tone="bad">desativado</Pill> : r.sig_ok === false ? <Pill tone="warn">assin. antigas</Pill> : <Pill tone="ok">ok</Pill> },
@@ -72,14 +72,16 @@ export function Endpoints({ ov, clients, edit, reload }) {
       { h: '', r: r => edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button> }]} /></Card></>
 }
 
-function Tenants({ ov, ems }) {
-  const nav = useNavigate()
+function Tenants({ ov, ems, edit, reload }) {
+  const nav = useNavigate(); const toast = useToast()
+  const ign = async (t) => { try { await put(`/protection/tenants/${t.id}/ignore`, { ignored: !t.ignored }); toast(t.ignored ? 'Voltou a aparecer como pendência' : 'Marcado como “não precisa de cliente”'); reload() } catch (e) { toast(e.message, true) } }
   return <Card title="Associações: Acronis e EMS → clientes da NAVI" pad={false}>
     <div className="sub" style={{ padding: '10px 20px 0' }}>A associação agora é feita no <b>cadastro do cliente</b>, nas abas <b>Acronis</b> e <b>FortiClient EMS</b> (igual aos hosts do Zabbix). Esta lista só mostra o estado atual — itens pendentes não geram alerta, portal nem relatório.</div>
     <Table rows={[...ov.tenants.map(t => ({ ...t, src: 'Acronis' })), ...(ems?.tenants || []).map(t => ({ ...t, src: 'EMS (site)' }))]} onRow={r => r.client_id && nav('/clientes/' + r.client_id)} cols={[{ h: 'Origem', r: r => <Pill tone="info">{r.src}</Pill> }, { h: 'Cliente / site na origem', r: r => <b>{r.name}</b> }, { h: 'Itens', k: 'assets' },
       { h: 'Tecnologias contratadas', r: r => <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{(r.services || []).slice(0, 6).map(t => <span key={t} className="badge b-mut">{t}</span>)}</span> },
       { h: 'Cliente na NAVI', r: r => r.client_id ? <b>{r.client_name}</b> : <span className="sub">— não associado —</span> },
-      { h: 'Estado', r: r => r.client_id ? <Pill tone="ok">associado</Pill> : <Pill tone="warn">pendente · associe no cadastro do cliente</Pill> }]} /></Card>
+      { h: 'Estado', r: r => r.client_id ? <Pill tone="ok">associado</Pill> : r.ignored ? <Pill tone="mut">ignorado</Pill> : <Pill tone="warn">pendente · associe no cadastro do cliente</Pill> },
+      { h: '', r: r => !r.client_id && edit && <button className="btn sm" title="Não precisa de cliente (ex.: site vazio)" onClick={e => { e.stopPropagation(); ign(r) }}>{r.ignored ? 'Reativar' : 'Ignorar'}</button> }]} /></Card>
 }
 
 export default function Protection() {
@@ -93,6 +95,6 @@ export default function Protection() {
     <Tabs value={tab} onChange={setTab} tabs={tabs} />
     {cfg && <div className="hint" style={{ marginBottom: 10 }}>As credenciais do Acronis e do EMS ficam em <a href="#" onClick={e => { e.preventDefault(); nav('/configuracoes') }}>Configurações</a>.</div>}
     {(!ov.data || !ems.data || !clients.data ? <Loading err={ov.err || ems.err} /> : tab === 'geral' ? <Overview ov={ov.data} clients={clients.data} edit={edit} reload={reloadAll} />
-      : tab === 'eps' ? <Endpoints ov={ems.data} clients={clients.data} edit={edit} reload={reloadAll} /> : <Tenants ov={ov.data} ems={ems.data} />)}
+      : tab === 'eps' ? <Endpoints ov={ems.data} clients={clients.data} edit={edit} reload={reloadAll} /> : <Tenants ov={ov.data} ems={ems.data} edit={edit} reload={reloadAll} />)}
 </>
 }

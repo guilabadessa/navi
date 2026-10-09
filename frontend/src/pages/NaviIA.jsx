@@ -14,7 +14,7 @@ function Data({ d }) {
 }
 
 export default function NaviIA() {
-  const [msgs, setMsgs] = useState([{ who: 'n', text: 'Olá! Eu sou a NAVI. Pergunte sobre hosts, clientes, backups, estações e incidentes do seu ambiente.' }]); const [q, setQ] = useState(''); const [busy, setBusy] = useState(false); const end = useRef()
+  const [msgs, setMsgs] = useState([{ who: 'n', text: 'Olá! Eu sou a NAVI. Pergunte sobre hosts, clientes, backups, endpoints, máquinas da Cloud Orca e incidentes do seu ambiente.' }]); const [q, setQ] = useState(''); const [busy, setBusy] = useState(false); const end = useRef()
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
   const ask = async (text) => { if (!text.trim()) return; setMsgs(m => [...m, { who: 'u', text }]); setQ(''); setBusy(true)
     try { const r = await post('/navi/ask', { question: text }); setMsgs(m => [...m, { who: 'n', text: r.answer, data: r.data, mode: r.mode }]) } catch (e) { setMsgs(m => [...m, { who: 'n', text: 'Erro: ' + e.message }]) } finally { setBusy(false) } }

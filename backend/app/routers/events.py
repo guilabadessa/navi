@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..db import get_db
-from ..models import Dispatch, Event
+from ..models import Client, Dispatch, Event
 from ..security import require
 from ..util import parse_dt, to_dict
 
@@ -39,10 +39,12 @@ def list_events(kind: str | None = None, status: str | None = None, client_id: i
         stmt = stmt.where(Event.started_at < parse_dt(until))
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(Event.host.ilike(like) | Event.trigger_name.ilike(like) | Event.ip.ilike(like) | Event.item_name.ilike(like))
+        stmt = stmt.where(Event.host.ilike(like) | Event.trigger_name.ilike(like) | Event.ip.ilike(like) | Event.item_name.ilike(like)
+                          | Event.client_id.in_(select(Client.id).where(Client.trade_name.ilike(like))))
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(Event.started_at.desc()).offset((page - 1) * size).limit(min(size, 200)))
-    return {"total": total, "items": [to_dict(e) for e in rows]}
+    names = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    return {"total": total, "items": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in rows]}
 
 
 @router.get("/{eid}")
@@ -51,6 +53,8 @@ def get_event(eid: int, db: Session = Depends(get_db), _=Depends(require("events
     if not e:
         raise HTTPException(404)
     d = to_dict(e)
+    c = db.get(Client, e.client_id) if e.client_id else None
+    d["client_name"] = c.trade_name if c else None
     d["dispatches"] = [to_dict(x) for x in db.scalars(select(Dispatch).where(Dispatch.event_id == eid).order_by(Dispatch.id))]
     return d
 

@@ -63,7 +63,7 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
         cnt_assets[a.ext_tenant_id] = cnt_assets.get(a.ext_tenant_id, 0) + 1
     return {"counts": counts, "assets": rows, "alerts": alerts,
             "tenants": [{"id": t.id, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": t.enabled,
-                         "assets": cnt_assets.get(t.id, 0),
+                         "assets": cnt_assets.get(t.id, 0), "ignored": bool((t.info or {}).get("ignored")),
                          "services": [s["label"] for s in ((t.info or {}).get("services") or [])]} for t in tenants],
             "thresholds": c, "failed_24h": db.scalar(select(func.count()).select_from(ExtAsset).where(
                 ExtAsset.source == P.SRC, ExtAsset.last_failure_at >= now - timedelta(hours=24))) or 0}
@@ -236,7 +236,7 @@ def ems_overview(client_id: int | None = None, db: Session = Depends(get_db), _=
         stmt = stmt.where(Event.client_id == client_id)
     return {"counts": counts, "total": len(rows), "online": sum(1 for r in rows if r["online"]), "assets": rows,
             "alerts": [to_dict(e) | {"client_name": cn.get(e.client_id)} for e in db.scalars(stmt)],
-            "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": True,
+            "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": True, "ignored": bool((t.info or {}).get("ignored")),
                          "assets": sum(1 for a in assets if a.ext_tenant_id == t.id)} for t in tenants],
             "offline_days": days, "blocked": S.get(db, "ems.auth_blocked") == "1"}
 
@@ -249,6 +249,22 @@ def list_tenants(db: Session = Depends(get_db), _=Depends(require("clients.view"
     n = dict(db.execute(select(ExtAsset.ext_tenant_id, func.count()).where(ExtAsset.active.is_(True)).group_by(ExtAsset.ext_tenant_id)).all())
     return [{"id": t.id, "source": t.source, "dc": (t.info or {}).get("dc", "br") if t.source == "acronis" else None, "name": titlecase(t.name), "client_id": t.client_id, "client_name": cn.get(t.client_id), "assets": n.get(t.id, 0)}
             for t in db.scalars(select(ExtTenant).where(ExtTenant.active.is_(True)).order_by(ExtTenant.source, ExtTenant.name))]
+
+
+class IgnoreTenantIn(BaseModel):
+    ignored: bool
+
+
+@router.put("/tenants/{tid}/ignore")
+def ignore_tenant(tid: int, body: IgnoreTenantIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    """Marca um cliente do Acronis/site do EMS como "nao precisa de cliente" (ex.: site Default vazio): some do aviso de pendencias."""
+    t = db.get(ExtTenant, tid)
+    if not t:
+        raise HTTPException(404)
+    t.info = {**(t.info or {}), "ignored": body.ignored}
+    audit.log(db, request, "protection_ignore_tenant", "ext_tenant", tid, detail={"tenant": t.name, "ignored": body.ignored})
+    db.commit()
+    return {"ok": True}
 
 
 _run_limiter = RateLimiter(1, 600)  # um disparo por item a cada 10 minutos

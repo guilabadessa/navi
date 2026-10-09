@@ -91,6 +91,8 @@ export default function Dashboard() {
     {d.stale_jobs.length > 0 && <JobAlerts jobs={d.stale_jobs} reload={reload} canAck={can(me, 'routines.edit')} />}
     {d.shadow && <div className="banner info"><EyeOff size={20} /><div className="grow"><b>Modo sombra ativo:</b> os alertas são registrados, mas <u>não são enviados</u>. Desative em Alertas → Migração.</div><button className="btn sm" onClick={() => nav('/alertas')}>Abrir</button></div>}
     {!cl && d.coverage?.hosts_uncovered > 0 && <div className="banner warn"><Building2 size={20} /><div className="grow"><b>{d.coverage.hosts_uncovered} de {d.coverage.hosts_total} hosts sem cliente associado</b> — não geram alerta nem relatório.</div><button className="btn sm" onClick={() => nav('/clientes?cobertura=1')}>Associar agora</button></div>}
+    {!cl && d.coverage?.tenants_pending?.length > 0 && <div className="banner warn" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => nav('/protecao')}><Building2 size={20} /><div className="grow"><b>{d.coverage.tenants_pending.length} cliente(s) do Acronis/EMS sem cliente associado</b> — não geram alerta, portal nem relatório: {d.coverage.tenants_pending.slice(0, 5).map(t => t.name).join(', ')}. Associe no cadastro do cliente.</div></div>}
+    {!cl && d.coverage?.cloud_errors?.length > 0 && <div className="banner bad" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => nav('/monitoramento?aba=cloud')}><AlertTriangle size={20} /><div className="grow"><b>Cloud Orca sem acesso:</b> {d.coverage.cloud_errors.map(c => c.client).join(', ')} — confira a chave de API no cadastro do cliente.</div></div>}
     {d.failed_dispatches.length > 0 && <FailedSends items={d.failed_dispatches} reload={reload} canAck={can(me, 'alerts.edit')} />}
 
     <div className="grid g4" style={{ marginBottom: 16 }}>
@@ -105,7 +107,7 @@ export default function Dashboard() {
       <div className="cardlink" onClick={() => evs('&status=PROBLEM&q=link')}><Stat label="Links indisponíveis" value={fmtNum(d.links_down)} tone={d.links_down ? 'bad' : ''} desc="alertas de link/WAN em aberto" /></div>
       </>}
     </div>
-    <div className="grid g4" style={{ marginBottom: 16 }}>
+    <div className="grid g-auto" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => nav('/eventos?days=1')}><Stat label="Problemas hoje" value={fmtNum(d.problems_today)} /></div>
       <div className="cardlink" onClick={() => evs()}><Stat label={periodLabel(days)} value={fmtNum(d.problems_30d)} /></div>
       <div className="cardlink" onClick={() => nav('/protecao')}><Stat label="Backup e endpoints" value={fmtNum((d.backup_active || 0) + (d.endpoint_active || 0))} tone={(d.backup_active || 0) + (d.endpoint_active || 0) ? 'bad' : 'ok'} desc={`Acronis ${d.backup_active || 0} · EMS ${d.endpoint_active || 0}`} /></div>
@@ -133,8 +135,9 @@ export default function Dashboard() {
       <Table rows={health.data.items} onRow={r => nav('/clientes/' + r.client_id)} cols={[{ h: 'Cliente', r: r => <b>{r.client}</b> },
         { h: 'Infraestrutura', r: r => r.infra ? <Pill tone={r.infra_worst >= 4 ? 'bad' : 'warn'}>{r.infra} problema(s)</Pill> : <Pill tone="ok">{r.hosts_down ? r.hosts_down + ' host(s) fora' : 'ok'}</Pill> },
         { h: 'Backup', r: r => !r.has_backup ? <span className="sub">—</span> : r.backup || r.backup_bad ? <Pill tone={r.backup_worst >= 4 || r.backup_bad ? 'bad' : 'warn'}>{r.backup || r.backup_bad} problema(s)</Pill> : <Pill tone="ok">{r.backup_items} ok</Pill> },
-        { h: 'Estações', r: r => !r.has_ems ? <span className="sub">—</span> : r.endpoint || r.endpoint_bad ? <Pill tone={r.endpoint_worst >= 4 ? 'bad' : 'warn'}>{r.endpoint || r.endpoint_bad} atenção</Pill> : <Pill tone="ok">{r.endpoint_items} ok</Pill> },
-        { h: 'Hosts', k: 'hosts' }]} /></Card>}
+        { h: 'Endpoints', r: r => !r.has_ems ? <span className="sub">—</span> : r.endpoint || r.endpoint_bad ? <Pill tone={r.endpoint_worst >= 4 ? 'bad' : 'warn'}>{r.endpoint || r.endpoint_bad} atenção</Pill> : <Pill tone="ok">{r.endpoint_items} ok</Pill> },
+        { h: 'Cloud Orca', r: r => !r.has_cloud ? <span className="sub">—</span> : r.cloud || r.cloud_off ? <Pill tone={r.cloud_worst >= 4 || r.cloud_off ? 'bad' : 'warn'}>{r.cloud || r.cloud_off} problema(s)</Pill> : <Pill tone="ok">{r.cloud_items} ok</Pill> },
+        { h: 'Hosts', r: r => r.has_infra ? r.hosts : '—' }]} /></Card>}
     <Card title={`Problemas ativos agora (${d.problems_active})`} pad={false} style={{ marginBottom: 16 }}
       actions={<button className="btn sm" onClick={() => evs('&status=PROBLEM')}>Ver todos</button>}>
       <Table rows={d.live} onRow={r => nav(`/eventos?status=PROBLEM&q=${encodeURIComponent(r.host || '')}`)} empty="🎉 Nenhum problema ativo no momento." cols={[

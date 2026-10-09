@@ -207,6 +207,28 @@ def health_checks(db):
             put("acronis", True, ac.test())
     except Exception as e:  # noqa: BLE001
         put("acronis", False, e)
+    try:
+        ac2 = factory.acronis2(db)
+        if ac2.configured and S.get(db, "protection.acronis2_enabled") != "0":
+            put("acronis_us", True, ac2.test())
+    except Exception as e:  # noqa: BLE001
+        put("acronis_us", False, e)
+    try:  # Cloud Orca: ok quando todas as contas ativas responderam na ultima sincronizacao
+        from .models import CloudAccount
+        accs = list(db.scalars(select(CloudAccount).where(CloudAccount.enabled.is_(True))))
+        if accs:
+            bad = [a for a in accs if a.last_error]
+            put("cloud", not bad, f"{len(accs)} conta(s) vinculada(s)" + (f" · {len(bad)} sem acesso" if bad else " · respondendo"))
+    except Exception as e:  # noqa: BLE001
+        put("cloud", False, e)
+    try:  # Conta Azul: autorizado e sincronizando
+        from .services.contaazul_service import ContaAzul
+        ca = ContaAzul(db)
+        if ca.configured and S.get(db, "contaazul.enabled") == "1":
+            err = S.get(db, "contaazul.auth_error")
+            put("contaazul", ca.authorized and not err, err or ("autorizado · última sincronização " + (S.get(db, "contaazul.last_sync") or "—")[:16].replace("T", " ")) if ca.authorized else "não autorizado (autorize em Configurações)")
+    except Exception as e:  # noqa: BLE001
+        put("contaazul", False, e)
     put("navi", True, "operacional")
     db.commit()
 

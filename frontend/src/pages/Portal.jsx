@@ -40,7 +40,7 @@ function ServiceStatus({ d, go }) {
     items.push({ k: 'cloud', tab: 'cloud', title: 'Cloud Orca', bad: bad > 0, line: `${d.cloud.running} de ${d.cloud.total} máquinas ligadas`, extra: bad ? `${bad} máquina(s) desligada(s) ou com erro` : 'Todas as máquinas operando' })
   }
   if (!items.length) return null
-  return <div className="grid g3 svcstat" style={{ marginBottom: 16 }}>{items.map(i => <div key={i.k} className={'card svc cardlink ' + (i.bad ? 'bad' : 'ok')} style={{ padding: 16 }} role="button" tabIndex={0} onClick={() => go && go(i.tab)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && go && go(i.tab)}>
+  return <div className="grid g-auto svcstat" style={{ marginBottom: 16 }}>{items.map(i => <div key={i.k} className={'card svc cardlink ' + (i.bad ? 'bad' : 'ok')} style={{ padding: 16 }} role="button" tabIndex={0} onClick={() => go && go(i.tab)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && go && go(i.tab)}>
     <div className="l">{i.title}</div>
     <div className="st"><i className="dot" style={{ background: i.bad ? '#bd1723' : '#16a34a' }} />{i.bad ? 'Com falha' : 'Operando normalmente'}</div>
     <div className="sub">{i.line}</div><div className="sub">{i.extra}</div></div>)}</div>
@@ -82,7 +82,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
           ? <div className="banner bad" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => { setFk(''); setFst('open'); setTab('inc') }}><div className="grow"><b>{d.active.length} problema(s) em andamento.</b> Nossa equipe já está acompanhando. <u>Ver detalhes</u></div></div>
           : <div className="banner info"><div className="grow">✅ Todos os serviços monitorados estão operando normalmente.</div></div>}
         {d.maintenance.length > 0 && <div className="banner warn"><Wrench size={20} /><div className="grow"><b>Manutenção programada:</b> {d.maintenance.map(m => `${m.name} — ${fmtDT(m.start)} a ${fmtDT(m.end)}`).join(' · ')}</div></div>}
-        <div className="grid g4" style={{ marginBottom: 16 }}>
+        <div className="grid g-auto" style={{ marginBottom: 16 }}>
           {infra && <Stat onClick={() => setTab('hosts')} label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />}
           <Stat onClick={() => { setFk(''); setTab('inc') }} label="Incidentes" value={fmtNum(s.incidents)} tone={s.open ? 'bad' : ''} desc={`${s.resolved} resolvido(s) · ${s.open} em aberto`} />
           {['infra', 'backup', 'endpoint', 'cloud'].filter(k => d.services?.[k] !== false && (k === 'infra' ? infra : d.services?.[k])).map(k => <Stat key={k} onClick={() => { setFk(k); setTab('inc') }} label={`Incidentes · ${KIND[k]}`} value={fmtNum(s.by_kind?.[k]?.total || 0)} tone={s.by_kind?.[k]?.open ? 'bad' : ''} desc={`${s.by_kind?.[k]?.open || 0} em aberto`} />)}
@@ -93,9 +93,9 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
         {tab === 'geral' && <>
           <ServiceStatus d={d} go={setTab} />
           <Contracts items={d.contracts} />
-          {infra && <Card title={`Incidentes por dia · ${periodLabel(days)}`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}><ResponsiveContainer>
+          {infra && <Card title={`Incidentes por dia · ${periodLabel(days)}`} style={{ marginBottom: 16 }}><div style={{ height: 230 }}>{!byDay.length ? <div className="empty" style={{ paddingTop: 80 }}>Nenhum incidente de infraestrutura no período. ✅</div> : <ResponsiveContainer>
             <BarChart data={byDay}><CartesianGrid vertical={false} stroke="var(--line2)" /><XAxis dataKey="d" tick={{ fontSize: 11 }} interval="preserveStartEnd" /><YAxis allowDecimals={false} width={30} tick={{ fontSize: 11 }} />
-              <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></Card>}
+              <Tooltip cursor={{ fill: 'var(--hover)' }} /><Bar dataKey="v" name="Incidentes" fill="#1e73f8" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer>}</div></Card>}
           <Card title={`Problemas em andamento (${d.active.length})`} pad={false}><Table rows={d.active} empty="🎉 Nenhum problema em andamento." onRow={() => { setFk(''); setFst('open'); setTab('inc') }} cols={[{ h: 'Categoria', r: r => <KindPill k={r.kind} /> }, { h: 'Severidade', r: r => <SevBadge n={r.severity} /> }, { h: 'Item', r: r => <b>{r.host}</b> },
             { h: 'Problema', r: r => <div className="trunc" title={r.trigger_name}>{r.trigger_name}</div> }, { h: 'Início', r: r => fmtDT(r.started_at) }, { h: 'Em andamento há', r: r => <LiveDur since={r.started_at} /> }]} /></Card></>}
         {tab === 'inc' && <>

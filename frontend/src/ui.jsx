@@ -61,22 +61,29 @@ export function Drawer({ title, onClose, children }) {
 }
 export const Tabs = ({ tabs, value, onChange }) => <div className="tabs" role="tablist">{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={value === k} className={value === k ? 'on' : ''} onClick={() => onChange(k)}>{l}</button>)}</div>
 
-export function Table({ cols, rows, onRow, empty = 'Nenhum registro encontrado.' }) {
+// Tabela. Listas longas (mais de `pageSize` linhas) ganham paginacao automatica no navegador.
+export function Table({ cols, rows, onRow, empty = 'Nenhum registro encontrado.', pageSize = 50 }) {
+  const [pg, setPg] = useState(1)
   if (!rows || !rows.length) return <div className="empty">{empty}</div>
-  return <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c, i) => <th key={i} scope="col" style={c.w ? { width: c.w } : null}>{c.h}</th>)}</tr></thead>
-    <tbody>{rows.map((r, i) => <tr key={r.id ?? r.hostid ?? r.client_id ?? i} className={onRow ? 'click' : ''} onClick={() => onRow && onRow(r)} tabIndex={onRow ? 0 : undefined} onKeyDown={onRow ? (e => { if (e.key === 'Enter' && e.target === e.currentTarget) onRow(r) }) : undefined}>
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize)); const cur = Math.min(pg, pages)
+  const view = rows.length > pageSize ? rows.slice((cur - 1) * pageSize, cur * pageSize) : rows
+  return <><div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c, i) => <th key={i} scope="col" style={c.w ? { width: c.w } : null}>{c.h}</th>)}</tr></thead>
+    <tbody>{view.map((r, i) => <tr key={r.id ?? r.uuid ?? r.hostid ?? r.client_id ?? i} className={onRow ? 'click' : ''} onClick={() => onRow && onRow(r)} tabIndex={onRow ? 0 : undefined} onKeyDown={onRow ? (e => { if (e.key === 'Enter' && e.target === e.currentTarget) onRow(r) }) : undefined}>
       {cols.map((c, j) => <td key={j} className={c.cls}>{c.r ? c.r(r) : r[c.k]}</td>)}</tr>)}</tbody></table></div>
+    {rows.length > pageSize && <div style={{ padding: '0 16px 12px' }}><Pager page={cur} size={pageSize} total={rows.length} onPage={setPg} /></div>}</>
 }
 export function Pager({ page, size, total, onPage }) {
-  const pages = Math.max(1, Math.ceil(total / size))
-  return <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', padding: '12px 4px 0' }}>
-    <span className="sub">{total} registro(s)</span>
-    <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹</button>
-    <span className="mono">{page} / {pages}</span>
-    <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>›</button></div>
+  const pages = Math.max(1, Math.ceil(total / size)); const from = total ? (page - 1) * size + 1 : 0; const to = Math.min(total, page * size)
+  return <nav aria-label="Paginação" style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', padding: '12px 4px 0', flexWrap: 'wrap' }}>
+    <span className="sub" style={{ marginRight: 'auto' }}>{from}–{to} de {total} registro(s)</span>
+    <button className="btn sm" disabled={page <= 1} onClick={() => onPage(1)} aria-label="Primeira página">«</button>
+    <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Página anterior">‹</button>
+    <span className="mono" aria-live="polite">{page} / {pages}</span>
+    <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Próxima página">›</button>
+    <button className="btn sm" disabled={page >= pages} onClick={() => onPage(pages)} aria-label="Última página">»</button></nav>
 }
 export const PageHead = ({ title, desc, badges, children }) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-  <div><h1 style={{ fontSize: 26 }}>{title}</h1>{badges && <div style={{ margin: '4px 0' }}>{badges}</div>}{desc && <p className="sub">{desc}</p>}</div><div style={{ display: 'flex', gap: 10 }}>{children}</div></div>
+  <div><h1 style={{ fontSize: 26 }}>{title}</h1>{badges && <div style={{ margin: '4px 0' }}>{badges}</div>}{desc && <p className="sub">{desc}</p>}</div><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: '100%' }}>{children}</div></div>
 
 export function useLoad(fn, deps = [], interval) {
   const [data, setData] = useState(null); const [err, setErr] = useState(null); const [loading, setLoading] = useState(true)

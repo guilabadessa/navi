@@ -140,7 +140,10 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
             assigned = set(db.scalars(select(ClientHostGroup.zbx_groupid))) | set()
             hids = set(db.scalars(select(ClientHost.zbx_hostid)))
             unc = [h for h in hosts if not (set(h.group_ids or []) & assigned) and h.hostid not in hids]
-            cov = {"hosts_uncovered": len(unc), "hosts_total": len(hosts)}
+            pend = [t for t in db.scalars(select(ExtTenant).where(ExtTenant.client_id.is_(None), ExtTenant.active.is_(True), ExtTenant.source.in_(("acronis", "ems")))) if not (t.info or {}).get("ignored")]
+            from ..models import CloudAccount
+            cov = {"hosts_uncovered": len(unc), "hosts_total": len(hosts), "tenants_pending": [{"name": t.name, "source": t.source} for t in pend],
+                   "cloud_errors": [{"client": names.get(a.client_id), "error": (a.last_error or "")[:120]} for a in db.scalars(select(CloudAccount).where(CloudAccount.enabled.is_(True), CloudAccount.last_error.is_not(None)))]}
         return {
             "filter": {"client_id": client_id, "days": days},
             "hosts_total": len(hosts), "hosts_down": sum(1 for h in hosts if h.available == 2),
@@ -161,33 +164,39 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
 def clients_health(db: Session = Depends(get_db), _=Depends(require("dashboard.view"))):
     """Uma linha por cliente: infraestrutura, backup e endpoints lado a lado (visao unica do NOC)."""
     def build():
+        from ..models import CloudVm
         from ..services import protection_service as P
         from .protection import asset_status
         now = datetime.now(timezone.utc)
         pc = P.cfg(db)
+        clients = list(db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)))
+        svc = services_service.of_clients(db, clients)
         rows = {}
-        for c in db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)):
-            rows[c.id] = {"client_id": c.id, "client": c.trade_name, "hosts": 0, "hosts_down": 0, "infra": 0, "infra_worst": -1, "backup": 0, "backup_worst": -1,
-                          "backup_items": 0, "backup_bad": 0, "endpoint": 0, "endpoint_worst": -1, "endpoint_items": 0, "endpoint_bad": 0, "has_backup": False, "has_ems": False}
-        for c in db.scalars(select(Client).where(Client.status == "ativo")):
+        for c in clients:
+            rows[c.id] = {"client_id": c.id, "client": c.trade_name, "hosts": 0, "hosts_down": 0, "infra": 0, "infra_worst": -1, "backup": 0, "backup_worst": -1, "backup_items": 0, "backup_bad": 0,
+                          "endpoint": 0, "endpoint_worst": -1, "endpoint_items": 0, "endpoint_bad": 0, "cloud": 0, "cloud_worst": -1, "cloud_items": 0, "cloud_off": 0,
+                          "has_backup": svc[c.id]["backup"], "has_ems": svc[c.id]["endpoint"], "has_cloud": svc[c.id]["cloud"], "has_infra": svc[c.id]["infra"]}
             hs = client_hosts(db, c)
             rows[c.id]["hosts"], rows[c.id]["hosts_down"] = len(hs), sum(1 for h in hs if h.available == 2)
+            if svc[c.id]["endpoint"]:
+                eps = P.endpoint_rows(db, c.id)
+                rows[c.id]["endpoint_items"], rows[c.id]["endpoint_bad"] = len(eps), sum(1 for e in eps if not e["ok"])
         for e in db.scalars(select(Event).where(Event.status == "PROBLEM", Event.client_id.in_(list(rows) or [0]))):
             r = rows[e.client_id]
-            key = {"infra": "infra", "backup": "backup", "endpoint": "endpoint"}.get(e.kind, "infra")
+            key = e.kind if e.kind in ("infra", "backup", "endpoint", "cloud") else "infra"
             r[key] += 1
             r[key + "_worst"] = max(r[key + "_worst"], e.severity or 0)
-        tens = {t.id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.client_id.is_not(None)))}
-        for a in db.scalars(select(ExtAsset).where(ExtAsset.active.is_(True), ExtAsset.ignored.is_(False), ExtAsset.ext_tenant_id.in_(list(tens) or [0]))):
-            t = tens[a.ext_tenant_id]
-            r = rows.get(t.client_id)
-            if not r:
-                continue
-            if a.source == "acronis":
-                r["has_backup"], r["backup_items"] = True, r["backup_items"] + 1
+        tens = {t.id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.client_id.is_not(None), ExtTenant.source == "acronis"))}
+        for a in db.scalars(select(ExtAsset).where(ExtAsset.active.is_(True), ExtAsset.ignored.is_(False), ExtAsset.source == "acronis", ExtAsset.ext_tenant_id.in_(list(tens) or [0]))):
+            r = rows.get(tens[a.ext_tenant_id].client_id)
+            if r:
+                r["backup_items"] += 1
                 r["backup_bad"] += asset_status(a, pc, now) in ("falha", "sem backup", "offline")
-            else:
-                r["has_ems"], r["endpoint_items"] = True, r["endpoint_items"] + 1
-                r["endpoint_bad"] += P.ems_status(a, pc["ems_offline_days"], now) in ("sem contato", "antivírus off", "assinaturas", "quarentena", "atenção")
-        return {"items": sorted(rows.values(), key=lambda r: -(max(r["infra_worst"], r["backup_worst"], r["endpoint_worst"]) * 100 + r["infra"] + r["backup"] + r["endpoint"]))}
+        for v in db.scalars(select(CloudVm).where(CloudVm.active.is_(True))):
+            r = rows.get(v.client_id)
+            if r:
+                r["cloud_items"] += 1
+                r["cloud_off"] += v.state != "RUNNING" and not (v.expected_off or v.ignored)
+        worst = lambda r: max(r["infra_worst"], r["backup_worst"], r["endpoint_worst"], r["cloud_worst"])  # noqa: E731
+        return {"items": sorted(rows.values(), key=lambda r: -(worst(r) * 100 + r["infra"] + r["backup"] + r["endpoint"] + r["cloud"]))}
     return _cached("clients-health", 30, build)
