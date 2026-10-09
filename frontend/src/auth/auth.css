@@ -1,5 +1,5 @@
 /* Login / convite / redefinicao: layout simples e corporativo */
-.lg-root{min-height:100vh;display:grid;grid-template-columns:minmax(420px,.9fr) 1.1fr;background:#fff;color:#141a2e}
+.lg-root{min-height:100vh;display:grid;grid-template-columns:1.1fr minmax(440px,.9fr);background:#fff;color:#141a2e}
 .lg-form{display:flex;flex-direction:column;padding:28px 48px 18px;min-width:0}
 .lg-form header img{height:34px;display:block}
 .lg-form main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px 0}
@@ -8,7 +8,7 @@
 .lg-form footer .lg-secure{margin:0 0 4px;color:#5b6684}
 .lg-brandpanel{background:linear-gradient(155deg,#0a2a8f 0%,#071a5a 55%,#050f3a 100%);color:#fff;display:flex;align-items:center;justify-content:center;padding:48px 56px;position:relative;overflow:hidden}
 .lg-brandpanel:before{content:"";position:absolute;inset:0;background:url(/cliente/brand/simbolo_branco.png) no-repeat 112% 118%/520px;opacity:.06;pointer-events:none}
-.lg-bp{position:relative;max-width:560px;width:100%}
+.lg-bp{position:relative;max-width:560px;width:100%;padding-bottom:76px}
 .lg-prod{font:700 15px var(--head);letter-spacing:.3em;color:#fff;display:flex;flex-direction:column;gap:6px;margin-bottom:26px}
 .lg-prod span{font:500 13px var(--body);letter-spacing:.04em;color:#9fb8f2}
 .lg-bp h2{text-wrap:balance;font:700 34px/1.2 var(--head);color:#fff;margin:0 0 22px;letter-spacing:0}
@@ -19,7 +19,7 @@
 .lg-pv-head b{font:700 15px var(--head);color:#071a5a}
 .lg-pv-head span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#16803c;font-weight:600}
 .lg-pv-head span i,.lg-pv-row em i{width:8px;height:8px;border-radius:50%;background:#16a34a;display:inline-block}
-.lg-pv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eef1f8;font-size:14.5px}
+.lg-pv-row:last-child{border-bottom:0}.lg-pv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eef1f8;font-size:14.5px}
 .lg-pv-row svg{color:#1e73f8}.lg-pv-row span{flex:1;font-weight:600;color:#1b2547}
 .lg-pv-row em{font-style:normal;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#16803c;background:#e8f7ee;padding:3px 10px;border-radius:99px}
 .lg-pv-foot{display:flex;align-items:center;gap:7px;padding-top:12px;font-size:12.5px;color:#6b7596}.lg-pv-foot svg{color:#8892b0}.lg-pv-foot span{width:1px;height:12px;background:#d5dbec;margin:0 6px}
@@ -59,3 +59,20 @@
 @media (max-width:1180px){.lg-bp h2{font-size:28px}.lg-brandpanel{padding:40px 36px}}
 @media (max-width:900px){.lg-root{grid-template-columns:1fr}.lg-brandpanel{display:none}.lg-form{padding:24px 22px 20px}.lg-form main{align-items:flex-start;padding-top:36px}}
 @media (max-height:780px){.lg-brandpanel{padding:24px 56px}.lg-bp h2{font-size:28px;margin-bottom:14px}.lg-bp ul{margin-bottom:18px;gap:7px}.lg-prod{margin-bottom:16px}.lg-pv-row{padding:8px 0}}
+
+.lg-preview{position:relative;animation:lg-float 7s ease-in-out infinite}
+.lg-mini{position:absolute;display:flex;align-items:center;gap:11px;background:#fff;color:#141a2e;border-radius:12px;padding:11px 15px 11px 12px;box-shadow:0 14px 34px rgba(0,0,0,.28)}
+.lg-mini i{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#e8f0ff;color:#1e73f8;flex:none}
+.lg-mini b{display:block;font:700 13.5px var(--head);color:#071a5a}.lg-mini span{font-size:12.5px;color:#16803c}
+.lg-mini.m1{right:-22px;bottom:-58px;animation:lg-float 6s ease-in-out -2s infinite}
+.lg-mini.m2{left:34px;bottom:-54px;animation:lg-float 8s ease-in-out -4s infinite}
+.lg-pv-head span i{animation:lg-pulse 2s infinite}
+.lg-bp>*{opacity:0;transform:translateY(12px);animation:lg-in .7s ease forwards}
+.lg-bp>:nth-child(2){animation-delay:.08s}.lg-bp>:nth-child(3){animation-delay:.16s}.lg-bp>:nth-child(4){animation-delay:.26s}.lg-bp>:nth-child(5){animation-delay:.4s}.lg-stack{position:relative}
+.lg-form .lg-card{animation:lg-in .6s ease both}
+@keyframes lg-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes lg-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes lg-pulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%,100%{box-shadow:0 0 0 7px rgba(22,163,74,0)}}
+@media (max-width:1180px){.lg-mini.m1{right:-10px}}
+@media (max-width:900px){.lg-mini{display:none}}
+@media (prefers-reduced-motion:reduce){.lg-preview,.lg-mini,.lg-pv-head span i,.lg-bp>*,.lg-form .lg-card{animation:none!important;opacity:1!important;transform:none!important}}
