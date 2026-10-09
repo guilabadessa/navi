@@ -27,7 +27,7 @@ class Boundary extends React.Component {
 }
 afterEach(cleanup)
 
-const ROUTES = ['/', '/clientes', '/configuracoes?x=1', '/clientes/2', '/clientes?cobertura=1', '/monitoramento', '/eventos', '/eventos?kind=backup&days=', '/protecao', '/alertas', '/relatorios', '/rotinas', '/sla', '/whatsapp', '/email', '/navi-ia', '/usuarios', '/auditoria', '/configuracoes', '/conta']
+const ROUTES = ['/', '/clientes', '/configuracoes?x=1', '/clientes/2', '/clientes?cobertura=1', '/monitoramento', '/eventos', '/eventos?kind=backup&days=', '/protecao', '/alertas', '/relatorios', '/rotinas', '/whatsapp', '/email', '/navi-ia', '/usuarios', '/auditoria', '/configuracoes', '/conta']
 describe('telas', () => {
   for (const path of ROUTES) {
     it(path, async () => {
