@@ -135,7 +135,7 @@ def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dic
         events = [e for e in events if e.status == "RESOLVED"]
     from . import maintenance_service
     k = kpi_service.compute(events, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end,
-                            client.sla_target if client else None, exclude=maintenance_service.exclusions(db, rep.client_id, start, end))
+                            None, exclude=maintenance_service.exclusions(db, rep.client_id, start, end))
     return k, events, hosts, client
 
 
@@ -270,10 +270,8 @@ def highlights(mods, k, backup, endpoints, infra_on) -> list[dict]:
     out = []
     if infra_on:
         s = k["summary"]
-        if s["sla_met"] is False:
-            out.append({"tone": "bad", "text": f"SLA não atingido: disponibilidade de {_n(s['availability'])}% contra {_n(s['sla_target'])}% contratado."})
-        elif s["sla_met"]:
-            out.append({"tone": "ok", "text": f"SLA atingido: disponibilidade de {_n(s['availability'])}% no período."})
+        out.append({"tone": "ok" if s["availability"] >= 99 else "warn" if s["availability"] >= 95 else "bad",
+                    "text": f"Disponibilidade geral dos equipamentos de {_n(s['availability'])}% no período, com {s['incidents']} incidente(s)."})
         if s["open"]:
             out.append({"tone": "warn", "text": f"{s['open']} incidente(s) de infraestrutura ainda em aberto."})
         if s["biggest"]:
@@ -348,7 +346,7 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         if infra_on:
             k, events, hosts, client = build(db, rep, start, end)
         else:  # cliente so de backup/estacoes: nao consulta o Zabbix
-            k, events, hosts = kpi_service.compute([], [], start, end, client.sla_target if client else None), [], []
+            k, events, hosts = kpi_service.compute([], [], start, end, None), [], []
         cname = client.trade_name if client else "Todos os clientes"
         plabel = period_label(start, end)
         prev = None
@@ -363,7 +361,7 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         z = tz()
         backup = backup_section(db, rep.client_id, z, start, end) if "backup" in mods else None
         endpoints = endpoint_section(db, rep.client_id, z, start, end) if "endpoint" in mods else None
-        title = ("Relatório de Disponibilidade e SLA" if mods == ["infra"] else
+        title = ("Relatório de Disponibilidade" if mods == ["infra"] else
                  "Relatório de Backup" if mods == ["backup"] else "Relatório de Estações e Antivírus" if mods == ["endpoint"] else
                  "Relatório de Serviços Gerenciados")
         html = env.get_template("report.html").render(hl=highlights(mods, k, backup, endpoints, infra_on), backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],

@@ -76,7 +76,7 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
           : <div className="banner info"><div className="grow">✅ Todos os serviços monitorados estão operando normalmente.</div></div>}
         {d.maintenance.length > 0 && <div className="banner warn"><Wrench size={20} /><div className="grow"><b>Manutenção programada:</b> {d.maintenance.map(m => `${m.name} — ${fmtDT(m.start)} a ${fmtDT(m.end)}`).join(' · ')}</div></div>}
         <div className="grid g4" style={{ marginBottom: 16 }}>
-          <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.sla_met === false ? 'bad' : 'ok'} desc={`SLA contratado ${fmtPct(d.client.sla_target)} · ${s.sla_met === false ? 'não atingido' : 'atingido'}`} />
+          <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
           <Stat label="Incidentes" value={fmtNum(s.incidents)} tone={s.open ? 'bad' : ''} desc={`${s.resolved} resolvido(s) · ${s.open} em aberto`} />
           <Stat label="Indisponibilidade total" value={fmtDur(s.downtime_s)} desc={`${s.hosts_affected} de ${s.hosts_total} host(s) afetado(s)`} />
           <Stat label="Tempo médio de reparo" value={fmtDur(s.mttr_s)} desc="MTTR" />

@@ -78,7 +78,7 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
     hosts = client_hosts(db, c)
     evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < end,
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start)).order_by(Event.started_at.desc())))
-    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
+    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
     vis = [e for e in evs if (e.severity or 0) >= msev]
     sm = dict(k["summary"])
@@ -138,7 +138,7 @@ def overview(days: int = 30, client_id: int | None = None, min_sev: int | None =
                                       for a in db.scalars(select(_A).where(_A.ext_tenant_id.in_(etids), _A.active.is_(True), _A.ignored.is_(False)).order_by(_A.name))]
     runs = db.scalars(select(ReportRun).where(ReportRun.client_id == c.id, ReportRun.file_path.is_not(None)).order_by(ReportRun.generated_at.desc()).limit(2))
     return {
-        "client": {"name": c.trade_name, "sla_target": c.sla_target},
+        "client": {"name": c.trade_name},
         "summary": sm, "by_day": by_day, "by_severity": by_sev, "min_sev": msev,
         "by_host": [{"host": h["host"], "incidents": h["incidents"], "downtime_s": h["downtime_s"], "availability": h["availability"]} for h in k["by_host"][:15]],
         "hosts": host_rows,

@@ -70,7 +70,6 @@ export const STAFF_TIPS = {
   '/alertas': ['Alertas', 'Regras por cliente, host e severidade; templates de mensagem; escalonamento; manutenção e modo sombra. Use "Testar" antes de ativar.'],
   '/relatorios': ['Relatórios', 'Relatórios executivos e técnicos em PDF, com envio por e-mail. Guardamos os 2 mais recentes por cliente.'],
   '/rotinas': ['Rotinas', 'Relatórios agendados e as tarefas internas do worker, com o último resultado de cada uma.'],
-  '/sla': ['SLA', 'Disponibilidade realizada versus contratada por cliente, descontando as janelas de manutenção.'],
   '/whatsapp': ['WhatsApp', 'Estado da Evolution API e o log das mensagens enviadas.'],
   '/email': ['E-mail', 'Estado do SMTP e o log dos e-mails enviados.'],
   '/navi-ia': ['NAVI IA', 'Pergunte em linguagem natural sobre o ambiente: a NAVI consulta apenas dados que você tem permissão para ver.'],

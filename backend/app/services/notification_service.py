@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
-from . import commlog
+from . import commlog, destinations
 from .email_service import split_addrs
 from .evolution_service import normalize_target
 
@@ -128,13 +128,13 @@ def _template(db: Session, tid: int | None, kind: str) -> MessageTemplate | None
 def _wa_dest(rule: AlertRule | None, client: Client | None) -> str | None:
     if rule and rule.dest_jid:
         return rule.dest_jid
-    return (client.whatsapp_group_jid or client.whatsapp) if client else None
+    return destinations.wa_target(client)[0]
 
 
 def _mail_dest(rule: AlertRule | None, client: Client | None) -> str | None:
     if rule and rule.email_to:
         return rule.email_to
-    return (client.alert_emails or client.report_emails or client.email) if client else None
+    return destinations.alert_emails(client)[0]
 
 
 def _rule_miss(r: AlertRule, ev: Event) -> list[str]:

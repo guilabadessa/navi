@@ -179,33 +179,3 @@ def clients_health(db: Session = Depends(get_db), _=Depends(require("dashboard.v
                 r["endpoint_bad"] += P.ems_status(a, pc["ems_offline_days"], now) in ("sem contato", "antivírus off", "assinaturas", "quarentena", "atenção")
         return {"items": sorted(rows.values(), key=lambda r: -(max(r["infra_worst"], r["backup_worst"], r["endpoint_worst"]) * 100 + r["infra"] + r["backup"] + r["endpoint"]))}
     return _cached("clients-health", 30, build)
-
-
-@router.get("/sla")
-def sla(days: int = 30, db: Session = Depends(get_db), _=Depends(require("sla.view"))):
-    days = max(1, min(days, 90))  # limite = retencao local de eventos
-
-    def build():
-        now = datetime.now(timezone.utc)
-        start = now - timedelta(days=days)
-        out = []
-        clients = list(db.scalars(select(Client).where(Client.status == "ativo").order_by(Client.trade_name)))
-        svc, prot = services_service.of_clients(db, clients), services_service.protection_counts(db)
-        for c in clients:
-            pr = prot.get(c.id, {})
-            base = {"client_id": c.id, "client": c.trade_name, "services": svc[c.id], "backup_items": pr.get("backup_items", 0), "backup_bad": pr.get("backup_bad", 0),
-                    "endpoint_items": pr.get("endpoint_items", 0), "endpoint_bad": pr.get("endpoint_bad", 0)}
-            if not svc[c.id]["infra"]:  # sem hosts: SLA de disponibilidade nao se aplica
-                out.append({**base, "hosts": 0, "sla_target": c.sla_target, "availability": None, "incidents": 0, "downtime_s": 0, "mttr_s": None, "mtbf_s": None, "met": None})
-                continue
-            hosts = client_hosts(db, c)
-            evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < now,
-                                                      (Event.recovered_at.is_(None)) | (Event.recovered_at > start))))
-            k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, now, c.sla_target,
-                                    exclude=maintenance_service.exclusions(db, c.id, start, now))
-            s = k["summary"]
-            out.append({**base, "hosts": len(hosts), "sla_target": c.sla_target,
-                        "availability": s["availability"], "incidents": s["incidents"], "downtime_s": s["downtime_s"],
-                        "mttr_s": s["mttr_s"], "mtbf_s": s["mtbf_s"], "met": s["sla_met"]})
-        return {"days": days, "items": sorted(out, key=lambda x: (x["met"] is not False, x["availability"] if x["availability"] is not None else 101))}
-    return _cached(f"sla{days}", 60, build)

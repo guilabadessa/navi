@@ -18,7 +18,7 @@ export default function Coverage({ clients, onChanged, open }) {
   }
   return <Card title={`Cobertura — ${data.groups.length} host group(s) sem cliente`} style={{ marginBottom: 16, borderColor: '#f3d28a' }}
     actions={<Pill tone="warn">{data.hosts_uncovered}/{data.hosts_total} hosts sem cliente</Pill>} pad={false}>
-    <div className="sub" style={{ padding: '10px 20px 0' }}>Hosts sem cliente não geram alerta, SLA nem relatório. Marque os grupos, escolha o cliente e associe.
+    <div className="sub" style={{ padding: '10px 20px 0' }}>Hosts sem cliente não geram alerta nem relatório. Marque os grupos, escolha o cliente e associe.
       {' '}{data.events_without_client_30d} evento(s) dos últimos 30 dias estão sem cliente.</div>
     <Table rows={data.groups} empty="Tudo associado. 🎉" cols={[
       { h: '', r: r => <input type="checkbox" style={{ width: 'auto' }} checked={!!sel[r.groupid]} onChange={e => setSel({ ...sel, [r.groupid]: e.target.checked })} />, w: 40 },

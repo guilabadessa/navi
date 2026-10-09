@@ -90,7 +90,7 @@ export default function Dashboard() {
 
     {d.stale_jobs.length > 0 && <JobAlerts jobs={d.stale_jobs} reload={reload} canAck={can(me, 'routines.edit')} />}
     {d.shadow && <div className="banner info"><EyeOff size={20} /><div className="grow"><b>Modo sombra ativo:</b> os alertas são registrados, mas <u>não são enviados</u>. Desative em Alertas → Migração.</div><button className="btn sm" onClick={() => nav('/alertas')}>Abrir</button></div>}
-    {!cl && d.coverage?.hosts_uncovered > 0 && <div className="banner warn"><Building2 size={20} /><div className="grow"><b>{d.coverage.hosts_uncovered} de {d.coverage.hosts_total} hosts sem cliente associado</b> — não geram alerta, SLA nem relatório.</div><button className="btn sm" onClick={() => nav('/clientes?cobertura=1')}>Associar agora</button></div>}
+    {!cl && d.coverage?.hosts_uncovered > 0 && <div className="banner warn"><Building2 size={20} /><div className="grow"><b>{d.coverage.hosts_uncovered} de {d.coverage.hosts_total} hosts sem cliente associado</b> — não geram alerta nem relatório.</div><button className="btn sm" onClick={() => nav('/clientes?cobertura=1')}>Associar agora</button></div>}
     {d.failed_dispatches.length > 0 && <FailedSends items={d.failed_dispatches} reload={reload} canAck={can(me, 'alerts.edit')} />}
 
     <div className="grid g4" style={{ marginBottom: 16 }}>
@@ -101,7 +101,7 @@ export default function Dashboard() {
         <Stat label="Serviços do cliente" value={[d.services.backup && 'Backup', d.services.endpoint && 'Estações'].filter(Boolean).join(' + ') || 'Nenhum'} desc="Sem hosts de infraestrutura associados" />
       </> : <>
       <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label="Hosts monitorados" value={fmtNum(d.hosts_total)} desc={`${d.hosts_down} indisponível(is)`} tone={d.hosts_down ? 'warn' : ''} /></div>
-      <div className="cardlink" onClick={() => nav('/sla')}><Stat label={`Disponibilidade (${days}d)`} value={fmtPct(d.availability_30d, 3)} tone="ok" desc={`MTTR ${fmtDur(d.mttr_s)}`} /></div>
+      <div className="cardlink" onClick={() => nav('/monitoramento')}><Stat label={`Disponibilidade (${days}d)`} value={fmtPct(d.availability_30d, 3)} tone="ok" desc={`MTTR ${fmtDur(d.mttr_s)}`} /></div>
       <div className="cardlink" onClick={() => evs('&status=PROBLEM&q=link')}><Stat label="Links indisponíveis" value={fmtNum(d.links_down)} tone={d.links_down ? 'bad' : ''} desc="alertas de link/WAN em aberto" /></div>
       </>}
     </div>

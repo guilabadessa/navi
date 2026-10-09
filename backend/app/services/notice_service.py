@@ -83,14 +83,13 @@ def monthly_ctx(db: Session, c: Client, u: User | None, year: int, month: int) -
     evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == c.id, Event.started_at < end,
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start))))
     hosts = client_hosts(db, c)
-    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
+    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
     msev = u.portal_min_sev if u else 4
     inc = [e for e in evs if (e.severity or 0) >= msev and start <= e.started_at < end]
     sm = k["summary"]
-    ok = sm.get("sla_met")
     paras = [f"Segue o resumo de {MESES[month]} de {year} do ambiente de {c.trade_name}.",
-             f"• Disponibilidade: {sm.get('availability'):.3f}% (SLA contratado {c.sla_target:g}%) — {'meta atingida' if ok else 'abaixo da meta' if ok is False else 'sem dados suficientes'}" if sm.get("availability") is not None else "• Disponibilidade: sem dados no período",
+             f"• Disponibilidade geral dos equipamentos: {sm.get('availability'):.3f}%".replace(".", ",") if sm.get("availability") is not None else "• Disponibilidade: sem dados suficientes",
              f"• Incidentes de severidade alta ou superior: {len(inc)}"]
     if u is not None and "portal.finance" in (u.extra_perms or []) or u is None:
         openl = list(db.scalars(select(FinDoc).where(FinDoc.client_id == c.id, FinDoc.kind == "titulo", FinDoc.status.in_(["aberto", "vencido"]))))

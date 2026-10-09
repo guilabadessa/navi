@@ -115,8 +115,8 @@ def sig_get(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
 @router.post("/smtp/preview")
 def smtp_preview(body: PreviewIn, db: Session = Depends(get_db), _=Depends(require("settings.view"))):
     ctxs = {
-        "report": mailer.report_ctx("Cliente Exemplo", "01/09/2026 a 30/09/2026", "SLA Mensal", "SLA_Mensal.pdf",
-                                    {"availability": 99.742, "incidents": 7, "sla_met": True}),
+        "report": mailer.report_ctx("Cliente Exemplo", "01/09/2026 a 30/09/2026", "Relatório Mensal", "Relatorio_Mensal.pdf",
+                                    {"availability": 99.742, "incidents": 7, "hosts_total": 12}),
         "notice": mailer.notice_ctx("Aviso de manutenção programada", ["Informamos que será realizada uma manutenção programada no ambiente, sem previsão de indisponibilidade."],
                                     highlight="Sábado, 10/10 · 22:00 às 23:30", greeting="Prezados,"),
         "new_user": mailer.new_user_ctx("Maria Souza", "maria.souza@orcati.com.br", "Temp-4821-xQ", "Analista NOC"),

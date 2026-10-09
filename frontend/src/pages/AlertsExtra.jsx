@@ -23,7 +23,7 @@ export function SeverityTab({ edit }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/severity-rules'), []); const [ed, setEd] = useState(null)
   const reapply = async () => { try { const r = await post('/severity-rules/reapply'); toast(`${r.changed} evento(s) reclassificado(s)`) } catch (e) { toast(e.message, true) } }
   return <>
-    <div className="banner info"><div className="grow">Ajuste a severidade <b>na NAVI</b> (o Zabbix não é alterado). Ex.: triggers de SD-WAN chegam como “Não classificado” e podem ser tratadas como <b>Alta</b>, passando a alertar, entrar no SLA e nos relatórios.</div>
+    <div className="banner info"><div className="grow">Ajuste a severidade <b>na NAVI</b> (o Zabbix não é alterado). Ex.: triggers de SD-WAN chegam como “Não classificado” e podem ser tratadas como <b>Alta</b>, passando a alertar, entrar nos relatórios.</div>
       {edit && <><button className="btn sm" onClick={reapply} title="Aplica as regras aos eventos já gravados"><RefreshCw />Reaplicar nos eventos existentes</button><button className="btn primary sm" onClick={() => setEd({})}><Plus />Nova</button></>}</div>
     <Card pad={false}>{data ? <Table rows={data} empty="Nenhuma reclassificação cadastrada." cols={[
       { h: 'Regra', r: r => <b>{r.name}</b> }, { h: 'Host', r: r => r.host_pattern || '*' }, { h: 'Trigger', r: r => r.trigger_pattern || '*' },
@@ -73,7 +73,7 @@ function WindowForm({ w, clients, onClose, onSaved }) {
       : <><div className="row"><div><label className="f">DIAS DA SEMANA</label><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{DAYS.map((n, i) => <button key={n} type="button" className={'btn sm ' + (x.weekdays.includes(i) ? 'primary' : '')} onClick={() => tg(i)}>{n}</button>)}</div></div></div>
         <div className="row r2"><Field label="HORÁRIO DE INÍCIO"><input type="time" value={x.start_time} onChange={e => setX({ ...x, start_time: e.target.value })} /></Field>
           <Field label="DURAÇÃO (MINUTOS)"><input type="number" min="1" max="1440" value={x.duration_min} onChange={e => setX({ ...x, duration_min: e.target.value })} /></Field></div></>}
-    <p className="hint">Durante a janela os alertas do cliente são suprimidos e o período é <b>descontado do SLA</b> e dos relatórios.</p>
+    <p className="hint">Durante a janela os alertas do cliente são suprimidos e o período é <b>descontado da disponibilidade</b> nos relatórios.</p>
     <Check label="Janela ativa" checked={x.enabled} onChange={v => setX({ ...x, enabled: v })} /></Modal>
 }
 
@@ -81,7 +81,7 @@ export function MaintenanceTab({ edit }) {
   const { data, reload } = useLoad(() => get('/maintenance'), [], 60000); const clients = useLoad(() => get('/clients'), []); const [ed, setEd] = useState(null)
   const fmt = (v) => v ? new Date(v).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'
   return <>
-    <div className="banner info"><div className="grow">Agende manutenções combinadas com o cliente (pontuais ou toda semana). Os alertas ficam em silêncio e o tempo é descontado do SLA. Para um aviso imediato, use o botão de manutenção de 2h no dashboard.</div>
+    <div className="banner info"><div className="grow">Agende manutenções combinadas com o cliente (pontuais ou toda semana). Os alertas ficam em silêncio e o tempo é descontado da disponibilidade. Para um aviso imediato, use o botão de manutenção de 2h no dashboard.</div>
       {edit && <button className="btn primary sm" onClick={() => setEd({})}><Plus />Nova janela</button>}</div>
     <Card pad={false}>{data ? <Table rows={data} empty="Nenhuma janela cadastrada." cols={[
       { h: 'Janela', r: r => <b>{r.name}</b> }, { h: 'Cliente', r: r => r.client_name || 'Todos' },

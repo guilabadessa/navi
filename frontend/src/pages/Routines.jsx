@@ -15,7 +15,7 @@ function Form({ s, reports, clients, onClose, onSaved }) {
   const save = async () => { try { const b = { ...x, wa_dest: x.wa_dest || null, email_to: x.email_to || null, email_cc: x.email_cc || null, email_bcc: x.email_bcc || null }
     x.id ? await put('/routines/schedules/' + x.id, b) : await post('/routines/schedules', b); toast('Rotina salva'); onSaved() } catch (e) { toast(e.message, true) } }
   return <Modal title={x.id ? 'Editar rotina' : 'Nova rotina de relatório'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
-    <div className="row r2"><Field label="NOME *"><input value={x.name} onChange={set('name')} placeholder="SLA Mensal — Cliente X" /></Field>
+    <div className="row r2"><Field label="NOME *"><input value={x.name} onChange={set('name')} placeholder="Relatório Mensal — Cliente X" /></Field>
       <Field label="RELATÓRIO"><select value={x.report_id || ''} onChange={n('report_id')}>{reports.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field></div>
     <div className="row r4"><Field label="FREQUÊNCIA"><select value={x.frequency} onChange={set('frequency')}>{Object.entries(FREQ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
       <Field label="HORÁRIO"><input type="time" value={x.run_time} onChange={set('run_time')} /></Field>

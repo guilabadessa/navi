@@ -16,20 +16,21 @@ def test_whatsapp_prefere_grupo_depois_celular():
     assert D.wa_target(_c()) == (None, None) and D.wa_target(None) == (None, None)
 
 
-def test_email_de_alerta_cai_para_relatorio_e_depois_principal():
-    assert D.alert_emails(_c(alert_emails="a@x", report_emails="r@x", email="p@x")) == ("a@x", "e-mails de alerta")
-    assert D.alert_emails(_c(report_emails="r@x", email="p@x"))[0] == "r@x"
-    assert D.alert_emails(_c(email="p@x"))[0] == "p@x" and D.alert_emails(_c()) == (None, None)
+def test_email_de_destino_vem_da_aba_alertas_e_nunca_do_email_principal():
+    assert D.alert_emails(_c(alert_emails="a@x", report_emails="r@x", email="p@x")) == ("a@x", "aba Alertas")
+    assert D.alert_emails(_c(report_emails="r@x", email="p@x"))[0] == "r@x"  # cadastro antigo
+    assert D.alert_emails(_c(email="p@x")) == (None, None)  # e-mail da aba Dados e so contato
 
 
-def test_relatorio_usa_somente_emails_de_relatorio():
-    assert D.report_emails(_c(alert_emails="a@x", email="p@x")) is None
-    assert D.report_emails(_c(report_emails="r@x")) == "r@x"
+def test_relatorio_prefere_email_exclusivo_e_cai_para_alertas():
+    assert D.report_emails(_c(alert_emails="a@x", email="p@x")) == "a@x"
+    assert D.report_emails(_c(alert_emails="a@x", report_emails="r@x")) == "r@x"
+    assert D.report_emails(_c(email="p@x")) is None
 
 
 def test_rotina_mostra_destino_real_e_avisa_quando_falta():
     s = NS(wa_dest="client", email_to="client")
-    ok = _resolve(s, _c(whatsapp_group_jid="1@g.us", report_emails="r@x"))
+    ok = _resolve(s, _c(whatsapp_group_jid="1@g.us", alert_emails="r@x"))
     assert ok["wa"] == "1@g.us" and ok["email"] == "r@x" and not ok["warnings"]
     vazio = _resolve(s, _c())
     assert len(vazio["warnings"]) == 2

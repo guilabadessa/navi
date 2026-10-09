@@ -68,7 +68,7 @@ def destinations(rid: int, db: Session = Depends(get_db), _=Depends(require("rep
     c = db.get(Client, run.client_id) if run.client_id else None
     wa = rep.wa_dest if rep and rep.wa_dest and rep.wa_dest != "client" else ((c.whatsapp_group_jid or c.whatsapp) if c else None)
     wa_kind = "grupo" if (c and c.whatsapp_group_jid and wa == c.whatsapp_group_jid) else ("celular" if wa else None)
-    mail = rep.email_dest if rep and rep.email_dest and rep.email_dest != "client" else (c.report_emails if c else None)
+    mail = rep.email_dest if rep and rep.email_dest and rep.email_dest != "client" else dest_svc.report_emails(c)
     return {"wa": wa or "", "wa_kind": wa_kind, "email": mail or "", "client": c.trade_name if c else None,
             "wa_missing": not wa, "email_missing": not mail}
 

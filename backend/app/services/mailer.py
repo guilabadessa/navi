@@ -73,7 +73,7 @@ def signature(db: Session) -> dict | None:
 
 def _plain(kind: str, ctx: dict, sig: dict | None) -> str:
     if kind == "report":
-        t = (f"Prezados,\n\nSegue em anexo o relatório de disponibilidade e SLA de {ctx['client_name']}, "
+        t = (f"Prezados,\n\nSegue em anexo o relatório de disponibilidade de {ctx['client_name']}, "
              f"referente ao período {ctx['period']}.\n\nAtenciosamente,")
     elif kind == "alert":
         t = ("[TESTE] " if ctx.get("test") else "") + ctx["title"] + "\n\n" + "\n".join(f"{a}: {b}" for a, b in ctx["rows"])
@@ -132,8 +132,8 @@ def send(db: Session, kind: str, to: list[str] | str, subject: str, ctx: dict, c
 def report_ctx(client_name: str, period: str, report_name: str, filename: str, kpis: dict | None) -> dict:
     k = None
     if kpis:
-        k = {"availability": f"{kpis['availability']:.3f}%".replace(".", ","), "incidents": kpis["incidents"], "sla_met": kpis.get("sla_met")}
-    return {"title": "Relatório de Disponibilidade e SLA" if kpis else "Relatório de Serviços Gerenciados", "subtitle": f"{client_name} · {period}", "tag": "Relatório · NOC Orca TI",
+        k = {"availability": f"{kpis['availability']:.3f}%".replace(".", ","), "incidents": kpis["incidents"], "hosts": kpis.get("hosts_total", "—")}
+    return {"title": "Relatório de Disponibilidade" if kpis else "Relatório de Serviços Gerenciados", "subtitle": f"{client_name} · {period}", "tag": "Relatório · NOC Orca TI",
             "preheader": f"Relatório de {client_name} — {period}", "client_name": client_name, "period": period,
             "report_name": report_name, "filename": filename, "kpis": k}
 

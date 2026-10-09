@@ -282,7 +282,7 @@ def dashboard(cid: int, days: int = 30, db: Session = Depends(get_db), _=Depends
     evs = list(db.scalars(select(Event).where(Event.kind == "infra", Event.client_id == cid, Event.started_at < end,
                                               (Event.recovered_at.is_(None)) | (Event.recovered_at > start))
                           .order_by(Event.started_at.desc())))
-    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, c.sla_target,
+    k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, cid, start, end))
     active = [to_dict(e) for e in evs if e.status == "PROBLEM"]
     links = [h for h in hosts if any(w in (h.name or "").lower() for w in ("link", "wan", "vpn", "fortigate", "fw"))]

@@ -6,7 +6,7 @@ import { useAuth, can } from '../App'
 import { ResolvedLine } from './Dest'
 import { maskCNPJ, maskTarget, cnpjHint } from '../mask'
 
-const MODS = [['infra', 'Infraestrutura (disponibilidade e SLA)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Estações e antivírus (FortiClient EMS)']]
+const MODS = [['infra', 'Infraestrutura (disponibilidade por equipamento)'], ['backup', 'Backup (Acronis)'], ['endpoint', 'Estações e antivírus (FortiClient EMS)']]
 const iso = (d) => d ? new Date(d).toISOString() : null
 const loc = (v) => v ? new Date(new Date(v).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
 
@@ -21,7 +21,7 @@ function ReportForm({ r, clients, onClose, onSaved }) {
   const onClient = e => { const id = e.target.value ? Number(e.target.value) : null; const c = clients.find(c => c.id === id); setX({ ...x, client_id: id, cnpj: c ? c.cnpj || '' : x.cnpj, host_ids: [] }) }
   return <Modal wide title={x.id ? 'Editar relatório' : 'Novo relatório'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Salvar</button></>}>
     <Tabs value={tab} onChange={setTab} tabs={[['g', 'Geral'], ['f', 'Hosts e filtros'], ['o', 'Conteúdo'], ['d', 'Destinatários']]} />
-    {tab === 'g' && <><div className="row r2"><Field label="NOME DO RELATÓRIO *"><input value={x.name} onChange={set('name')} placeholder="SLA Mensal — Hotel X" /></Field>
+    {tab === 'g' && <><div className="row r2"><Field label="NOME DO RELATÓRIO *"><input value={x.name} onChange={set('name')} placeholder="Relatório Mensal — Hotel X" /></Field>
       <Field label="CLIENTE"><select value={x.client_id || ''} onChange={onClient}><option value="">— selecione —</option>{clients.map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field></div>
       {x.client_id && (() => { const svc = (clients.find(c => c.id === x.client_id) || {}).services || {}; const have = MODS.filter(([k]) => svc[k]); const sel = x.modules || have.map(([k]) => k)
         return <Field label="O QUE INCLUIR NO RELATÓRIO" hint={have.length ? 'Só aparecem os serviços que este cliente possui. Sem alterar, o relatório inclui todos.' : 'Este cliente ainda não tem hosts, backup (Acronis) nem estações (EMS) associados.'}>
@@ -92,7 +92,7 @@ export default function Reports() {
     try { await del('/reports/runs/' + run.id); toast('PDF excluído'); runs.reload() } catch (e) { toast(e.message, true) }
   }
   return <>
-    <PageHead title="Relatórios" desc="Relatórios executivos e técnicos de disponibilidade e SLA em PDF · dados consultados ao vivo no Zabbix · guardamos os 2 PDFs mais recentes por cliente">
+    <PageHead title="Relatórios" desc="Relatórios executivos e técnicos de disponibilidade, backup e endpoints em PDF · dados consultados ao vivo no Zabbix · guardamos os 2 PDFs mais recentes por cliente">
       {edit && <button className="btn primary" onClick={() => setEd({})}><Plus />Novo relatório</button>}</PageHead>
     <Tabs value={tab} onChange={setTab} tabs={[['def', 'Definições'], ['hist', 'Histórico de PDFs']]} />
     {tab === 'def' && <Card pad={false}>{reps.data ? <Table rows={reps.data} empty="Nenhum relatório criado ainda." cols={[

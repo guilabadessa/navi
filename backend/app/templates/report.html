@@ -126,7 +126,7 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
   <td><b>Período</b><span>{{ period_label }}</span></td>
   <td><b>CNPJ</b><span>{{ cnpj or '—' }}</span></td>
   <td><b>Serviços</b><span>{{ mods|join(' · ') }}</span></td>
-  <td><b>{{ 'SLA contratado' if infra_on else 'Itens monitorados' }}</b><span>{% if infra_on %}{{ pct(s.sla_target) if s.sla_target is not none else '—' }}{% else %}{{ ((backup.total if backup else 0) + (endpoints.total if endpoints else 0)) }}{% endif %}</span></td>
+  <td><b>{{ 'Equipamentos' if infra_on else 'Itens monitorados' }}</b><span>{% if infra_on %}{{ s.hosts_total }}{% else %}{{ ((backup.total if backup else 0) + (endpoints.total if endpoints else 0)) }}{% endif %}</span></td>
 </tr></table>
 
 {% if kpis_on and ncards %}
@@ -134,9 +134,9 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <table class="cards"><tr>
 {% if infra_on %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#1e73f8">
   <div class="l">Infraestrutura</div>
-  <div class="v">{{ pct(s.availability) }}</div><div class="d">disponibilidade{% if s.sla_target is not none %} · meta {{ pct(s.sla_target) }}{% endif %}</div>
-  <table class="trk"><tr><td class="f" style="width:{{ [s.availability, 100]|min }}%;background:{{ '#16a34a' if s.sla_met is not false else '#bd1723' }}"></td><td class="r"></td></tr></table>
-  {% if s.sla_met is none %}<span class="pill na">SLA NÃO DEFINIDO</span>{% elif s.sla_met %}<span class="pill ok">SLA ATINGIDO</span>{% else %}<span class="pill bad">SLA NÃO ATINGIDO</span>{% endif %}
+  <div class="v">{{ pct(s.availability) }}</div><div class="d">disponibilidade geral dos equipamentos</div>
+  <table class="trk"><tr><td class="f" style="width:{{ [s.availability, 100]|min }}%;background:{{ '#16a34a' if s.availability >= 99 else ('#d97706' if s.availability >= 95 else '#bd1723') }}"></td><td class="r"></td></tr></table>
+  {% if s.open %}<span class="pill bad">{{ s.open }} EM ABERTO</span>{% elif s.incidents %}<span class="pill warn">{{ s.incidents }} INCIDENTE(S) RESOLVIDO(S)</span>{% else %}<span class="pill ok">SEM INCIDENTES</span>{% endif %}
   <div class="m"><b>{{ s.incidents }}</b> incidente(s) · <b>{{ dur2(s.downtime_s) }}</b> fora</div>
   <div class="m"><b>{{ s.hosts_affected }}</b> de {{ s.hosts_total }} hosts afetados</div></div></td>{% endif %}
 {% if backup %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#0e9488">

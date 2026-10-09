@@ -12,7 +12,6 @@ import Events from './pages/Events'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import Routines from './pages/Routines'
-import SLA from './pages/SLA'
 import { WhatsApp, Email } from './pages/Channels'
 import NaviIA from './pages/NaviIA'
 import { UsersPage, AuditPage } from './pages/Admin'
@@ -40,7 +39,6 @@ const NAV = [
   ['/alertas', 'Alertas', Bell, 'alerts.view'],
   ['/relatorios', 'Relatórios', FileText, 'reports.view'],
   ['/rotinas', 'Rotinas', Timer, 'routines.view'],
-  ['/sla', 'SLA', BarChart3, 'sla.view'],
   ['/whatsapp', 'WhatsApp', MessageCircle, 'whatsapp.view'],
   ['/email', 'E-mail', Mail, 'email.view'],
   ['/navi-ia', 'NAVI IA', Sparkles, 'navi.use'],
@@ -93,7 +91,6 @@ function Shell({ me, onLogout, reloadMe }) {
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/rotinas" element={<Routines />} />
-          <Route path="/sla" element={<SLA />} />
           <Route path="/whatsapp" element={<WhatsApp />} />
           <Route path="/email" element={<Email />} />
           <Route path="/navi-ia" element={<NaviIA />} />

@@ -23,7 +23,7 @@ export async function deleteClient(c, toast) {
 }
 
 const blank = { trade_name: '', legal_name: '', cnpj: '', state_registration: '', address: '', city: '', state: '', contact_name: '', email: '', phone: '',
-  whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', sla_target: 99.5, service_hours: '', status: 'ativo', wa_enabled: false,
+  whatsapp: '', whatsapp_group_jid: '', report_emails: '', notes: '', service_hours: '', status: 'ativo', wa_enabled: false,
   wa_min_severity: 3, wa_delay_s: 0, wa_send_recovery: true, wa_hours: '', group_ids: [], host_ids: [], contacts: [] }
 
 function ClientForm({ initial, onClose, onSaved }) {
@@ -46,7 +46,7 @@ function ClientForm({ initial, onClose, onSaved }) {
     if (busy) return
     setBusy(true)
     try {
-      const body = { ...c, sla_target: Number(c.sla_target), wa_delay_s: Number(c.wa_delay_s), wa_min_severity: Number(c.wa_min_severity),
+      const body = { ...c, wa_delay_s: Number(c.wa_delay_s), wa_min_severity: Number(c.wa_min_severity),
         maintenance_until: c.maintenance_until || null }
       const r = c.id ? await put('/clients/' + c.id, body) : await post('/clients', body)
       toast('Cliente salvo'); onSaved(r)
@@ -55,13 +55,13 @@ function ClientForm({ initial, onClose, onSaved }) {
   const setContact = (i, k, v) => { const l = [...c.contacts]; l[i] = { ...l[i], [k]: v }; setC({ ...c, contacts: l }) }
   return <Modal wide title={c.id ? 'Editar cliente' : 'Novo cliente'} onClose={onClose}
     footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios / SLA'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['dados', 'Dados'], ['groups', 'Host Groups'], ['wa', 'Alertas'], ['rel', 'Relatórios'], ['contatos', 'Contatos'], ...(c.id ? [['portal', 'Acesso ao portal']] : [])]} />
     {tab === 'dados' && <>
       <div className="row r2"><Field label="NOME FANTASIA *"><input value={c.trade_name} onChange={set('trade_name')} /></Field><Field label="RAZÃO SOCIAL"><input value={c.legal_name || ''} onChange={set('legal_name')} /></Field></div>
       <div className="row r3"><Field label="CNPJ" hint={look || cnpjHint(c.cnpj) || 'Ao digitar um CNPJ válido, o endereço e a razão social são preenchidos.'}><div style={{ display: 'flex', gap: 6 }}><input inputMode="numeric" value={c.cnpj || ''} onChange={e => onCnpj(e.target.value)} placeholder="00.000.000/0000-00" /><button type="button" className="btn sm" title="Consultar e sobrescrever os dados com os da Receita" disabled={!cnpjOk(c.cnpj)} onClick={() => confirm('Substituir razão social, endereço, cidade, UF, telefone e e-mail pelos dados da Receita?') && lookup(c.cnpj, true)}>Consultar</button></div></Field><Field label="INSCRIÇÃO ESTADUAL"><input value={c.state_registration || ''} onChange={set('state_registration')} /></Field>
         <Field label="STATUS"><select value={c.status} onChange={set('status')}><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></Field></div>
       <div className="row r3"><Field label="ENDEREÇO"><input value={c.address || ''} onChange={set('address')} /></Field><Field label="CIDADE"><input value={c.city || ''} onChange={set('city')} /></Field><Field label="UF"><input maxLength={2} value={c.state || ''} onChange={e => setC({ ...c, state: e.target.value.toUpperCase() })} /></Field></div>
-      <div className="row r3"><Field label="CONTATO"><input value={c.contact_name || ''} onChange={set('contact_name')} /></Field><Field label="E-MAIL"><input value={c.email || ''} onChange={set('email')} /></Field><Field label="TELEFONE"><input inputMode="tel" value={c.phone || ''} onChange={e => setC({ ...c, phone: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
+      <div className="row r3"><Field label="CONTATO"><input value={c.contact_name || ''} onChange={set('contact_name')} /></Field><Field label="E-MAIL DE CONTATO" hint="Só cadastro: não recebe alertas, relatórios nem avisos (veja a aba Alertas)."><input value={c.email || ''} onChange={set('email')} /></Field><Field label="TELEFONE"><input inputMode="tel" value={c.phone || ''} onChange={e => setC({ ...c, phone: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
       <Field label="OBSERVAÇÕES"><textarea value={c.notes || ''} onChange={set('notes')} /></Field></>}
     {tab === 'groups' && <><p className="sub" style={{ marginBottom: 12 }}>Associe um ou mais Host Groups do Zabbix a este cliente. Eventos e relatórios dos hosts desses grupos passam a pertencer ao cliente.</p>
       {groups ? <MultiPick value={c.group_ids} onChange={v => setC({ ...c, group_ids: v })} placeholder="Buscar host group…"
@@ -70,7 +70,7 @@ function ClientForm({ initial, onClose, onSaved }) {
       <DestBox c={c} only={['wa', 'alert']} title="Destinos dos alertas deste cliente" />
       <div className="row" style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}><Check label="Enviar alertas deste cliente por WhatsApp" checked={c.wa_enabled} onChange={v => setC({ ...c, wa_enabled: v })} />
         <Check label="Enviar alertas deste cliente por e-mail" checked={c.mail_enabled} onChange={v => setC({ ...c, mail_enabled: v })} /></div>
-      <div className="row"><Field label="E-MAILS DE ALERTA" hint="Separe por vírgula. Vazio = usa os e-mails de relatório ou o e-mail do cliente."><input value={c.alert_emails || ''} onChange={set('alert_emails')} placeholder="noc@cliente.com.br, ti@cliente.com.br" disabled={!c.mail_enabled} /></Field></div>
+      <div className="row"><Field label="E-MAILS DE DESTINO (alertas, relatórios e rotinas)" hint="Separe por vírgula. É ESTE o endereço que a NAVI usa para enviar alertas, relatórios agendados e avisos ao cliente. O e-mail da aba Dados é apenas contato e nunca recebe envios."><input value={c.alert_emails || ''} onChange={set('alert_emails')} placeholder="noc@cliente.com.br, ti@cliente.com.br" /></Field></div>
       <div className="row r2"><Field label="GRUPO WHATSAPP (JID) — alertas e relatórios" hint="Formato 1203630…@g.us. Sem grupo, usa o celular ao lado. Usado por alertas, relatórios e rotinas."><input value={c.whatsapp_group_jid || ''} onChange={set('whatsapp_group_jid')} placeholder="120363406164560822@g.us" /></Field>
         <Field label="WHATSAPP (CELULAR) — alertas e relatórios"><input inputMode="tel" value={c.whatsapp || ''} onChange={e => setC({ ...c, whatsapp: maskPhone(e.target.value) })} placeholder="(00) 00000-0000" /></Field></div>
       <div className="row r4"><Field label="SEVERIDADE MÍNIMA (WhatsApp e e-mail)"><select value={c.wa_min_severity} onChange={set('wa_min_severity')}>{SEV.map((s, i) => <option key={i} value={i}>{s}</option>)}</select></Field>
@@ -82,9 +82,8 @@ function ClientForm({ initial, onClose, onSaved }) {
         <Field label="TEMPLATE DE RECUPERAÇÃO"><select value={c.wa_recovery_template_id || ''} onChange={e => setC({ ...c, wa_recovery_template_id: e.target.value ? Number(e.target.value) : null })}><option value="">Padrão</option>{(tpls || []).filter(t => t.kind === 'recovery').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field></div></>}
     {tab === 'rel' && <>
       <DestBox c={c} only={['wa', 'report']} title="Destinos dos relatórios deste cliente" />
-      <div className="row r3"><Field label="SLA CONTRATADO (%)"><input type="number" step="0.01" min="0" max="100" value={c.sla_target} onChange={set('sla_target')} /></Field>
-        <Field label="HORÁRIO DE ATENDIMENTO"><input value={c.service_hours || ''} onChange={set('service_hours')} placeholder="24x7 / Seg-Sex 8h-18h" /></Field></div>
-      <Field label="E-MAILS DE DESTINO DOS RELATÓRIOS" hint="Separe por vírgula. É para estes endereços que as rotinas e os relatórios enviam quando o destino é “client”. O WhatsApp usa o grupo/celular da aba Alertas."><textarea value={c.report_emails || ''} onChange={set('report_emails')} /></Field>
+      <div className="row"><Field label="HORÁRIO DE ATENDIMENTO"><input value={c.service_hours || ''} onChange={set('service_hours')} placeholder="24x7 / Seg-Sex 8h-18h" /></Field></div>
+      <Field label="E-MAILS EXCLUSIVOS PARA RELATÓRIOS (opcional)" hint="Vazio = os relatórios e rotinas usam os e-mails da aba Alertas. Preencha só se os relatórios devem ir para outras pessoas."><textarea value={c.report_emails || ''} onChange={set('report_emails')} /></Field>
       {c.id && <div style={{ marginTop: 14 }}><label className="f">LOGO DO CLIENTE</label><input type="file" accept="image/*" onChange={async e => { try { await upload(`/clients/${c.id}/logo`, e.target.files[0]); toast('Logo enviada') } catch (x) { toast(x.message, true) } }} /></div>}</>}
     {tab === 'portal' && c.id && <PortalAccess client={c} />}
     {tab === 'contatos' && <>
@@ -106,7 +105,7 @@ export function Clients() {
     <div className="bar"><div className="grow"><input placeholder="Buscar por nome ou CNPJ…" value={q} onChange={e => setQ(e.target.value)} /></div></div>
     <Card pad={false}>{data ? <Table rows={data} onRow={r => nav('/clientes/' + r.id)} cols={[
       { h: 'Cliente', r: r => <><b>{r.trade_name}</b><div className="sub">{r.legal_name}</div></> }, { h: 'Serviços', r: r => <ServiceChips s={r.services} /> }, { h: 'CNPJ', k: 'cnpj' }, { h: 'Cidade', r: r => [r.city, r.state].filter(Boolean).join('/') },
-      { h: 'Host Groups', k: 'group_count' }, { h: 'SLA', r: r => fmtPct(r.sla_target) },
+      { h: 'Host Groups', k: 'group_count' },
       { h: 'WhatsApp', r: r => r.wa_enabled ? <Pill tone="ok">ativo</Pill> : <Pill>desligado</Pill> },
       { h: 'Portal', r: r => can(me, 'clients.edit') ? <button className="btn sm" title="Usuários do cliente com acesso ao portal" onClick={e => { e.stopPropagation(); setPortalFor(r) }}><Users size={14} />{r.portal_users || 0}</button> : (r.portal_users || 0) },
       { h: 'Em aberto', r: r => r.open_events ? <Pill tone="bad">{r.open_events}</Pill> : <Pill tone="ok">0</Pill> },
@@ -131,7 +130,7 @@ export function ClientDetail() {
       <button className="btn" title="Ver exatamente o que o cliente enxerga no portal" onClick={() => setPreview(true)}><Eye />Ver portal do cliente</button>
       {can(me, 'clients.edit') && <button className="btn danger" onClick={async () => { if (await deleteClient(c, toast)) nav('/clientes') }}><Trash2 />Excluir</button>}</PageHead>
     {infra ?     <div className="grid g4" style={{ marginBottom: 16 }}>
-        <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.sla_met === false ? 'bad' : 'ok'} desc={`SLA contratado ${fmtPct(c.sla_target)} · ${s.sla_met === false ? 'não atingido' : 'atingido'}`} />
+        <Stat label="Disponibilidade" value={fmtPct(s.availability, 3)} tone={s.availability >= 99 ? 'ok' : s.availability >= 95 ? 'warn' : 'bad'} desc={`média dos ${s.hosts_total} equipamentos no período`} />
         <Stat label="Incidentes" value={s.incidents} desc={`${s.resolved} resolvidos · ${s.open} em aberto`} tone={s.open ? 'warn' : ''} />
         <Stat label="MTTR / MTBF" value={fmtDur(s.mttr_s)} desc={`MTBF ${fmtDur(s.mtbf_s)}`} />
         <Stat label="Hosts / Links" value={`${s.hosts_total} / ${d.links}`} desc={`${s.hosts_affected} afetado(s) no período`} />
