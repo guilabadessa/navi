@@ -40,6 +40,30 @@ function JobAlerts({ jobs, reload, canAck }) {
   </>
 }
 
+// Envios de alerta que falharam (24h): detalhe por envio e ciencia
+function FailedSends({ items, reload, canAck }) {
+  const toast = useToast(); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false)
+  const ack = async () => {
+    setBusy(true)
+    try { await post('/dashboard/dispatches/ack'); toast('Ciência registrada'); setOpen(false); await reload() } catch (e) { toast(e.message, true) } finally { setBusy(false) }
+  }
+  return <>
+    <div className="banner warn" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => setOpen(true)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setOpen(true)}>
+      <AlertTriangle size={20} /><div className="grow"><b>{items.length} envio(s) de alerta falharam nas últimas 24h.</b> Clique para ver o motivo de cada um.</div>
+      <button className="btn sm" onClick={e => { e.stopPropagation(); setOpen(true) }}>Ver detalhes</button></div>
+    {open && <Modal title="Envios de alerta com falha" wide onClose={() => setOpen(false)}
+      footer={<><button className="btn" onClick={() => setOpen(false)}>Fechar</button>{canAck && <button className="btn primary" disabled={busy} onClick={ack}>{busy ? 'Registrando…' : 'Dar ciência em todos'}</button>}</>}>
+      {items.map(i => <div key={i.id} style={{ borderBottom: '1px solid var(--line)', padding: '10px 0' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><b>{i.client || 'Sem cliente'}</b><Pill tone="mut">{i.channel === 'email' ? 'E-mail' : 'WhatsApp'}</Pill><span style={{ color: 'var(--mut)', fontSize: 13 }}>{fmtDT(i.at)} · {i.attempts} tentativa(s)</span></div>
+        <div style={{ fontSize: 13, marginTop: 4 }}>{i.host ? `${i.host} — ` : ''}{i.trigger || 'alerta'}</div>
+        <div style={{ fontSize: 13, color: 'var(--mut)' }}>Destino: {i.dest}</div>
+        {i.error && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, background: 'var(--line)', padding: 8, borderRadius: 8, marginTop: 6, maxHeight: 120, overflow: 'auto' }}>{i.error}</pre>}
+      </div>)}
+      <p style={{ fontSize: 12, marginTop: 12, color: 'var(--mut)' }}>“Dar ciência” remove o aviso destes envios. Novas falhas voltam a aparecer.</p>
+    </Modal>}
+  </>
+}
+
 export default function Dashboard() {
   const me = useAuth(); const toast = useToast(); const nav = useNavigate()
   const [cl, setCl] = useState(ls('cl', '')); const [days, setDays] = useState(ls('days', '30'))
@@ -54,7 +78,7 @@ export default function Dashboard() {
     if (!confirm(`Colocar ${name} em manutenção por 2 horas? Nenhum alerta será enviado para este cliente nesse período.`)) return
     try { await post(`/clients/${cid}/maintenance`, { hours: 2 }); toast('Cliente em manutenção por 2h'); reload() } catch (e) { toast(e.message, true) }
   }
-  const failed = d.alerts_24h?.failed || 0
+  const failed = d.alerts_24h?.failed || 0  // total bruto (card); o banner usa so os sem ciencia
   return <>
     <PageHead title="Painel do NOC" desc={`Situação de todos os clientes em tempo real · atualizado às ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
       <select style={{ width: 'auto' }} value={cl} onChange={e => { setCl(e.target.value); lset('cl', e.target.value) }}>
@@ -66,7 +90,7 @@ export default function Dashboard() {
     {d.stale_jobs.length > 0 && <JobAlerts jobs={d.stale_jobs} reload={reload} canAck={can(me, 'routines.edit')} />}
     {d.shadow && <div className="banner info"><EyeOff size={20} /><div className="grow"><b>Modo sombra ativo:</b> os alertas são registrados, mas <u>não são enviados</u>. Desative em Alertas → Migração.</div><button className="btn sm" onClick={() => nav('/alertas')}>Abrir</button></div>}
     {!cl && d.coverage?.hosts_uncovered > 0 && <div className="banner warn"><Building2 size={20} /><div className="grow"><b>{d.coverage.hosts_uncovered} de {d.coverage.hosts_total} hosts sem cliente associado</b> — não geram alerta, SLA nem relatório.</div><button className="btn sm" onClick={() => nav('/clientes?cobertura=1')}>Associar agora</button></div>}
-    {failed > 0 && <div className="banner warn"><AlertTriangle size={20} /><div className="grow"><b>{failed} envio(s) de alerta falharam nas últimas 24h.</b> Confira os detalhes nos eventos.</div></div>}
+    {d.failed_dispatches.length > 0 && <FailedSends items={d.failed_dispatches} reload={reload} canAck={can(me, 'alerts.edit')} />}
 
     <div className="grid g4" style={{ marginBottom: 16 }}>
       <div className="cardlink" onClick={() => evs('&status=PROBLEM')}><Stat label="Problemas ativos" value={fmtNum(d.problems_active)} tone={d.problems_active ? 'bad' : 'ok'} desc={`${d.clients_affected} cliente(s) afetado(s)`} /></div>

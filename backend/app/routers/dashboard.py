@@ -50,6 +50,28 @@ def job_alerts(db: Session) -> list[dict]:
     return out
 
 
+def failed_dispatches(db: Session) -> list[dict]:
+    """Envios de alerta que falharam nas ultimas 24h e ainda sem ciencia (ciencia = maior id reconhecido)."""
+    ack = int(settings_store.get(db, "alerts.failed_ack_id", "0") or 0)
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    rows = db.execute(select(Dispatch, Event.host, Event.trigger_name, Event.client_id)
+                      .join(Event, Event.id == Dispatch.event_id, isouter=True)
+                      .where(Dispatch.status == "failed", Dispatch.created_at >= since, Dispatch.id > ack)
+                      .order_by(Dispatch.id.desc()).limit(50)).all()
+    names = dict(db.execute(select(Client.id, Client.trade_name)).all())
+    return [{"id": d.id, "channel": d.channel, "dest": (d.dest_jid or "")[:120], "kind": d.kind, "error": d.error, "attempts": d.attempts,
+             "at": d.created_at.isoformat() if d.created_at else None, "host": h, "trigger": t, "client": names.get(c)} for d, h, t, c in rows]
+
+
+@router.post("/dashboard/dispatches/ack")
+def ack_dispatches(request: Request, user=Depends(current_user), db: Session = Depends(get_db), _=Depends(require("alerts.edit"))):
+    top = db.scalar(select(func.max(Dispatch.id)).where(Dispatch.status == "failed")) or 0
+    settings_store.put(db, "alerts.failed_ack_id", str(top), user.name)
+    audit.log(db, request, "dispatch_ack", "dispatch", top)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/dashboard/jobs/{name}/ack")
 def ack_job(name: str, request: Request, user=Depends(current_user), db: Session = Depends(get_db), _=Depends(require("routines.edit"))):
     j = db.get(JobStatus, name)
@@ -120,7 +142,7 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
             "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
-    return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db)}
+    return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db), "failed_dispatches": failed_dispatches(db)}
 
 
 @router.get("/dashboard/clients-health")
