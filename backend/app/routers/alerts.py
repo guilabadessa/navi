@@ -8,7 +8,7 @@ from .. import audit
 from ..db import get_db
 from ..models import AlertRule, Client, Dispatch, Event, MessageTemplate
 from ..schemas import RuleIn, RuleTestIn, TemplateIn, TestSend
-from ..security import require
+from ..security import current_user, require, user_has
 from ..services import factory, notification_service as N
 from ..util import to_dict
 
@@ -121,9 +121,13 @@ def preview(body: TemplateIn, db: Session = Depends(get_db), _=Depends(require("
 
 
 @router.get("/dispatches")
-def dispatches(status: str | None = None, page: int = 1, size: int = 50, db: Session = Depends(get_db),
-               _=Depends(require("whatsapp.view"))):
-    stmt = select(Dispatch)
+def dispatches(status: str | None = None, channel: str = "whatsapp", page: int = 1, size: int = 50, db: Session = Depends(get_db),
+               user=Depends(current_user)):
+    """Historico de envios de alerta de UM canal (whatsapp | email)."""
+    channel = "email" if channel == "email" else "whatsapp"
+    if not user_has(user, f"{channel}.view"):
+        raise HTTPException(403, "Sem permissão")
+    stmt = select(Dispatch).where(Dispatch.channel == channel)
     if status:
         stmt = stmt.where(Dispatch.status == status)
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))

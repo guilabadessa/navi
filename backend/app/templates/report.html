@@ -6,7 +6,7 @@
 @font-face{font-family:Afacad;font-weight:400;src:url("file://{{ assets }}/fonts/Afacad-400.ttf")}
 @font-face{font-family:Afacad;font-weight:600;src:url("file://{{ assets }}/fonts/Afacad-600.ttf")}
 @font-face{font-family:Afacad;font-weight:700;src:url("file://{{ assets }}/fonts/Afacad-700.ttf")}
-:root{--navy:#071a5a;--blue:#1e73f8;--ink:#1b2033;--mut:#6b7390;--line:#dfe4f0;--soft:#f5f7fc;--ok:#15803d;--bad:#bd1723}
+:root{--navy:#071a5a;--blue:#1e73f8;--teal:#0e9488;--violet:#6d5bd0;--ink:#1b2033;--mut:#6b7390;--line:#e1e6f1;--soft:#f6f8fc;--ok:#15803d;--bad:#bd1723}
 @page{size:A4;margin:27mm 15mm 19mm 15mm;
  @top-left{content:element(hdr)}
  @bottom-left{content:element(ftr)}
@@ -26,69 +26,91 @@ h1,h2,h3{font-family:Exo,sans-serif;color:var(--navy);margin:0;font-weight:700}
 #ftr{position:running(ftr);font-size:7.8pt;color:var(--mut);width:135mm;border-top:.25mm solid var(--line);padding-top:2mm}
 
 /* capa */
-.top{width:100%;border-collapse:collapse;border-bottom:.8mm solid var(--navy);margin-bottom:9mm}
-.top td{padding:0 0 4mm;vertical-align:bottom}
-.top img.logo{height:14mm;display:block}
-.top .tag{text-align:right;font:600 8.5pt Exo;letter-spacing:.14em;color:var(--blue);text-transform:uppercase}
+.top{width:100%;border-collapse:collapse;margin-bottom:10mm}
+.top td{padding:0 0 3.5mm;vertical-align:bottom;border-bottom:.35mm solid var(--line)}
+.top img.logo{height:12mm;display:block}
+.top .tag{text-align:right;font:600 8.2pt Exo;letter-spacing:.16em;color:var(--blue);text-transform:uppercase}
 .top .tag span{display:block;margin-top:1mm;font:400 8.5pt Afacad;letter-spacing:0;color:var(--mut);text-transform:none}
-.eyebrow{font:600 8.5pt Exo;letter-spacing:.16em;color:var(--blue);text-transform:uppercase}
-.title{font-size:25pt;line-height:1.1;margin:1.5mm 0 1mm}
+.eyebrow{font:600 8.2pt Exo;letter-spacing:.18em;color:var(--blue);text-transform:uppercase}
+.title{font-size:{{ 27 if client_name|length < 38 else 21 }}pt;line-height:1.08;margin:1.5mm 0 1.2mm;letter-spacing:-.2pt}
 .subtitle{font-size:12pt;color:var(--mut)}
-.clientlogo{height:14mm;float:right;margin-top:-2mm}
-.info{width:100%;border-collapse:separate;border-spacing:0;margin:7mm 0 2mm;border:.3mm solid var(--line);border-radius:2mm;background:var(--soft)}
-.info td{width:25%;padding:3.2mm 4mm;vertical-align:top;border-right:.3mm solid var(--line)}
-.info td:last-child{border-right:none}
-.info b{display:block;font:600 7.6pt Exo;letter-spacing:.12em;color:var(--mut);text-transform:uppercase;margin-bottom:.8mm}
-.info span{font-size:10.5pt;color:var(--ink);font-weight:600}
+.clientlogo{height:13mm;float:right;margin-top:-1mm}
+.meta{width:100%;border-collapse:collapse;margin:6mm 0 0;border-top:.3mm solid var(--line);border-bottom:.3mm solid var(--line)}
+.meta td{padding:3mm 0;vertical-align:top;width:25%}
+.meta b{display:block;font:600 7.2pt Exo;letter-spacing:.14em;color:var(--mut);text-transform:uppercase;margin-bottom:.8mm}
+.meta span{font-size:10.3pt;font-weight:600;color:var(--ink)}
 
-/* secoes */
-.sec{margin:8mm 0 3.5mm}
+/* titulos de bloco */
+.blk{font:600 8pt Exo;letter-spacing:.16em;color:var(--mut);text-transform:uppercase;margin:8mm 0 3mm}
+.sec{margin:9mm 0 4mm}
 .sec table{width:100%;border-collapse:collapse}
 .sec td{padding:0;vertical-align:baseline}
-.sec .n{width:11mm;font:700 15pt Exo;color:var(--blue)}
-.sec .t{font:700 14pt Exo;color:var(--navy);border-bottom:.3mm solid var(--line);padding-bottom:1.6mm}
+.sec .n{width:11mm;font:700 13pt Exo;color:var(--blue)}
+.sec .t{font:700 14.5pt Exo;color:var(--navy);border-bottom:.3mm solid var(--line);padding-bottom:1.6mm}
 .sec .t small{font:400 9pt Afacad;color:var(--mut);margin-left:3mm}
+.sub2{font:700 10.5pt Exo;color:var(--navy);margin:6mm 0 2mm}
 
-/* KPIs */
-.hero{width:calc(100% + 6mm);border-collapse:separate;border-spacing:3mm 0;margin:0 -3mm}
-.hero td{vertical-align:top;padding:0}
-.hero .main{width:46%;background:var(--navy);color:#fff;border-radius:2.2mm;padding:5mm 6mm}
-.hero .main .l{font:600 8pt Exo;letter-spacing:.12em;text-transform:uppercase;color:#9fb6ff}
-.hero .main .v{font:700 31pt Exo;line-height:1.05;margin:1mm 0 1.5mm;color:#fff}
-.hero .main .s{font-size:9.5pt;color:#c9d6ff}
-.pill{display:inline-block;padding:.7mm 3mm;border-radius:5mm;font:700 8.5pt Exo;color:#fff;letter-spacing:.04em}
-.pill.ok{background:#16a34a}.pill.bad{background:var(--bad)}.pill.na{background:#8791b0}
-.hero .side{width:27%}
-.card{border:.3mm solid var(--line);border-top:1.1mm solid var(--blue);border-radius:2mm;padding:3.3mm 4mm;background:#fff;height:23mm}
-.card .l{font:600 7.4pt Exo;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
-.card .v{font:700 16.5pt Exo;color:var(--navy);margin-top:1.4mm;line-height:1.1}
-.card.bad{border-top-color:var(--bad)}.card.bad .v{color:var(--bad)}
-.card.ok{border-top-color:#16a34a}
-.grid{width:calc(100% + 6mm);border-collapse:separate;border-spacing:3mm 3mm;margin:0 -3mm}
-.grid td{width:25%;vertical-align:top;padding:0}
-.summary{border-left:1.2mm solid var(--blue);background:var(--soft);padding:4mm 5mm;margin-top:2mm;font-size:10.3pt;border-radius:0 2mm 2mm 0}
+/* cartoes de servico (capa) */
+.cards{width:calc(100% + 5mm);border-collapse:separate;border-spacing:2.5mm 0;margin:0 -2.5mm}
+.cards td{vertical-align:top;padding:0}
+.sc{border:.3mm solid var(--line);border-radius:2mm;padding:4mm 4.2mm 3.6mm;background:#fff;border-top:1mm solid var(--accent,#1e73f8)}
+.sc .l{font:600 7.4pt Exo;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.sc .v{font:700 24pt Exo;color:var(--navy);line-height:1.05;margin:1.6mm 0 .6mm}
+.sc .v small{font:600 11pt Exo;color:var(--mut)}
+.sc .d{font-size:8.8pt;color:var(--mut);margin-bottom:2.2mm}
+.sc .m{font-size:8.8pt;color:var(--ink);margin-top:1mm}
+.sc .m b{font-weight:700}
+.trk{width:100%;border-collapse:collapse;height:1.7mm;margin:0 0 2mm}
+.trk td{padding:0;height:1.7mm}
+.trk .f{border-radius:1mm 0 0 1mm}.trk .r{background:#e8ecf6;border-radius:0 1mm 1mm 0}
+.pill{display:inline-block;padding:.5mm 2.6mm;border-radius:5mm;font:700 7.6pt Exo;letter-spacing:.05em}
+.pill.ok{background:#e3f6ea;color:#12803b}.pill.bad{background:#fde7e9;color:#bd1723}.pill.na{background:#eceff7;color:#6b7390}.pill.warn{background:#fff3d6;color:#a67a00}
+
+/* destaques */
+.hl{margin:0;padding:0;list-style:none}
+.hl li{padding:2.1mm 0 2.1mm 6mm;border-bottom:.25mm solid var(--line);font-size:10pt;position:relative}
+.hl li:last-child{border-bottom:none}
+.hl li:before{content:"";position:absolute;left:0;top:3.6mm;width:2.2mm;height:2.2mm;border-radius:50%;background:var(--c)}
+.summary{border-left:1mm solid var(--blue);background:var(--soft);padding:3.6mm 5mm;margin-top:3mm;font-size:10pt;border-radius:0 2mm 2mm 0}
+
+/* indicadores */
+.kp{width:calc(100% + 4mm);border-collapse:separate;border-spacing:2mm 0;margin:0 -2mm 1mm}
+.kp td{width:16.66%;vertical-align:top;padding:2.6mm 3mm;border:.3mm solid var(--line);border-radius:1.8mm;background:#fff}
+.kp .l{font:600 6.8pt Exo;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.kp .v{font:700 13pt Exo;color:var(--navy);margin-top:1mm;line-height:1.1}
+.kp .v.bad{color:var(--bad)}.kp .v.ok{color:var(--ok)}
+.dist{width:100%;border-collapse:collapse;margin:1mm 0 1.5mm}
+.dist td{height:3.2mm;padding:0}
+.lg{font-size:8.6pt;color:var(--mut);margin-bottom:3mm}
+.lg i{display:inline-block;width:2.4mm;height:2.4mm;border-radius:50%;margin:0 1.2mm 0 3mm;vertical-align:middle}.lg i:first-child{margin-left:0}
+.lg b{color:var(--ink)}
 
 /* tabelas */
 table.data{width:100%;border-collapse:collapse;font-size:8.7pt}
-table.data th{background:var(--navy);color:#fff;text-align:left;padding:2.1mm 2.3mm;font:600 7.9pt Exo;letter-spacing:.04em}
-table.data td{padding:1.9mm 2.3mm;border-bottom:.25mm solid var(--line);vertical-align:top}
+table.data th{background:var(--navy);color:#fff;text-align:left;padding:2mm 2.3mm;font:600 7.6pt Exo;letter-spacing:.05em}
+table.data td{padding:1.8mm 2.3mm;border-bottom:.25mm solid var(--line);vertical-align:top}
 table.data tr:nth-child(even) td{background:#f8f9fd}
 table.data tr{page-break-inside:avoid}
 table.data thead{display:table-header-group}
 .sev{display:inline-block;padding:.4mm 2.1mm;border-radius:5mm;color:#fff;font:600 7.6pt Afacad;white-space:nowrap}
 .s0{background:#8aa0ab}.s1{background:#6a90f5}.s2{background:#d9a400}.s3{background:#ee8620}.s4{background:#e04e4e}.s5{background:#bd1723}
+.st{display:inline-block;padding:.3mm 2.2mm;border-radius:5mm;font:600 7.6pt Afacad;white-space:nowrap}
+.st.ok{background:#e3f6ea;color:#12803b}.st.bad{background:#fde7e9;color:#bd1723}.st.warn{background:#fff3d6;color:#a67a00}.st.mut{background:#eceff7;color:#6b7390}
 .open{color:var(--bad);font-weight:700}
 table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-wrap:break-word}.ip{color:var(--mut);font-size:7.6pt;margin-top:.4mm}
 .charts .c{border:.3mm solid var(--line);border-radius:2mm;padding:2mm;margin-bottom:4mm;page-break-inside:avoid}
 .charts img{width:100%;display:block}
 .pb{page-break-before:always}
 .note{font-size:8.3pt;color:var(--mut);margin-top:2mm}
-.hr-n{height:0}
 </style></head><body>
 
 <div id="hdr"><table><tr><td><img src="file://{{ assets }}/brand/azul.png"></td>
 <td class="r">{{ report_name }}<span>{{ client_name }} · {{ period_label }}</span></td></tr></table></div>
 <div id="ftr">{{ lh.company }}{% if lh.cnpj %} · CNPJ {{ lh.cnpj }}{% endif %}{% if lh.address %} · {{ lh.address }}{% endif %}{% if lh.phone %} · {{ lh.phone }}{% endif %}{% if lh.site %} · {{ lh.site }}{% endif %}</div>
+
+{% set ns = namespace(n=0) %}
+{% set ncards = (1 if infra_on else 0) + (1 if backup else 0) + (1 if endpoints else 0) %}
+{% macro tone(t) %}{{ {'ok':'#16a34a','warn':'#d97706','bad':'#bd1723','mut':'#8791b0'}[t] }}{% endmacro %}
 
 <!-- ============ CAPA / VISAO EXECUTIVA ============ -->
 <table class="top"><tr>
@@ -100,102 +122,139 @@ table.ev{table-layout:fixed;font-size:8.2pt}table.ev td{padding:1.5mm 2mm;word-w
 <h1 class="title">{{ client_name }}</h1>
 <div class="subtitle">{{ report_name }}</div>
 
-<table class="info"><tr>
+<table class="meta"><tr>
   <td><b>Período</b><span>{{ period_label }}</span></td>
   <td><b>CNPJ</b><span>{{ cnpj or '—' }}</span></td>
-  {% if infra_on %}<td><b>Hosts avaliados</b><span>{{ s.hosts_total }}</span></td>
-  <td><b>SLA contratado</b><span>{{ pct(s.sla_target) if s.sla_target is not none else '—' }}</span></td>
-  {% else %}<td><b>Serviços incluídos</b><span>{{ mods|join(' · ') }}</span></td>
-  <td><b>Emitido em</b><span>{{ generated_at }}</span></td>{% endif %}
+  <td><b>Serviços</b><span>{{ mods|join(' · ') }}</span></td>
+  <td><b>{{ 'SLA contratado' if infra_on else 'Itens monitorados' }}</b><span>{% if infra_on %}{{ pct(s.sla_target) if s.sla_target is not none else '—' }}{% else %}{{ ((backup.total if backup else 0) + (endpoints.total if endpoints else 0)) }}{% endif %}</span></td>
 </tr></table>
 
+{% if kpis_on and ncards %}
+<div class="blk">Visão geral do período</div>
+<table class="cards"><tr>
+{% if infra_on %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#1e73f8">
+  <div class="l">Infraestrutura</div>
+  <div class="v">{{ pct(s.availability) }}</div><div class="d">disponibilidade{% if s.sla_target is not none %} · meta {{ pct(s.sla_target) }}{% endif %}</div>
+  <table class="trk"><tr><td class="f" style="width:{{ [s.availability, 100]|min }}%;background:{{ '#16a34a' if s.sla_met is not false else '#bd1723' }}"></td><td class="r"></td></tr></table>
+  {% if s.sla_met is none %}<span class="pill na">SLA NÃO DEFINIDO</span>{% elif s.sla_met %}<span class="pill ok">SLA ATINGIDO</span>{% else %}<span class="pill bad">SLA NÃO ATINGIDO</span>{% endif %}
+  <div class="m"><b>{{ s.incidents }}</b> incidente(s) · <b>{{ dur2(s.downtime_s) }}</b> fora</div>
+  <div class="m"><b>{{ s.hosts_affected }}</b> de {{ s.hosts_total }} hosts afetados</div></div></td>{% endif %}
+{% if backup %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#0e9488">
+  <div class="l">Backup</div>
+  <div class="v">{{ backup.ok }}<small> / {{ backup.total }}</small></div><div class="d">itens protegidos e em dia</div>
+  <table class="trk"><tr><td class="f" style="width:{{ backup.pct }}%;background:{{ '#16a34a' if not backup.problems else '#d97706' }}"></td><td class="r"></td></tr></table>
+  {% if backup.problems %}<span class="pill bad">{{ backup.problems }} COM ATENÇÃO</span>{% else %}<span class="pill ok">TUDO EM DIA</span>{% endif %}
+  <div class="m"><b>{{ backup.pct|string|replace('.', ',') }}%</b> de conformidade</div>
+  <div class="m"><b>{{ backup.inc.total if backup.inc else 0 }}</b> ocorrência(s) no período</div></div></td>{% endif %}
+{% if endpoints %}<td style="width:{{ (100 / ncards)|round(2) }}%"><div class="sc" style="--accent:#6d5bd0">
+  <div class="l">Estações e antivírus</div>
+  <div class="v">{{ endpoints.ok }}<small> / {{ endpoints.total }}</small></div><div class="d">estações em conformidade</div>
+  <table class="trk"><tr><td class="f" style="width:{{ endpoints.pct }}%;background:{{ '#16a34a' if not endpoints.problems else '#d97706' }}"></td><td class="r"></td></tr></table>
+  {% if endpoints.problems %}<span class="pill warn">{{ endpoints.problems }} COM PENDÊNCIA</span>{% else %}<span class="pill ok">TUDO EM CONFORMIDADE</span>{% endif %}
+  <div class="m"><b>{{ endpoints.online }}</b> online agora</div>
+  <div class="m"><b>{{ endpoints.inc.total if endpoints.inc else 0 }}</b> ocorrência(s) no período</div></div></td>{% endif %}
+</tr></table>
+
+{% if hl %}<div class="blk">Destaques</div>
+<ul class="hl">{% for h in hl %}<li style="--c:{{ tone(h.tone) }}">{{ h.text }}</li>{% endfor %}</ul>{% endif %}
+{% if infra_on and cmp_main %}<div class="summary">{{ cmp_main }}</div>{% endif %}
+{% endif %}
+
+<div class="blk">Neste relatório</div>
+<table class="meta" style="margin:0;border-top:none"><tr>
+{% set secs = ([('Infraestrutura', 'Disponibilidade, incidentes, hosts e eventos')] if infra_on else []) + ([('Backup', 'Itens protegidos, conformidade e ocorrências')] if backup else []) + ([('Estações e antivírus', 'Conformidade, situação por estação e ocorrências')] if endpoints else []) %}
+{% for t, d in secs %}<td style="width:{{ (100 / (secs|length))|round(2) }}%;padding-right:4mm"><b>{{ '%02d'|format(loop.index) }} · {{ t }}</b><span style="font-weight:400;color:#6b7390;font-size:9pt">{{ d }}</span></td>{% endfor %}
+</tr></table>
+
+<!-- ============ INFRAESTRUTURA ============ -->
 {% if infra_on %}
+{% set ns.n = ns.n + 1 %}
+<div class="pb"></div>
+<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Infraestrutura<small>disponibilidade e incidentes</small></td></tr></table></div>
 {% if kpis_on %}
-<div class="sec"><table><tr><td class="n">01</td><td class="t">Resumo executivo</td></tr></table></div>
-<table class="hero"><tr>
-  <td class="main">
-    <div class="l">Disponibilidade geral</div>
-    <div class="v">{{ pct(s.availability) }}</div>
-    <div class="s">
-      {% if s.sla_met is none %}<span class="pill na">SLA NÃO DEFINIDO</span>
-      {% elif s.sla_met %}<span class="pill ok">SLA ATINGIDO</span>
-      {% else %}<span class="pill bad">SLA NÃO ATINGIDO</span>{% endif %}
-      &nbsp; realizado {{ pct(s.sla_actual) }}{% if s.sla_target is not none %} · contratado {{ pct(s.sla_target) }}{% endif %}
-    </div>
-  </td>
-  <td class="side"><div class="card"><div class="l">Indisponibilidade total</div><div class="v">{{ dur2(s.downtime_s) }}</div></div></td>
-  <td class="side"><div class="card {{ 'bad' if s.incidents else 'ok' }}"><div class="l">Incidentes</div><div class="v">{{ s.incidents }}</div></div></td>
-</tr></table>
-<table class="grid"><tr>
-  <td><div class="card"><div class="l">Hosts afetados</div><div class="v">{{ s.hosts_affected }} <span style="font-size:10pt;color:#6b7390;font-family:Afacad">de {{ s.hosts_total }}</span></div></div></td>
-  <td><div class="card"><div class="l">MTTR (tempo médio de reparo)</div><div class="v">{{ dur2(s.mttr_s) }}</div></div></td>
-  <td><div class="card"><div class="l">MTBF (entre falhas)</div><div class="v">{{ dur2(s.mtbf_s) }}</div></div></td>
-  <td><div class="card"><div class="l">Maior indisponibilidade</div><div class="v">{{ dur2(s.max_duration_s) }}</div></div></td>
-</tr><tr>
-  <td><div class="card"><div class="l">Duração média</div><div class="v">{{ dur2(s.avg_duration_s) }}</div></div></td>
-  <td><div class="card"><div class="l">Menor indisponibilidade</div><div class="v">{{ dur2(s.min_duration_s) }}</div></div></td>
-  <td><div class="card ok"><div class="l">Resolvidos</div><div class="v">{{ s.resolved }}</div></div></td>
-  <td><div class="card {{ 'bad' if s.open else '' }}"><div class="l">Em aberto</div><div class="v">{{ s.open }}</div></div></td>
-</tr></table>
-<div class="summary">{{ summary_text }}{% if cmp_text %}<br><br>{{ cmp_text }}{% endif %}</div>
-{% endif %}
+<table class="kp"><tr>
+  <td><div class="l">Indisponibilidade</div><div class="v">{{ dur2(s.downtime_s) }}</div></td>
+  <td><div class="l">MTTR</div><div class="v">{{ dur2(s.mttr_s) }}</div></td>
+  <td><div class="l">MTBF</div><div class="v">{{ dur2(s.mtbf_s) }}</div></td>
+  <td><div class="l">Maior queda</div><div class="v">{{ dur2(s.max_duration_s) }}</div></td>
+  <td><div class="l">Resolvidos</div><div class="v ok">{{ s.resolved }}</div></td>
+  <td><div class="l">Em aberto</div><div class="v {{ 'bad' if s.open else '' }}">{{ s.open }}</div></td>
+</tr></table>{% endif %}
+{% if summary_text or cmp_text %}<div class="summary" style="margin-bottom:3mm">{{ summary_text }}{% if cmp_text %}<br><br>{{ cmp_text }}{% endif %}</div>{% endif %}
+{% if charts %}<div class="charts" style="margin-top:4mm">{% for c in charts %}<div class="c"><img src="data:image/png;base64,{{ c }}"></div>{% endfor %}</div>{% endif %}
 
-<!-- ============ INDICADORES ============ -->
-{% if charts %}
-<div class="pb"></div>
-<div class="sec" style="margin-top:0"><table><tr><td class="n">02</td><td class="t">Indicadores<small>visão gráfica do período</small></td></tr></table></div>
-<div class="charts">{% for c in charts %}<div class="c"><img src="data:image/png;base64,{{ c }}"></div>{% endfor %}</div>
-{% endif %}
-
-<!-- ============ DETALHAMENTO TECNICO ============ -->
-<div class="pb"></div>
-<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '03' if charts else '02' }}</td><td class="t">Detalhamento técnico<small>por host</small></td></tr></table></div>
+<div class="sub2">Detalhamento por host</div>
 <table class="data"><thead><tr><th>Host</th><th>IP</th><th>Incid.</th><th>Indisponibilidade</th><th>Disponibilidade</th></tr></thead><tbody>
 {% for h in k.by_host[:60] %}<tr><td>{{ h.host }}</td><td>{{ h.ip or '—' }}</td><td>{{ h.incidents }}</td><td>{{ dur2(h.downtime_s) if h.downtime_s else '—' }}</td><td>{{ pct(h.availability) }}</td></tr>{% endfor %}</tbody></table>
 
-<div class="sec"><table><tr><td class="n"></td><td class="t">Eventos do período<small>início, recuperação e duração</small></td></tr></table></div>
-<table class="data ev"><thead><tr><th style="width:23%">Host</th><th style="width:30%">Trigger</th><th style="width:19%">Item</th><th style="width:8%">Sev.</th><th style="width:20%">Início → Recuperação</th></tr></thead><tbody>
+<div class="sub2">Eventos do período<span style="font:400 8.5pt Afacad;color:#6b7390"> · início, recuperação e duração</span></div>
+<table class="data ev"><thead><tr><th style="width:23%">Host</th><th style="width:30%">Problema</th><th style="width:19%">Item</th><th style="width:8%">Sev.</th><th style="width:20%">Início → Recuperação</th></tr></thead><tbody>
 {% for e in rows %}<tr><td><b>{{ e.host }}</b>{% if e.ip %}<div class="ip">{{ e.ip }}</div>{% endif %}</td><td>{{ e.trigger_name }}</td><td>{{ e.item_name or '—' }}</td>
 <td><span class="sev s{{ e.severity }}">{{ sevname(e.severity) }}</span></td>
 <td>{{ dt(e.started_at) }}<div class="ip">{% if e.recovered_at %}{{ dt(e.recovered_at) }} · <b>{{ dur2(e.duration_s) }}</b>{% else %}<span class="open">EM ABERTO</span> · {{ dur2(e.duration_s) }}{% endif %}</div></td></tr>
 {% else %}<tr><td colspan="5" style="text-align:center;color:#6b7390;padding:7mm">Nenhum evento no período e filtros selecionados.</td></tr>{% endfor %}</tbody></table>
-{% if truncated %}<p class="note">Exibindo os {{ rows|length }} eventos de maior duração (de {{ total_rows }} no período), em ordem cronológica. Os totais, KPIs e resumos por host e por trigger consideram todos os eventos.</p>{% endif %}
+{% if truncated %}<p class="note">Exibindo os {{ rows|length }} eventos de maior duração (de {{ total_rows }} no período), em ordem cronológica. Os totais e indicadores consideram todos os eventos.</p>{% endif %}
 
-{% if k.by_trigger %}
-<div class="sec"><table><tr><td class="n"></td><td class="t">Ocorrências por trigger</td></tr></table></div>
-<table class="data"><thead><tr><th>Trigger</th><th>Ocorrências</th><th>Tempo total indisponível</th></tr></thead><tbody>
-{% for t in k.by_trigger %}<tr><td>{{ t.key }}</td><td>{{ t.incidents }}</td><td>{{ dur(t.downtime_s) }}</td></tr>{% endfor %}</tbody></table>
+{% if k.by_trigger %}<div class="sub2">Ocorrências por problema</div>
+<table class="data"><thead><tr><th>Problema</th><th>Ocorrências</th><th>Tempo total indisponível</th></tr></thead><tbody>
+{% for t in k.by_trigger %}<tr><td>{{ t.key }}</td><td>{{ t.incidents }}</td><td>{{ dur(t.downtime_s) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 {% endif %}
 
-{% endif %}
+{% macro incidents(x, label) %}
+{% if x.inc %}<div class="sub2">Ocorrências no período<span style="font:400 8.5pt Afacad;color:#6b7390"> · {{ x.inc.total }} registrada(s){% if x.inc.open %}, {{ x.inc.open }} em aberto{% endif %}</span></div>
+{% if x.inc.rows %}<table class="data"><thead><tr><th>Item</th><th>Ocorrência</th><th>Sev.</th><th>Início → Recuperação</th></tr></thead><tbody>
+{% for e in x.inc.rows %}<tr><td><b>{{ e.name }}</b></td><td>{{ e.what }}</td><td><span class="sev s{{ e.sev }}">{{ sevname(e.sev) }}</span></td>
+<td>{{ e.start }}<div class="ip">{% if e.end %}{{ e.end }}{% if e.dur %} · <b>{{ dur2(e.dur) }}</b>{% endif %}{% else %}<span class="open">EM ABERTO</span>{% endif %}</div></td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="note">Nenhuma ocorrência de {{ label }} registrada no período. ✔</p>{% endif %}{% endif %}
+{% endmacro %}
 
+{% macro distbar(x) %}
+<table class="dist"><tr>{% for d in x.dist %}<td style="width:{{ d.pct }}%;background:{{ d.color }}"></td>{% endfor %}</tr></table>
+<div class="lg">{% for d in x.dist %}<i style="background:{{ d.color }}"></i><b>{{ d.n }}</b> {{ d.label|lower }}{% endfor %}</div>
+{% endmacro %}
+
+<!-- ============ BACKUP ============ -->
 {% if backup %}
-{% if infra_on %}<div class="pb"></div>{% endif %}
-<div class="sec" style="margin-top:0"><table><tr><td class="n"></td><td class="t">Backup<small>situação atual dos itens protegidos</small></td></tr></table></div>
-<div class="summary">{{ backup.ok }} de {{ backup.total }} item(ns) com backup em dia{% if backup.problems %}; {{ backup.problems }} requer(em) atenção{% endif %}.</div>
+{% set ns.n = ns.n + 1 %}
+{% if ns.n > 1 %}<div class="pb"></div>{% endif %}
+<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Backup<small>proteção dos dados (Acronis)</small></td></tr></table></div>
+<table class="kp"><tr>
+  <td><div class="l">Itens protegidos</div><div class="v">{{ backup.total }}</div></td>
+  <td><div class="l">Em dia</div><div class="v ok">{{ backup.ok }}</div></td>
+  <td><div class="l">Com atenção</div><div class="v {{ 'bad' if backup.problems else '' }}">{{ backup.problems }}</div></td>
+  <td><div class="l">Conformidade</div><div class="v">{{ backup.pct|string|replace('.', ',') }}%</div></td>
+  <td><div class="l">Ocorrências</div><div class="v">{{ backup.inc.total if backup.inc else 0 }}</div></td>
+  <td><div class="l">Backup mais antigo</div><div class="v" style="font-size:9.5pt">{{ backup.oldest.at if backup.oldest else '—' }}</div></td>
+</tr></table>
+{{ distbar(backup) }}
+{% if backup.types|length > 1 %}<p class="note" style="margin-top:0">Por tipo: {% for t, n in backup.types %}{{ t }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+<div class="sub2">Itens e situação atual<span style="font:400 8.5pt Afacad;color:#6b7390"> · itens com atenção primeiro</span></div>
 <table class="data"><thead><tr><th>Item</th><th>Tipo</th><th>Último backup com sucesso</th><th>Situação</th></tr></thead><tbody>
-{% for b in backup.rows %}<tr><td>{{ b.name }}</td><td>{{ b.type }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
-{% if backup.inc %}
-<div class="summary" style="margin-top:3mm">No período: <b>{{ backup.inc.total }}</b> ocorrência(s) de backup{% if backup.inc.open %}, <b>{{ backup.inc.open }}</b> ainda em aberto{% endif %}.</div>
-{% if backup.inc.rows %}<table class="data" style="margin-top:3mm"><thead><tr><th>Item</th><th>Ocorrência</th><th>Sev.</th><th>Início → Recuperação</th></tr></thead><tbody>
-{% for e in backup.inc.rows %}<tr><td>{{ e.name }}</td><td>{{ e.what }}</td><td><span class="sev s{{ e.sev }}">{{ sevname(e.sev) }}</span></td>
-<td>{{ e.start }}<div class="ip">{% if e.end %}{{ e.end }}{% if e.dur %} · <b>{{ dur2(e.dur) }}</b>{% endif %}{% else %}<span class="open">EM ABERTO</span>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% endif %}
-{% endif %}
+{% for b in backup.rows %}<tr><td>{{ b.name }}</td><td>{{ b.type }}</td><td>{{ b.last }}</td><td><span class="st {{ 'ok' if b.ok else 'bad' }}">{{ b.status }}</span></td></tr>{% endfor %}</tbody></table>
+{{ incidents(backup, 'backup') }}
 {% endif %}
 
+<!-- ============ ESTACOES ============ -->
 {% if endpoints %}
-<div class="sec"><table><tr><td class="n"></td><td class="t">Estações (antivírus / FortiClient)<small>situação atual</small></td></tr></table></div>
-<div class="summary">{{ endpoints.total }} estação(ões) monitorada(s); {{ endpoints.online }} online agora{% if endpoints.problems %}; {{ endpoints.problems }} requer(em) atenção (sem contato prolongado, antivírus desativado ou desatualizado){% endif %}.</div>
+{% set ns.n = ns.n + 1 %}
+{% if ns.n > 1 %}<div class="pb"></div>{% endif %}
+<div class="sec" style="margin-top:0"><table><tr><td class="n">{{ '%02d'|format(ns.n) }}</td><td class="t">Estações e antivírus<small>FortiClient EMS</small></td></tr></table></div>
+<table class="kp"><tr>
+  <td><div class="l">Estações</div><div class="v">{{ endpoints.total }}</div></td>
+  <td><div class="l">Online agora</div><div class="v ok">{{ endpoints.online }}</div></td>
+  <td><div class="l">Em conformidade</div><div class="v">{{ endpoints.ok }}</div></td>
+  <td><div class="l">Com pendência</div><div class="v {{ 'bad' if endpoints.problems else '' }}">{{ endpoints.problems }}</div></td>
+  <td><div class="l">Conformidade</div><div class="v">{{ endpoints.pct|string|replace('.', ',') }}%</div></td>
+  <td><div class="l">Ocorrências</div><div class="v">{{ endpoints.inc.total if endpoints.inc else 0 }}</div></td>
+</tr></table>
+{{ distbar(endpoints) }}
+{% if endpoints.os %}<p class="note" style="margin-top:0">Sistemas: {% for o, n in endpoints.os %}{{ o }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+<div class="sub2">Estações e situação atual<span style="font:400 8.5pt Afacad;color:#6b7390"> · estações com pendência primeiro</span></div>
 <table class="data"><thead><tr><th>Estação</th><th>Usuário</th><th>Último contato</th><th>Situação</th></tr></thead><tbody>
-{% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.last }}</td><td>{{ b.status }}</td></tr>{% endfor %}</tbody></table>
-{% if endpoints.inc %}
-<div class="summary" style="margin-top:3mm">No período: <b>{{ endpoints.inc.total }}</b> ocorrência(s) de estações/antivírus{% if endpoints.inc.open %}, <b>{{ endpoints.inc.open }}</b> ainda em aberto{% endif %}.</div>
-{% if endpoints.inc.rows %}<table class="data" style="margin-top:3mm"><thead><tr><th>Item</th><th>Ocorrência</th><th>Sev.</th><th>Início → Recuperação</th></tr></thead><tbody>
-{% for e in endpoints.inc.rows %}<tr><td>{{ e.name }}</td><td>{{ e.what }}</td><td><span class="sev s{{ e.sev }}">{{ sevname(e.sev) }}</span></td>
-<td>{{ e.start }}<div class="ip">{% if e.end %}{{ e.end }}{% if e.dur %} · <b>{{ dur2(e.dur) }}</b>{% endif %}{% else %}<span class="open">EM ABERTO</span>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% endif %}
-{% endif %}
+{% for b in endpoints.rows %}<tr><td>{{ b.name }}</td><td>{{ b.user }}</td><td>{{ b.last }}</td><td><span class="st {{ 'ok' if b.status == 'Online' else ('mut' if b.status == 'Offline' else ('bad' if b.status in ('Sem contato', 'Antivírus off', 'Quarentena') else 'warn')) }}">{{ b.status }}</span></td></tr>{% endfor %}</tbody></table>
+{{ incidents(endpoints, 'estações/antivírus') }}
 {% endif %}
 
-{% if notes %}<div class="sec"><table><tr><td class="n"></td><td class="t">Observações</td></tr></table></div><div class="summary">{{ notes }}</div>{% endif %}
+{% if notes %}<div class="sub2">Observações</div><div class="summary" style="margin-top:0">{{ notes }}</div>{% endif %}
 {% if lh.text %}<p class="note" style="margin-top:9mm">{{ lh.text }}</p>{% endif %}
 </body></html>

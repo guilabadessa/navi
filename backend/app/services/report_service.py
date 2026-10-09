@@ -150,7 +150,7 @@ def dur2(sec) -> str:
 def summary_text(k: dict, client_name: str, period: str) -> str:
     s = k["summary"]
     if not s["incidents"]:
-        return f"No período {period}, não foram registrados incidentes para {client_name}. Disponibilidade de {s['availability']:.3f}%."
+        return f"No período {period}, não foram registrados incidentes para {client_name}. Disponibilidade de {_n(s['availability'])}%."
     b = s["biggest"]
     t = (f"No período {period}, {client_name} registrou {s['incidents']} incidente(s) em {s['hosts_affected']} de "
          f"{s['hosts_total']} host(s), totalizando {fmt_duration(s['downtime_s'])} de indisponibilidade. ")
@@ -183,10 +183,21 @@ def period_incidents(db: Session, client_id: int, kind: str, start: datetime, en
     return {"total": len(evs), "open": sum(1 for e in evs if e.status == "PROBLEM"), "rows": rows}
 
 
+COLORS = {"ok": "#16a34a", "warn": "#d97706", "bad": "#bd1723", "mut": "#8791b0"}
+
+
+def _dist(counter: dict, tone: dict) -> list[dict]:
+    """Distribuicao para a barra empilhada: [{label, n, pct, color}] (so o que existe)."""
+    tot = sum(counter.values()) or 1
+    return [{"label": k, "n": n, "pct": round(100 * n / tot, 1), "color": COLORS[tone.get(k, "mut")]} for k, n in counter.items() if n]
+
+
 def backup_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
-    """Situacao atual do backup (Acronis) dos itens do cliente; None se o cliente nao tem tenant associado."""
+    """Backup (Acronis) dos itens do cliente: situacao atual + estatisticas; None se o cliente nao tem tenant associado."""
     if not client_id:
         return None
+    from collections import Counter
+
     from ..models import ExtAsset, ExtTenant
     from ..routers.protection import asset_status
     from . import protection_service as P
@@ -195,40 +206,88 @@ def backup_section(db: Session, client_id: int | None, z, start=None, end=None) 
         return None
     c, now = P.cfg(db), datetime.now(timezone.utc)
     names = {"machine": "Servidor", "database": "Banco de dados", "mailbox": "E-mail", "drive": "OneDrive", "site": "SharePoint", "team": "Teams"}
-    rows = []
+    rows, oldest = [], None
     for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
         st = asset_status(a, c, now)
         if st == "sem dados":
             continue
-        rows.append({"name": a.name, "type": names.get(a.type, a.type), "status": "Protegido" if st == "ok" else st.capitalize(),
+        rows.append({"name": a.name, "type": names.get(a.type, a.type or "—"), "status": "Protegido" if st == "ok" else st.capitalize(),
                      "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—", "ok": st == "ok"})
+        if a.last_success_at and (oldest is None or a.last_success_at < oldest[1]):
+            oldest = (a.name, a.last_success_at)
     if not rows:
         return None
-    return {"rows": rows[:120], "total": len(rows), "ok": sum(1 for r in rows if r["ok"]), "problems": sum(1 for r in rows if not r["ok"]),
+    n_ok = sum(1 for r in rows if r["ok"])
+    rows.sort(key=lambda r: (r["ok"], r["name"].lower()))  # itens com atencao primeiro
+    return {"rows": rows[:120], "total": len(rows), "ok": n_ok, "problems": len(rows) - n_ok, "pct": round(100 * n_ok / len(rows), 1),
+            "dist": _dist(Counter(r["status"] for r in rows), {"Protegido": "ok"} | {k: "bad" for k in ("Falha", "Offline", "Sem backup")}),
+            "types": sorted(Counter(r["type"] for r in rows).items(), key=lambda x: -x[1]),
+            "oldest": {"name": oldest[0], "at": oldest[1].astimezone(z).strftime("%d/%m/%Y %H:%M")} if oldest else None,
             "inc": period_incidents(db, client_id, "backup", start, end, z) if start else None}
 
 
 def endpoint_section(db: Session, client_id: int | None, z, start=None, end=None) -> dict | None:
-    """Situacao atual das estacoes (FortiClient EMS) do cliente; None se nao houver site associado."""
+    """Estacoes (FortiClient EMS) do cliente: situacao atual + estatisticas; None se nao houver site associado."""
     if not client_id:
         return None
+    from collections import Counter
+
     from ..models import ExtAsset, ExtTenant
     from . import protection_service as P
     tids = list(db.scalars(select(ExtTenant.id).where(ExtTenant.client_id == client_id, ExtTenant.source == "ems")))
     if not tids:
         return None
     days, now = P.cfg(db)["ems_offline_days"], datetime.now(timezone.utc)
-    rows = []
+    rows, oses = [], Counter()
     for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name)):
         st = P.ems_status(a, days, now)
-        rows.append({"name": a.name, "user": (a.meta or {}).get("user") or "—", "status": st, "ok": st in ("online", "offline"),
+        rows.append({"name": a.name, "user": (a.meta or {}).get("user") or "—", "status": st.capitalize(), "ok": st in ("online", "offline"),
                      "last": a.last_success_at.astimezone(z).strftime("%d/%m/%Y %H:%M") if a.last_success_at else "—"})
+        os_ = ((a.meta or {}).get("os") or "").split(" ")[0:2]
+        if os_:
+            oses[" ".join(os_)] += 1
     if not rows:
         return None
-    attention = [r for r in rows if not r["ok"]]
-    return {"total": len(rows), "online": sum(1 for r in rows if r["status"] == "online"), "problems": len(attention),
-            "rows": (attention + [r for r in rows if r["ok"]])[:80],
-            "inc": period_incidents(db, client_id, "endpoint", start, end, z) if start else None}
+    n_ok = sum(1 for r in rows if r["ok"])
+    rows.sort(key=lambda r: (r["ok"], r["name"].lower()))
+    tone = {"Online": "ok", "Offline": "mut", "Atenção": "warn", "Assinaturas": "warn"}
+    return {"total": len(rows), "online": sum(1 for r in rows if r["status"] == "Online"), "ok": n_ok, "problems": len(rows) - n_ok,
+            "pct": round(100 * n_ok / len(rows), 1), "dist": _dist(Counter(r["status"] for r in rows), {**tone, **{k: "bad" for k in ("Sem contato", "Antivírus off", "Quarentena")}}),
+            "os": oses.most_common(4), "rows": rows[:80], "inc": period_incidents(db, client_id, "endpoint", start, end, z) if start else None}
+
+
+def _n(v) -> str:
+    return f"{v:.3f}".replace(".", ",")
+
+
+def highlights(mods, k, backup, endpoints, infra_on) -> list[dict]:
+    """Pontos de atencao e boas noticias para a capa (apenas dos servicos incluidos)."""
+    out = []
+    if infra_on:
+        s = k["summary"]
+        if s["sla_met"] is False:
+            out.append({"tone": "bad", "text": f"SLA não atingido: disponibilidade de {_n(s['availability'])}% contra {_n(s['sla_target'])}% contratado."})
+        elif s["sla_met"]:
+            out.append({"tone": "ok", "text": f"SLA atingido: disponibilidade de {_n(s['availability'])}% no período."})
+        if s["open"]:
+            out.append({"tone": "warn", "text": f"{s['open']} incidente(s) de infraestrutura ainda em aberto."})
+        if s["biggest"]:
+            out.append({"tone": "mut", "text": f"Maior incidente: {s['biggest']['host']} — {s['biggest']['trigger']} ({fmt_duration(s['biggest']['duration_s'])})."})
+        rec = [h for h in k["by_host"] if h["incidents"] >= 3][:3]
+        if rec:
+            out.append({"tone": "warn", "text": "Hosts reincidentes: " + "; ".join(f"{h['host']} ({h['incidents']})" for h in rec) + "."})
+    if backup:
+        if backup["problems"]:
+            names = ", ".join(r["name"] for r in backup["rows"] if not r["ok"])[:160]
+            out.append({"tone": "bad", "text": f"{backup['problems']} de {backup['total']} item(ns) de backup requerem atenção: {names}."})
+        else:
+            out.append({"tone": "ok", "text": f"Todos os {backup['total']} itens de backup estão protegidos e em dia."})
+    if endpoints:
+        if endpoints["problems"]:
+            out.append({"tone": "warn", "text": f"{endpoints['problems']} de {endpoints['total']} estação(ões) com pendência (sem contato, antivírus desligado ou assinaturas)."})
+        else:
+            out.append({"tone": "ok", "text": f"Todas as {endpoints['total']} estações estão em conformidade."})
+    return out[:6]
 
 
 def compare_text(k: dict, prev: dict | None, plabel: str) -> str:
@@ -302,14 +361,14 @@ def generate(db: Session, rep: Report, user: str | None, start: datetime | None 
         title = ("Relatório de Disponibilidade e SLA" if mods == ["infra"] else
                  "Relatório de Backup" if mods == ["backup"] else "Relatório de Estações e Antivírus" if mods == ["endpoint"] else
                  "Relatório de Serviços Gerenciados")
-        html = env.get_template("report.html").render(backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
+        html = env.get_template("report.html").render(hl=highlights(mods, k, backup, endpoints, infra_on), backup=backup, endpoints=endpoints, infra_on=infra_on, mods=[services_service.NAMES[m] for m in mods],
             report_title=title,
             assets=str(ASSETS), report_name=rep.name, client_name=cname, cnpj=rep.cnpj or (client.cnpj if client else None),
             client_logo=(client.logo_path if client and client.logo_path and Path(client.logo_path).exists() else None),
             period_label=plabel, generated_at=datetime.now(z).strftime("%d/%m/%Y %H:%M"), lh=letterhead(db),
             s=k["summary"], k=k, kpis_on=rep.include_kpis, charts=make_charts(k) if (rep.include_charts and infra_on) else [],
             rows=rows, total_rows=len(events), truncated=len(events) > MAX_ROWS, notes=rep.notes,
-            summary_text=summary_text(k, cname, plabel) if infra_on else '', cmp_text=cmp_text,
+            summary_text=summary_text(k, cname, plabel) if infra_on else '', cmp_text=cmp_text, cmp_main=cmp_text.split(" Hosts reincidentes")[0],
             pct=lambda v: "—" if v is None else f"{v:.3f}%".replace(".", ","),
             dur=lambda v: fmt_duration(v) if v is not None else "—", dur2=dur2,
             dt=lambda d: d.astimezone(z).strftime("%d/%m/%Y %H:%M") if d else "—",
