@@ -389,6 +389,9 @@ class JobStatus(Base):
     last_duration_ms: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str | None] = mapped_column(String(16))
     error: Mapped[str | None] = mapped_column(Text)
+    ack_sig: Mapped[str | None] = mapped_column(String(255))  # assinatura da falha que o operador deu ciencia
+    ack_by: Mapped[str | None] = mapped_column(String(255))
+    ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SyncRun(Base):

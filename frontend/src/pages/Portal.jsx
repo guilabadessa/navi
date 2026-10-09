@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Download, LogOut, Moon, Sun, Wrench } from 'lucide-react'
+import { Download, LogOut, Moon, Sun, UserRound, Wrench } from 'lucide-react'
 import { download, get, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
-import { Card, Loading, Pill, SevBadge, Stat, StatusBadge, Table, useLoad, useToast } from '../ui'
+import { Card, Loading, Modal, Pill, SevBadge, Stat, StatusBadge, Table, useLoad, useToast } from '../ui'
 import { getTheme, toggleTheme } from '../theme'
 import { useAuth, can } from '../App'
+import Account from './Account'
 import FinanceTab from './FinanceTab'
 import NaviGuide, { PORTAL_ASKS, PORTAL_SEV, PORTAL_TIPS } from './NaviGuide'
 
@@ -16,9 +17,9 @@ const hostState = (h) => h.available === 2 ? ['bad', 'indisponível'] : h.open ?
 
 // Portal do cliente: somente leitura, restrito ao proprio cliente (o servidor garante o isolamento).
 // "embedded"/clientId = pre-visualizacao pela equipe Orca (mostra exatamente o que o cliente ve).
-export default function Portal({ me, onLogout, clientId: forced, embedded, minSev }) {
+export default function Portal({ me, onLogout, reloadMe, clientId: forced, embedded, minSev }) {
   const toast = useToast(); const auth = useAuth(); const canFin = can(auth, 'portal.finance') || can(auth, 'finance.view'); const [days, setDays] = useState(30); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
-  const [grp, setGrp] = useState(''); const [hq, setHq] = useState('')
+  const [grp, setGrp] = useState(''); const [hq, setHq] = useState(''); const [acc, setAcc] = useState(!!me?.must_change_password && !forced)
   const mine = auth?.clients || []
   const [pick, setPick] = useState(() => { try { return +localStorage.getItem(CKEY) || 0 } catch { return 0 } })
   const clientId = forced || (mine.some(c => c.id === pick) ? pick : (mine[0]?.id || undefined))
@@ -41,7 +42,9 @@ export default function Portal({ me, onLogout, clientId: forced, embedded, minSe
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select>
         <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Tema" onClick={() => setTheme(toggleTheme())}>{dark ? <Sun /> : <Moon />}</button>
+        {!forced && <button className="btn sm" onClick={() => setAcc(true)}><UserRound />Minha conta</button>}
         <button className="btn sm" onClick={onLogout}><LogOut />Sair</button></div></div>}
+    {acc && <Modal title="Minha conta" wide onClose={() => setAcc(false)}><Account me={me} onChanged={reloadMe} /></Modal>}
     <div className={embedded ? '' : 'content'} style={{ margin: '0 auto' }}>
       {embedded && <div className="bar"><b style={{ fontSize: 18 }}>{d?.client.name}</b><div className="grow" /><select style={{ width: 'auto' }} value={days} onChange={e => setDays(+e.target.value)}>{[7, 30, 90].map(x => <option key={x} value={x}>Últimos {x} dias</option>)}</select></div>}
       {!d ? <Loading err={err} /> : <>

@@ -1,5 +1,9 @@
 """Configuracoes editaveis no painel. Valores secretos ficam cifrados no banco;
 .env serve de valor inicial (fallback)."""
+import threading
+import time
+
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -24,10 +28,49 @@ def _env_default(key: str) -> str:
     }.get(key, "")
 
 
+# Cache em memoria (nenhuma copia extra no banco): uma unica fotografia da tabela por processo, trocada por
+# inteira a cada TTL ou assim que este processo grava. Chaves da Conta Azul ficam fora: o refresh token gira e
+# o processo errado nao pode ler valor velho.
+_TTL = 20
+_NOCACHE = ("contaazul.",)
+_snap: dict[str, tuple[str | None, bool]] = {}
+_snap_at = 0.0
+_lock = threading.Lock()
+
+
+def invalidate():
+    global _snap_at
+    _snap_at = 0.0
+
+
+def _row(db: Session, key: str):
+    global _snap, _snap_at
+    if key.startswith(_NOCACHE) or db.info.get("settings_dirty"):  # gravacao pendente nesta sessao: le direto do banco
+        r = db.get(Setting, key)
+        return (r.value, r.is_secret) if r is not None else None
+    if time.monotonic() - _snap_at > _TTL:
+        with _lock:
+            if time.monotonic() - _snap_at > _TTL:
+                _snap = {k: (v, bool(sec)) for k, v, sec in db.execute(select(Setting.key, Setting.value, Setting.is_secret))}
+                _snap_at = time.monotonic()
+    return _snap.get(key)
+
+
+@event.listens_for(Session, "after_commit")
+def _drop_cache_after_commit(session):
+    if session.info.pop("settings_dirty", False):
+        invalidate()
+
+
+@event.listens_for(Session, "after_rollback")
+def _clear_dirty(session):
+    session.info.pop("settings_dirty", None)
+
+
 def get(db: Session, key: str, default: str | None = None) -> str:
-    row = db.get(Setting, key)
-    if row is not None and row.value not in (None, ""):
-        return decrypt(row.value) if row.is_secret else row.value
+    row = _row(db, key)
+    if row is not None and row[0] not in (None, ""):
+        return decrypt(row[0]) if row[1] else row[0]
     d = _env_default(key)
     return d if d != "" else (default or "")
 
@@ -40,6 +83,7 @@ def put(db: Session, key: str, value: str, user: str | None = None):
         db.add(Setting(key=key, value=stored, is_secret=secret, updated_by=user))
     else:
         row.value, row.is_secret, row.updated_by = stored, secret, user
+    db.info["settings_dirty"] = True
     db.flush()
 
 

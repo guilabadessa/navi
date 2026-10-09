@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, EyeOff, Wrench, Building2 } from 'lucide-react'
 import { get, post, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
-import { Card, Loading, PageHead, Pill, SevBadge, Stat, Table, useLoad, useToast } from '../ui'
+import { Card, Loading, Modal, PageHead, Pill, SevBadge, Stat, Table, useLoad, useToast } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, can } from '../App'
 
@@ -10,6 +10,35 @@ const SEVC = { 'Não classificado': '#97aab3', Informação: '#7499ff', Atençã
 const since = (v) => fmtDur((Date.now() - new Date(v).getTime()) / 1000)
 const ls = (k, d) => { try { return localStorage.getItem('navi.dash.' + k) ?? d } catch { return d } }
 const lset = (k, v) => { try { localStorage.setItem('navi.dash.' + k, v) } catch { /* ignore */ } }
+
+// Banner de falhas de rotina: clicar mostra o detalhe; "Dar ciencia" some com o aviso ate surgir uma falha nova
+function JobAlerts({ jobs, reload, canAck }) {
+  const toast = useToast(); const [open, setOpen] = useState(false); const [busy, setBusy] = useState('')
+  const ack = async (j) => {
+    setBusy(j.name)
+    try { await post(`/dashboard/jobs/${j.name}/ack`); toast('Ciência registrada'); await reload() } catch (e) { toast(e.message, true) } finally { setBusy('') }
+  }
+  const when = (v) => v ? fmtDT(v) : 'nunca executou'
+  return <>
+    <div className="banner bad" role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => setOpen(true)} onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setOpen(true)}>
+      <AlertTriangle size={20} /><div className="grow"><b>{jobs.length === 1 ? '1 rotina da NAVI com falha' : `${jobs.length} rotinas da NAVI com falha`}:</b> {jobs.map(j => j.label + (j.kind === 'erro' ? ' (erro)' : ' (atraso)')).join(', ')}. Os alertas podem não estar sendo enviados — clique para ver os detalhes.</div>
+      <button className="btn sm" onClick={e => { e.stopPropagation(); setOpen(true) }}>Ver detalhes</button></div>
+    {open && <Modal title="Falhas nas rotinas da NAVI" onClose={() => setOpen(false)} wide
+      footer={<button className="btn" onClick={() => setOpen(false)}>Fechar</button>}>
+      {jobs.length === 0 && <div className="empty">Nenhuma falha pendente. 🎉</div>}
+      {jobs.map(j => <div key={j.name} style={{ borderBottom: '1px solid var(--line)', padding: '12px 0' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <b>{j.label}</b><Pill tone={j.kind === 'erro' ? 'bad' : 'warn'}>{j.kind === 'erro' ? 'Erro na execução' : 'Atrasada'}</Pill>
+          <div className="grow" />
+          {canAck && <button className="btn sm" disabled={busy === j.name} onClick={() => ack(j)}>{busy === j.name ? 'Registrando…' : 'Dar ciência'}</button>}</div>
+        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--mut)' }}>Última execução: {when(j.last_run)}{j.kind === 'atraso' && j.interval_s ? ` · deveria rodar a cada ${fmtDur(j.interval_s)}` : ''}</div>
+        {j.error && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, background: 'var(--line)', padding: 10, borderRadius: 8, marginTop: 8, maxHeight: 160, overflow: 'auto' }}>{j.error}</pre>}
+        {j.kind === 'atraso' && <div style={{ fontSize: 13, marginTop: 6 }}>Possível causa: o worker está parado. Verifique com <code>docker compose ps</code> e reinicie o serviço <code>worker</code>.</div>}
+      </div>)}
+      <p style={{ fontSize: 12, marginTop: 12, color: 'var(--mut)' }}>“Dar ciência” remove o aviso desta falha. Se a rotina falhar com outro erro, ou voltar a atrasar, o aviso reaparece.</p>
+    </Modal>}
+  </>
+}
 
 export default function Dashboard() {
   const me = useAuth(); const toast = useToast(); const nav = useNavigate()
@@ -34,7 +63,7 @@ export default function Dashboard() {
         {[1, 7, 30, 90].map(x => <option key={x} value={x}>{x === 1 ? 'Últimas 24h' : `Últimos ${x} dias`}</option>)}</select>
     </PageHead>
 
-    {d.stale_jobs.length > 0 && <div className="banner bad"><AlertTriangle size={20} /><div className="grow"><b>Processamento da NAVI com atraso:</b> {d.stale_jobs.join(', ')}. Os alertas podem não estar sendo enviados — verifique o worker.</div></div>}
+    {d.stale_jobs.length > 0 && <JobAlerts jobs={d.stale_jobs} reload={reload} canAck={can(me, 'routines.edit')} />}
     {d.shadow && <div className="banner info"><EyeOff size={20} /><div className="grow"><b>Modo sombra ativo:</b> os alertas são registrados, mas <u>não são enviados</u>. Desative em Alertas → Migração.</div><button className="btn sm" onClick={() => nav('/alertas')}>Abrir</button></div>}
     {!cl && d.coverage?.hosts_uncovered > 0 && <div className="banner warn"><Building2 size={20} /><div className="grow"><b>{d.coverage.hosts_uncovered} de {d.coverage.hosts_total} hosts sem cliente associado</b> — não geram alerta, SLA nem relatório.</div><button className="btn sm" onClick={() => nav('/clientes?cobertura=1')}>Associar agora</button></div>}
     {failed > 0 && <div className="banner warn"><AlertTriangle size={20} /><div className="grow"><b>{failed} envio(s) de alerta falharam nas últimas 24h.</b> Confira os detalhes nos eventos.</div></div>}

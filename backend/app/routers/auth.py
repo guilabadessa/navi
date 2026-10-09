@@ -8,13 +8,15 @@ from .. import audit
 from ..config import get_settings
 from ..db import get_db
 from ..models import User
-from ..schemas import AcceptInviteIn, ForgotIn, LoginIn, PasswordChange
+from ..schemas import AcceptInviteIn, ForgotIn, LoginIn, PasswordChange, ProfileIn
+from ..util import titlecase
 from ..security import (COOKIE, PERMS, RateLimiter, user_perms, read_invite_token, client_ip, current_user, hash_password, login_limiter, make_session, needs_rehash,
                         read_session, verify_password)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _forgot_limiter = RateLimiter(5, 900)
 _invite_limiter = RateLimiter(10, 900)
+_pw_limiter = RateLimiter(8, 900)  # tentativas de senha atual errada por usuario
 
 
 def _me(u: User, csrf: str | None = None, db: Session | None = None):
@@ -74,10 +76,16 @@ def me(request: Request, user: User = Depends(current_user), db: Session = Depen
 
 @router.post("/change-password")
 def change_password(body: PasswordChange, request: Request, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    key = f"u{user.id}"
+    if _pw_limiter.blocked(key):
+        raise HTTPException(429, "Muitas tentativas. Aguarde alguns minutos.")
     if not verify_password(body.current_password, user.password_hash):
+        _pw_limiter.hit(key)
         audit.log(db, request, "change_password", "user", user.id, result="falha")
         db.commit()
         raise HTTPException(400, "Senha atual incorreta")
+    if verify_password(body.new_password, user.password_hash):
+        raise HTTPException(400, "A nova senha deve ser diferente da atual")
     user.password_hash, user.must_change_password = hash_password(body.new_password), False
     audit.log(db, request, "change_password", "user", user.id)
     db.commit()
@@ -86,6 +94,14 @@ def change_password(body: PasswordChange, request: Request, response: Response, 
     st = get_settings()
     response.set_cookie(COOKIE, token, httponly=True, secure=st.NAVI_COOKIE_SECURE, samesite="lax", max_age=st.NAVI_SESSION_HOURS * 3600, path=st.NAVI_BASE_PATH)
     return {"ok": True, "csrf": csrf}
+
+
+@router.put("/profile")
+def update_profile(body: ProfileIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    user.name = titlecase(body.name.strip())
+    audit.log(db, request, "profile_update", "user", user.id)
+    db.commit()
+    return {"ok": True, "name": user.name}
 
 
 @router.get("/invite/{token}")

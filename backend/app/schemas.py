@@ -18,6 +18,10 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=10, max_length=256)
 
 
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+
+
 class UserIn(BaseModel):
     email: EmailStr
     name: str = Field(min_length=2, max_length=255)

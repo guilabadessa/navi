@@ -40,3 +40,8 @@ Integrações (somente leitura): Zabbix · Acronis · FortiClient EMS · Conta A
 - Servidor único (decisão do negócio): backup só local; o worker e a API compartilham a mesma máquina.
 - `client_hosts` carrega os hosts ativos e filtra em Python (ok até alguns milhares de hosts; depois, filtrar no SQL).
 - Fatura do Conta Azul reúne boleto e nota: a API não entrega o PDF da nota separado.
+
+## Cache de configurações e aceite de falhas
+- `settings_store` mantém **uma única fotografia** da tabela `settings` em memória por processo (TTL 20 s, trocada por inteiro; nada é gravado a mais no banco). Gravar uma configuração derruba a fotografia ao concluir a transação. As chaves `contaazul.*` não passam pelo cache (o refresh token gira e o outro processo não pode ler valor velho).
+- O banner de falhas do Dashboard lista rotinas com erro/atraso; "Dar ciência" grava `job_status.ack_sig` (assinatura da falha). Outro erro ou novo atraso muda a assinatura e o aviso volta.
+- **Minha conta** (`/conta`, e botão no portal do cliente): edita o nome e troca a senha (limite de 8 tentativas/15 min; derruba as outras sessões).

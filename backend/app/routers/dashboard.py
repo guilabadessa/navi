@@ -1,14 +1,14 @@
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from .. import settings_store
+from .. import audit, settings_store
 from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, ExtAsset, ExtTenant, HealthCheck, JobStatus, ZbxHost
-from ..security import require
+from ..security import current_user, require
 from ..services import kpi_service, maintenance_service
 from ..util import to_dict
 from .clients import client_hosts
@@ -25,6 +25,41 @@ def _cached(key: str, ttl: int, fn):
     v = fn()
     _cache[key] = (t, v)
     return v
+
+
+def _sig(j: JobStatus, kind: str) -> str:
+    return f"erro:{(j.error or '')[:200]}" if kind == "erro" else f"atraso:{j.last_run.isoformat() if j.last_run else ''}"
+
+
+def job_alerts(db: Session) -> list[dict]:
+    """Rotinas com erro ou atrasadas que ainda nao receberam aceite. Falha nova (outro erro / novo atraso) volta a aparecer."""
+    now = datetime.now(timezone.utc)
+    out = []
+    for j in db.scalars(select(JobStatus)):
+        if not j.enabled:
+            continue
+        kind = None
+        if j.status == "error":
+            kind = "erro"
+        elif j.last_run and j.interval_s and (now - j.last_run).total_seconds() > max(j.interval_s * 4, 180):
+            kind = "atraso"
+        if not kind or j.ack_sig == _sig(j, kind):
+            continue
+        out.append({"name": j.name, "label": j.label or j.name, "kind": kind, "error": j.error if kind == "erro" else None,
+                    "last_run": j.last_run.isoformat() if j.last_run else None, "interval_s": j.interval_s})
+    return out
+
+
+@router.post("/dashboard/jobs/{name}/ack")
+def ack_job(name: str, request: Request, user=Depends(current_user), db: Session = Depends(get_db), _=Depends(require("routines.edit"))):
+    j = db.get(JobStatus, name)
+    if not j:
+        raise HTTPException(404, "Rotina não encontrada")
+    kind = "erro" if j.status == "error" else "atraso"
+    j.ack_sig, j.ack_by, j.ack_at = _sig(j, kind), user.name, datetime.now(timezone.utc)
+    audit.log(db, request, "job_ack", "job", name, detail={"job": name, "tipo": kind})
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/dashboard")
@@ -60,13 +95,6 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             hk = e.started_at.astimezone().strftime("%H")
             by_hour[hk] = by_hour.get(hk, 0) + 1
         hours = [(now - timedelta(hours=i)).astimezone().strftime("%H") for i in range(23, -1, -1)]
-        # saude do processamento (worker parado = nada alerta)
-        stale = []
-        for j in db.scalars(select(JobStatus)):
-            if j.last_run and j.interval_s and (now - j.last_run).total_seconds() > max(j.interval_s * 4, 180):
-                stale.append(j.label or j.name)
-            elif j.status == "error":
-                stale.append((j.label or j.name) + " (erro)")
         bk = [Event.kind == "backup", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
         backup_active = db.scalar(select(func.count()).select_from(Event).where(*bk)) or 0
         ep = [Event.kind == "endpoint", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
@@ -91,8 +119,8 @@ def dashboard(client_id: int | None = None, days: int = 30, db: Session = Depend
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "stale_jobs": stale, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
-    return _cached(f"dash{client_id}-{days}", 20, build)
+            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+    return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db)}
 
 
 @router.get("/dashboard/clients-health")

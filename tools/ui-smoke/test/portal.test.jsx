@@ -22,8 +22,10 @@ describe('portal do cliente', () => {
     for (const t of [...container.querySelectorAll('.tabs button')]) { fireEvent.click(t); await new Promise(r => setTimeout(r, 300)); if (container.querySelector('#boom')) throw new Error(container.querySelector('#boom').textContent) }
     const names = [...container.querySelectorAll('.tabs button')].map(b => b.textContent)
     expect(names.some(n => n.startsWith('Grupos'))).toBe(true); expect(names).toContain('Financeiro')
-    expect(container.querySelector('.guide-fab')).toBeTruthy(); expect(container.querySelector('.pclient select')).toBeTruthy(); expect(container.textContent).toContain('Portal do Cliente')
+    expect(container.querySelector('.guide-fab')).toBeTruthy(); expect(container.textContent).toContain('Portal do Cliente')
     expect(container.textContent).not.toContain('Gestão'); expect(container.querySelector('.side')).toBeNull()
+    fireEvent.click([...container.querySelectorAll('button')].find(b => /Minha conta/.test(b.textContent)))
+    await waitFor(() => expect(document.body.textContent).toContain('Alterar senha'))
   }, 40000)
 })
 describe('login e convite', () => {

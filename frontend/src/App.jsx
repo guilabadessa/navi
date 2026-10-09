@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, Globe, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
-  HardDrive, Search, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
+  HardDrive, Search, UserRound, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
 import Login from './pages/Login'
@@ -19,6 +19,7 @@ import { UsersPage, AuditPage } from './pages/Admin'
 import Settings from './pages/Settings'
 import Palette from './Palette'
 import Portal from './pages/Portal'
+import Account from './pages/Account'
 import PortalSwitch from './pages/PortalSwitch'
 import NaviGuide, { STAFF_ASKS, STAFF_TIPS } from './pages/NaviGuide'
 import Protection from './pages/Protection'
@@ -55,10 +56,11 @@ function StatusPills() {
   return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" />{st.acronis && <P k="acronis" label="Acronis" />}{st.ems && <P k="ems" label="EMS" />}<P k="navi" label="NAVI" /></div>
 }
 
-function Shell({ me, onLogout }) {
+function Shell({ me, onLogout, reloadMe }) {
   const loc = useLocation(); const navTo = useNavigate(); const [pal, setPal] = useState(false); const [theme, setTheme] = useState(getTheme()); const [tv, setTv] = useState(getTv())
   useEffect(() => { const h = e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPal(p => !p) } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [])
-  const cur = NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
+  const cur = loc.pathname === '/conta' ? ['/conta', 'Minha conta'] : NAV.find(([p]) => p === '/' ? loc.pathname === '/' : loc.pathname.startsWith(p))
+  useEffect(() => { if (me.must_change_password && loc.pathname !== '/conta') navTo('/conta') }, [me.must_change_password, loc.pathname])
   const allowed = new Set(NAV.filter(([, , , p]) => can(me, p)).map(([to]) => to))
   const tips = Object.fromEntries(Object.entries(STAFF_TIPS).filter(([k]) => allowed.has(k)))
   const here = Object.keys(tips).filter(k => k === '/' ? loc.pathname === '/' : loc.pathname.startsWith(k)).sort((a, b) => b.length - a.length)[0]
@@ -69,7 +71,7 @@ function Shell({ me, onLogout }) {
       <nav className="nav">{NAV.filter(([, , , p]) => can(me, p)).map(([to, label, Icon]) =>
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => isActive ? 'active' : ''}><Icon />{label}</NavLink>)}</nav>
       <div className="me"><b>{me.name}</b><span>{me.role.replace('_', ' ')}</span>
-        <div style={{ marginTop: 8 }}><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
+        <div style={{ marginTop: 8, display: 'flex', gap: 14 }}><NavLink to="/conta" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }}><UserRound size={15} />Minha conta</NavLink><a href="#" style={{ color: '#9db6ff', display: 'inline-flex', gap: 6, alignItems: 'center' }} onClick={e => { e.preventDefault(); onLogout() }}><LogOut size={15} />Sair</a></div></div>
     </aside>
     <div className="main" id="conteudo">
       <div className="top"><h1>{cur ? cur[1] : 'NAVI'}</h1>
@@ -98,6 +100,7 @@ function Shell({ me, onLogout }) {
           <Route path="/usuarios" element={<UsersPage />} />
           <Route path="/auditoria" element={<AuditPage />} />
           <Route path="/configuracoes" element={<Settings />} />
+          <Route path="/conta" element={<Account me={me} onChanged={reloadMe} />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>
@@ -117,6 +120,6 @@ export default function App() {
   if (loc.pathname.startsWith('/convite/')) return <Routes><Route path="/convite/:token" element={<AcceptInvite onLogin={onLogin} />} /></Routes>
   if (me === undefined) return null
   if (!me) return <Login onLogin={onLogin} />
-  if (me.role === 'CLIENTE') return <Auth.Provider value={me}><Portal me={me} onLogout={logout} /></Auth.Provider>
-  return <Auth.Provider value={me}><Shell me={me} onLogout={logout} /></Auth.Provider>
+  if (me.role === 'CLIENTE') return <Auth.Provider value={me}><Portal me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
+  return <Auth.Provider value={me}><Shell me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
 }
