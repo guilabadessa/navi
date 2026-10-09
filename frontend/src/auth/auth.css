@@ -1,0 +1,44 @@
+/* Login / convite / redefinicao: layout simples e corporativo */
+.lg-root{min-height:100vh;display:flex;flex-direction:column;background:#071a5a;color:#fff}
+.lg-top{padding:26px 36px}.lg-top img{height:38px;display:block}
+.lg-main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:8px 20px 28px}
+.lg-title{text-align:center;margin-bottom:6px}
+.lg-title h1{font:700 40px/1 var(--head);letter-spacing:.24em;margin:0 0 0 .24em;color:#fff}
+.lg-title p{margin:10px 0 0;color:#a9c0f5;font-size:16px}
+.lg-card{width:100%;max-width:400px;background:#fff;color:#141a2e;border-radius:10px;padding:32px 32px 26px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.lg-card h2{font:700 22px var(--head);color:#071a5a;margin:0 0 6px}
+.lg-card .lg-brand{display:none}
+.lg-card .lg-sub{color:#566182;font-size:14.5px;line-height:1.45;margin:0 0 20px}
+.lg-kicker{display:none}
+.lg-field{margin-bottom:15px}
+.lg-field label{display:block;font:600 12px var(--head);letter-spacing:.08em;color:#566182;margin-bottom:6px}
+.lg-input{position:relative;display:flex;align-items:center}
+.lg-input>svg.lead{position:absolute;left:12px;width:17px;height:17px;color:#8892b0;pointer-events:none}
+.lg-input input{width:100%;box-sizing:border-box;padding:11px 12px 11px 38px;font-size:15.5px;color:#141a2e;background:#fff;border:1px solid #c5cde3;border-radius:6px;outline:none}
+.lg-input input::placeholder{color:#9aa3bf}
+.lg-input input:hover{border-color:#8b97c0}
+.lg-input input:focus{border-color:#1e73f8;box-shadow:0 0 0 3px rgba(30,115,248,.18)}
+.lg-input .eye{position:absolute;right:4px;background:none;border:0;color:#6b7596;cursor:pointer;padding:8px;border-radius:6px;display:flex}
+.lg-input .eye:hover{color:#071a5a}
+.lg-input.pw input{padding-right:42px}
+.lg-warn{color:#b45309;font-size:13px;font-weight:600;margin-top:6px}
+.lg-err,.lg-ok{display:flex;gap:8px;align-items:flex-start;border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:14px;font-weight:600}
+.lg-err{background:#fdecee;border:1px solid #f3b4ba;color:#a3141f}
+.lg-ok{background:#e8f7ee;border:1px solid #a9dfbd;color:#14602f;font-weight:500}
+.lg-err svg,.lg-ok svg{flex:none;margin-top:2px}
+.lg-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;font:600 16px var(--head);color:#fff;background:#1e73f8;border:0;border-radius:6px;cursor:pointer}
+.lg-btn:hover:not(:disabled){background:#1760d6}
+.lg-btn:focus-visible,.lg-link:focus-visible,.lg-input .eye:focus-visible{outline:2px solid #1e73f8;outline-offset:2px}
+.lg-btn:disabled{cursor:default;opacity:.7}
+.lg-btn.done{background:#16a34a;opacity:1}
+.lg-spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:lg-rot .8s linear infinite}
+.lg-link{background:none;border:0;color:#1e73f8;font:inherit;font-size:14px;cursor:pointer;padding:6px}
+.lg-link:hover{text-decoration:underline}
+.lg-center{text-align:center;margin-top:10px}
+.lg-secure{display:flex;gap:6px;align-items:center;justify-content:center;margin-top:8px;font-size:12.5px;color:#7a84a3}
+.lg-help{font-size:13px;color:#8fa6d6;text-align:center}
+.lg-foot{text-align:center;padding:0 20px 22px;font-size:12.5px;color:#7f97d0}
+.lg-rules{margin:0 0 16px;font-size:13.5px;display:grid;gap:3px}
+.lg-rules div{display:flex;gap:8px;align-items:center;color:#8892b0}.lg-rules div.ok{color:#16803c}
+@keyframes lg-rot{to{transform:rotate(360deg)}}
+@media (max-width:480px){.lg-top{padding:18px 20px}.lg-card{padding:26px 20px 22px}.lg-title h1{font-size:34px}}

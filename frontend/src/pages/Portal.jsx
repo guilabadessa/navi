@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Download, LogOut, Moon, Sun, UserRound, Wrench } from 'lucide-react'
+import { Building2, ChevronDown, Clock, Download, LogOut, Moon, Sun, UserRound, Wrench } from 'lucide-react'
 import { download, get, fmtDT, fmtDur, fmtNum, fmtPct } from '../api'
 import { Card, KIND, KindPill, LiveDur, Loading, Modal, PERIODS, Pill, SevBadge, Stat, StatusBadge, Table, periodLabel, useLoad, useToast } from '../ui'
 import { getTheme, toggleTheme } from '../theme'
@@ -46,6 +46,24 @@ function ServiceStatus({ d, go }) {
     <div className="sub">{i.line}</div><div className="sub">{i.extra}</div></div>)}</div>
 }
 
+// Menu do usuario na barra do portal (conta e sair)
+function UserMenu({ me, onAccount, onLogout }) {
+  const [open, setOpen] = useState(false); const ref = React.useRef(null)
+  React.useEffect(() => {
+    if (!open) return undefined
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }; const k = (e) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', h); document.addEventListener('keydown', k)
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k) }
+  }, [open])
+  const name = me?.name || me?.email || 'Usuário'; const ini = name.split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase()
+  return <div className="pumenu" ref={ref}>
+    <button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}><span className="pav">{ini}</span><span className="pn">{name}</span><ChevronDown size={15} /></button>
+    {open && <div className="pdd" role="menu"><div className="who"><b>{name}</b><span>{me?.email}</span></div>
+      {onAccount && <button role="menuitem" onClick={() => { setOpen(false); onAccount() }}><UserRound />Minha conta</button>}
+      <button role="menuitem" onClick={onLogout}><LogOut />Sair</button></div>}
+  </div>
+}
+
 export default function Portal({ me, onLogout, reloadMe, clientId: forced, embedded, minSev }) {
   const toast = useToast(); const auth = useAuth(); const canFin = can(auth, 'portal.finance') || can(auth, 'finance.view'); const [days, setDays] = useState(0.0417); const [theme, setTheme] = useState(getTheme()); const [tab, setTab] = useState('geral')
   const [grp, setGrp] = useState(''); const [hq, setHq] = useState(''); const [acc, setAcc] = useState(!!me?.must_change_password && !forced)
@@ -66,14 +84,16 @@ export default function Portal({ me, onLogout, reloadMe, clientId: forced, embed
     ...(d.backup?.enabled ? [['bkp', 'Backup']] : []), ...(d.endpoints?.enabled ? [['eps', 'Endpoints']] : []), ...(d.services?.cloud ? [['cloud', 'Cloud Orca']] : []), ['rel', 'Relatórios'], ...(canFin ? [['fin', 'Financeiro']] : [])] : []
   return <div style={{ minHeight: embedded ? 0 : '100vh' }}>
     {!embedded && <div className="top ptop" style={{ position: 'sticky' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
+      <div className="pl"><img src="/cliente/brand/branco.png" alt="Orca TI" className="plogo" />
         <div className="pprod"><h1 className="pbrand">NAVI</h1><div className="psub">Portal do Cliente</div></div>
-        <div className="pclient">{mine.length > 1 ? <select value={clientId || ''} onChange={e => choose(e.target.value)} title="Trocar de cliente">{mine.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select> : <b>{d ? d.client.name : ''}</b>}</div></div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <select style={{ width: 'auto' }} value={String(days)} onChange={e => setDays(+e.target.value)} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <div className="pclient"><Building2 aria-hidden="true" />{mine.length > 1 ? <select value={clientId || ''} onChange={e => choose(e.target.value)} title="Trocar de cliente" aria-label="Cliente">{mine.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select> : <b title={d?.client.name}>{d ? d.client.name : '…'}</b>}</div></div>
+      <div className="pr">
+        {d && (d.active.length > 0
+          ? <button className="pstat bad" title="Ver problemas em andamento" onClick={() => { setFk(''); setFst('open'); setTab('inc') }}><i />{d.active.length} problema(s) em andamento</button>
+          : <span className="pstat ok" title="Todos os serviços monitorados estão operando normalmente"><i />Tudo operando</span>)}
+        <label className="pperiod"><Clock aria-hidden="true" /><span>Período</span><select value={String(days)} onChange={e => setDays(+e.target.value)} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
         <button className="iconbtn" aria-label="Alternar tema claro ou escuro" title="Tema" onClick={() => setTheme(toggleTheme())}>{dark ? <Sun /> : <Moon />}</button>
-        {!forced && <button className="btn sm" onClick={() => setAcc(true)}><UserRound />Minha conta</button>}
-        <button className="btn sm" onClick={onLogout}><LogOut />Sair</button></div></div>}
+        <UserMenu me={me} onAccount={forced ? null : () => setAcc(true)} onLogout={onLogout} /></div></div>}
     {acc && <Modal title="Minha conta" wide onClose={() => setAcc(false)}><Account me={me} onChanged={reloadMe} /></Modal>}
     <div className={embedded ? '' : 'content'} style={{ margin: '0 auto' }}>
       {embedded && <div className="bar"><b style={{ fontSize: 18 }}>{d?.client.name}</b><div className="grow" /><select style={{ width: 'auto' }} value={String(days)} onChange={e => setDays(+e.target.value)} aria-label="Período">{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}

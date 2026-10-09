@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Circle, Eye, EyeOff, Lock } from 'lucide-react'
 import { get, post } from '../api'
+import AuthShell from '../auth/AuthShell'
 
 const rules = (p) => [['Mínimo de 10 caracteres', p.length >= 10], ['Letras maiúsculas e minúsculas', /[a-z]/.test(p) && /[A-Z]/.test(p)], ['Pelo menos um número', /\d/.test(p)]]
 
@@ -15,23 +16,22 @@ export default function AcceptInvite({ onLogin }) {
     e.preventDefault(); setBusy(true); setErr('')
     try { onLogin(await post('/auth/accept-invite', { token, password: pw })); nav('/', { replace: true }) } catch (x) { setErr(x.message) } finally { setBusy(false) }
   }
-  return <div className="login"><div className="art">
-    <img src="/cliente/brand/branco.png" alt="Orca TI" style={{ height: 44, alignSelf: 'flex-start' }} />
-    <div className="hero"><div className="eyebrow">Centro de operações de TI</div><h1>NAVI</h1><div className="tag">Inteligência operacional Orca TI</div><p>Falta só um passo: crie a sua senha para ativar o acesso.</p></div>
-    <div style={{ fontSize: 13, color: '#8fa8ee' }}>© {new Date().getFullYear()} Orca TI</div></div>
-    <div className="form"><div className="box">
-      {!info && !err && <p className="sub">Validando convite…</p>}
-      {err && !info && <><h2>Link inválido</h2><div className="errbox" style={{ marginTop: 16 }}>{err}</div><button className="btn" onClick={() => nav('/')}>Ir para o login</button></>}
-      {info && <form onSubmit={submit}>
-        <h2>{info.pending ? 'Bem-vindo(a)!' : 'Redefinir senha'}</h2>
-        <p className="sub" style={{ marginBottom: 20 }}>Olá, <b>{info.name}</b>. Crie uma senha para <b>{info.email}</b>.</p>
-        <div className="row"><div><label className="f">NOVA SENHA</label><div className="pwd"><input type={show ? 'text' : 'password'} autoFocus required value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" style={{ paddingRight: 44 }} />
-          <button type="button" onClick={() => setShow(!show)}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div></div>
-        <div className="row"><div><label className="f">CONFIRMAR SENHA</label><input type={show ? 'text' : 'password'} required value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" /></div></div>
-        <div style={{ marginBottom: 16, fontSize: 13.5 }}>{[...rules(pw), ['As senhas coincidem', pw.length > 0 && pw === pw2]].map(([t, v]) =>
-          <div key={t} style={{ display: 'flex', gap: 8, alignItems: 'center', color: v ? 'var(--ok)' : 'var(--mut)' }}>{v ? <CheckCircle2 size={15} /> : <XCircle size={15} />}{t}</div>)}</div>
-        {err && <div className="errbox">{err}</div>}
-        <button className="btn primary" style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 16 }} disabled={busy || !ok}>{busy ? 'Salvando…' : 'Definir senha e entrar'}</button>
-      </form>}
-    </div></div></div>
+  return <AuthShell>
+    <img src="/cliente/brand/branco.png" alt="Orca TI" className="lg-brand" />
+    {!info && !err && <p className="lg-sub"><i className="lg-spin" style={{ display: 'inline-block', verticalAlign: -4, marginRight: 8, borderColor: '#c5cde3', borderTopColor: '#1e73f8' }} />Validando convite…</p>}
+    {err && !info && <><h2>Link inválido</h2><div className="lg-err" role="alert" style={{ marginTop: 14 }}><AlertTriangle size={16} />{err}</div><button className="lg-btn" onClick={() => nav('/')}>Ir para o login</button></>}
+    {info && <form onSubmit={submit}>
+      <div className="lg-kicker">{info.pending ? 'Primeiro acesso' : 'Nova senha'}</div>
+      <h2>{info.pending ? 'Bem-vindo(a)!' : 'Redefinir senha'}</h2>
+      <p className="lg-sub">Olá, <b>{info.name}</b>. Crie uma senha para <b>{info.email}</b>.</p>
+      <div className="lg-field"><label htmlFor="lg-n1">NOVA SENHA</label><div className="lg-input pw"><Lock className="lead" />
+        <input id="lg-n1" type={show ? 'text' : 'password'} autoFocus required value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
+        <button type="button" className="eye" aria-label={show ? 'Ocultar senha' : 'Mostrar senha'} onClick={() => setShow(!show)}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+      <div className="lg-field"><label htmlFor="lg-n2">CONFIRMAR SENHA</label><div className="lg-input"><Lock className="lead" />
+        <input id="lg-n2" type={show ? 'text' : 'password'} required value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" /></div></div>
+      <div className="lg-rules">{[...rules(pw), ['As senhas coincidem', pw.length > 0 && pw === pw2]].map(([t, v]) => <div key={t} className={v ? 'ok' : ''}>{v ? <CheckCircle2 size={15} /> : <Circle size={15} />}{t}</div>)}</div>
+      {err && <div className="lg-err" role="alert"><AlertTriangle size={16} />{err}</div>}
+      <button className="lg-btn" disabled={busy || !ok}>{busy ? <><i className="lg-spin" />Salvando…</> : 'Definir senha e entrar'}</button>
+    </form>}
+  </AuthShell>
 }
