@@ -48,11 +48,14 @@ const NAV = [
   ['/configuracoes', 'Configurações', Cog, 'settings.view'],
 ]
 
+// Integracoes: nada na barra quando tudo esta bem; so aparece a que estiver com problema (o detalhe completo fica em Configuracoes)
+const INTEGRATIONS = [['zabbix', 'Zabbix'], ['evolution', 'Evolution'], ['email', 'E-mail'], ['acronis', 'Acronis'], ['acronis_us', 'Acronis EUA'], ['ems', 'EMS'], ['cloud', 'Cloud Orca'], ['contaazul', 'Conta Azul'], ['navi', 'NAVI']]
 function StatusPills() {
   const [st, setSt] = useState({})
   useEffect(() => { const f = () => get('/settings/status').then(setSt).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t) }, [])
-  const P = ({ k, label }) => <div className={'pill ' + (st[k] ? (st[k].ok ? 'ok' : 'bad') : '')} title={st[k]?.detail || 'sem verificação ainda'}><i />{label}</div>
-  return <div className="pills"><P k="zabbix" label="Zabbix" /><P k="evolution" label="Evolution" /><P k="email" label="E-mail" />{st.acronis && <P k="acronis" label={st.acronis_us ? 'Acronis BR' : 'Acronis'} />}{st.acronis_us && <P k="acronis_us" label="Acronis EUA" />}{st.ems && <P k="ems" label="EMS" />}{st.cloud && <P k="cloud" label="Cloud Orca" />}{st.contaazul && <P k="contaazul" label="Conta Azul" />}<P k="navi" label="NAVI" /></div>
+  const bad = INTEGRATIONS.filter(([k]) => st[k] && st[k].ok === false)
+  if (!bad.length) return null
+  return <div className="pills">{bad.map(([k, label]) => <div key={k} className="pill bad" role="status" title={st[k].detail || 'com problema'}><i />{label}</div>)}</div>
 }
 
 function Shell({ me, onLogout, reloadMe }) {
