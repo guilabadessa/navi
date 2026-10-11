@@ -139,7 +139,7 @@ def notices(db):
 @tracked("push_notify")
 def push_notify(db):
     from .services import push_service
-    n = push_service.notify_new(db)
+    n = push_service.notify_new(db) + push_service.notify_recovered(db)
     if n:
         log.info("push enviado: %d", n)
 

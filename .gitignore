@@ -13,3 +13,4 @@ secrets/
 mobile/android/
 mobile/node_modules/
 mobile/package-lock.json
+mobile/www/logo.png

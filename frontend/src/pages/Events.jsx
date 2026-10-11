@@ -40,7 +40,7 @@ const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) ||
 export default function Events() {
   const [sp] = useSearchParams()
   const [status, setStatus] = useState(sp.get('status') || ''); const [q, setQ] = useState(sp.get('q') || ''); const [sev, setSev] = useState(sp.get('min_severity') || ''); const [page, setPage] = useState(1)
-  const [days, setDays] = useState(sp.has('days') ? sp.get('days') : '0.0417'); const [sel, setSel] = useState(null); const [cl, setCl] = useState(sp.get('client_id') || '')
+  const [days, setDays] = useState(sp.has('days') ? sp.get('days') : '0.0417'); const [sel, setSel] = useState(sp.get('open') ? Number(sp.get('open')) : null); const [cl, setCl] = useState(sp.get('client_id') || '')
   const [saved, setSaved] = useState(loadSaved()); const toast = useToast(); const [kind, setKind] = useState(sp.get('kind') || '')
   const clients = useLoad(() => get('/clients'), [])
   const since = days ? new Date(Date.now() - days * 864e5).toISOString() : ''

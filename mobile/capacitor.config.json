@@ -5,10 +5,21 @@
   "server": {
     "url": "https://navi.orcati.com.br/cliente/",
     "cleartext": false,
-    "allowNavigation": ["navi.orcati.com.br"]
+    "allowNavigation": [
+      "navi.orcati.com.br"
+    ],
+    "errorPath": "offline.html"
   },
-  "android": { "allowMixedContent": false },
+  "android": {
+    "allowMixedContent": false
+  },
   "plugins": {
-    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
   }
 }

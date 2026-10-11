@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Bell, KeyRound, UserRound } from 'lucide-react'
-import { get, post, put, setCsrf } from '../api'
+import { get, post, put, setCsrf, SEV } from '../api'
 import { Card, Field, useToast } from '../ui'
 
 const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador', CLIENTE: 'Cliente' }
@@ -17,6 +17,9 @@ const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 
 function PushCard() {
   const toast = useToast()
   const [st, setSt] = useState('...'); const [busy, setBusy] = useState(false)
+  const [pf, setPf] = useState(null)
+  useEffect(() => { if (st === 'on') get('/push/prefs').then(setPf).catch(() => {}) }, [st])
+  const savePf = async (n) => { const v = { ...pf, ...n }; setPf(v); try { await put('/push/prefs', v) } catch (e) { toast(e.message, true) } }
   const refresh = async () => {
     if (native()) return setSt(ls.get() ? 'on' : 'off')
     if (!pushOk()) return setSt('unsupported')
@@ -66,6 +69,16 @@ function PushCard() {
           {st === 'on' ? <><button className="btn" disabled={busy} onClick={disable}>Desativar</button><button className="btn" onClick={test}>Enviar teste</button></>
             : <button className="btn primary" disabled={busy || st === '...'} onClick={enable}>{busy ? 'Ativando…' : 'Ativar notificações'}</button>}
         </div>}
+      {st === 'on' && pf && <div style={{ display: 'grid', gap: 10, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+        <Field label="Avisar a partir de"><select value={pf.min_sev} onChange={e => savePf({ min_sev: Number(e.target.value) })}>{[3, 4, 5].map(n => <option key={n} value={n}>{SEV[n]}</option>)}</select></Field>
+        <Field label="Horário silencioso" hint="Nesse período só incidentes de severidade Desastre avisam.">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select aria-label="Início" value={pf.quiet_start ?? ''} onChange={e => savePf({ quiet_start: e.target.value === '' ? null : Number(e.target.value), quiet_end: e.target.value === '' ? null : (pf.quiet_end ?? 7) })}><option value="">Desligado</option>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}</select>
+            {pf.quiet_start != null && <><span>até</span><select aria-label="Fim" value={pf.quiet_end ?? 7} onChange={e => savePf({ quiet_end: Number(e.target.value) })}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}</select></>}
+          </div>
+        </Field>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}><input type="checkbox" checked={pf.recovery} onChange={e => savePf({ recovery: e.target.checked })} />Avisar quando o incidente for resolvido</label>
+      </div>}
     </div>
   </Card>
 }

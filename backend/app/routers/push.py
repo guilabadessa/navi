@@ -27,6 +27,31 @@ def key(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return {"key": push_service.vapid_keys(db)[1], "devices": db.query(PushSub).filter(PushSub.user_id == user.id).count()}
 
 
+class PrefsIn(BaseModel):
+    min_sev: int = Field(ge=3, le=5)
+    quiet_start: int | None = Field(default=None, ge=0, le=23)
+    quiet_end: int | None = Field(default=None, ge=0, le=23)
+    recovery: bool = True
+
+
+def _prefs(u: User) -> dict:
+    return {"min_sev": u.push_min_sev or 3, "quiet_start": u.push_quiet_start, "quiet_end": u.push_quiet_end, "recovery": bool(u.push_recovery)}
+
+
+@router.get("/prefs")
+def get_prefs(user: User = Depends(current_user)):
+    return _prefs(user)
+
+
+@router.put("/prefs")
+def put_prefs(body: PrefsIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    quiet = body.quiet_start is not None and body.quiet_end is not None
+    user.push_min_sev, user.push_recovery = body.min_sev, body.recovery
+    user.push_quiet_start, user.push_quiet_end = (body.quiet_start, body.quiet_end) if quiet else (None, None)
+    db.commit()
+    return _prefs(user)
+
+
 @router.post("/subscribe")
 def subscribe(body: SubIn, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not body.endpoint.startswith("https://"):

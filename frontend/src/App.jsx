@@ -19,6 +19,7 @@ import Settings from './pages/Settings'
 import Palette from './Palette'
 import Portal from './pages/Portal'
 import Account from './pages/Account'
+import AppUpdate from './pages/AppUpdate'
 import PortalSwitch from './pages/PortalSwitch'
 import NaviGuide, { STAFF_ASKS, STAFF_TIPS } from './pages/NaviGuide'
 import Protection from './pages/Protection'
@@ -118,6 +119,6 @@ export default function App() {
   if (loc.pathname.startsWith('/convite/')) return <Routes><Route path="/convite/:token" element={<AcceptInvite onLogin={onLogin} />} /></Routes>
   if (me === undefined) return null
   if (!me) return <Login onLogin={onLogin} />
-  if (me.role === 'CLIENTE') return <Auth.Provider value={me}><Portal me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
-  return <Auth.Provider value={me}><Shell me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
+  if (me.role === 'CLIENTE') return <Auth.Provider value={me}><AppUpdate /><Portal me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
+  return <Auth.Provider value={me}><AppUpdate /><Shell me={me} onLogout={logout} reloadMe={load} /></Auth.Provider>
 }

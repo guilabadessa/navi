@@ -31,6 +31,10 @@ class User(Base):
     invite_pending: Mapped[bool] = mapped_column(Boolean, default=False)  # convite enviado e ainda nao aceito
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     portal_min_sev: Mapped[int] = mapped_column(Integer, default=4, server_default="4")  # menor severidade que o usuario do portal enxerga
+    push_min_sev: Mapped[int] = mapped_column(Integer, default=3, server_default="3")  # push: menor severidade que o usuario quer receber
+    push_quiet_start: Mapped[int | None] = mapped_column(Integer)  # horario silencioso do push (hora cheia, America/Sao_Paulo)
+    push_quiet_end: Mapped[int | None] = mapped_column(Integer)
+    push_recovery: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # avisar quando o incidente for resolvido
     extra_perms: Mapped[list | None] = mapped_column(JSON)  # permissoes alem das do perfil (ex.: portal.finance)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -554,3 +558,5 @@ class PushSent(Base):
     event_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("events.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    delivered: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # False = suprimido (manutencao / horario silencioso)
+    rec_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # aviso de recuperacao ja tratado

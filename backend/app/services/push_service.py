@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -16,6 +17,7 @@ from ..models import INCIDENT_MIN_SEV, SEVERITIES, Client, Event, PushSent, Push
 
 log = logging.getLogger("navi.push")
 MAX_AGE = timedelta(minutes=30)  # incidente mais antigo que isso nao gera push (evita rajada apos pausa/implantacao)
+REC_AGE = timedelta(minutes=60)  # recuperacao so e avisada ate 1h depois
 MAX_PER_RUN = 20
 
 
@@ -38,19 +40,37 @@ def vapid_keys(db: Session) -> tuple[str, str]:
 
 
 def wants(db: Session, u: User, ev: Event) -> bool:
-    """Cliente: so incidentes dos seus clientes e a partir da sua severidade minima. Equipe: todos os incidentes."""
-    if not u.active or (ev.severity or 0) < INCIDENT_MIN_SEV:
+    """Cliente: so incidentes dos seus clientes e a partir da sua severidade minima. Equipe: todos, a partir da minima escolhida."""
+    low = max(getattr(u, "push_min_sev", None) or INCIDENT_MIN_SEV, INCIDENT_MIN_SEV)
+    if not u.active or (ev.severity or 0) < low:
         return False
     if u.role == "CLIENTE":
         return ev.client_id in PA.client_ids(db, u) and (ev.severity or 0) >= max(u.portal_min_sev or 4, INCIDENT_MIN_SEV)
     return True
 
 
-def payload(db: Session, ev: Event) -> dict:
+def in_quiet(u: User, now_local: datetime) -> bool:
+    a, b = getattr(u, "push_quiet_start", None), getattr(u, "push_quiet_end", None)
+    if a is None or b is None or a == b:
+        return False
+    h = now_local.hour
+    return a <= h < b if a < b else (h >= a or h < b)
+
+
+def in_maintenance(db: Session, ev: Event, now: datetime) -> bool:
+    """Mesmas regras de manutencao dos alertas de WhatsApp/e-mail (cliente em manutencao ou janela ativa)."""
+    from . import maintenance_service
     c = db.get(Client, ev.client_id) if ev.client_id else None
-    sev = SEVERITIES.get(ev.severity, "")
+    return bool((c and c.maintenance_until and c.maintenance_until > now) or maintenance_service.active(db, ev.client_id, now))
+
+
+def payload(db: Session, ev: Event, u: User | None = None, recovered: bool = False) -> dict:
+    c = db.get(Client, ev.client_id) if ev.client_id else None
+    sev = "Resolvido" if recovered else SEVERITIES.get(ev.severity, "")
     title = f"{sev} · {c.name}" if c else sev
-    return {"title": title, "body": f"{ev.host or ''}: {ev.trigger_name or ''}".strip(": ")[:180], "url": "/cliente/", "tag": f"ev-{ev.id}"}
+    # equipe abre o detalhe do incidente; o cliente cai no proprio portal
+    url = "/cliente/" if (u is not None and u.role == "CLIENTE") else f"/cliente/eventos?open={ev.id}"
+    return {"title": title, "body": f"{ev.host or ''}: {ev.trigger_name or ''}".strip(": ")[:180], "url": url, "tag": f"ev-{ev.id}"}
 
 
 def send(db: Session, sub: PushSub, data: dict) -> bool:
@@ -89,26 +109,55 @@ def _send_fcm(db: Session, sub: PushSub, data: dict) -> bool:
     return res == "ok"
 
 
+def _deliver(db: Session, subs: list[PushSub], uid: int, data: dict) -> bool:
+    ok = False
+    for x in [x for x in subs if x.user_id == uid]:
+        ok = send(db, x, data) or ok
+    return ok
+
+
 def notify_new(db: Session) -> int:
     subs = list(db.scalars(select(PushSub)))
     if not subs:
         return 0
-    since = datetime.now(timezone.utc) - MAX_AGE
-    evs = list(db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.started_at >= since)
+    now = datetime.now(timezone.utc)
+    evs = list(db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.started_at >= now - MAX_AGE)
                           .order_by(Event.started_at).limit(MAX_PER_RUN)))
     users = {u.id: u for u in db.scalars(select(User).where(User.id.in_({s.user_id for s in subs})))}
+    local = now.astimezone(ZoneInfo("America/Sao_Paulo"))
     sent = 0
     for ev in evs:
-        data = None
+        maint = in_maintenance(db, ev, now)
         for uid in {s.user_id for s in subs}:
             u = users.get(uid)
             if not u or not wants(db, u, ev) or db.get(PushSent, (ev.id, uid)):
                 continue
-            data = data or payload(db, ev)
-            ok = False
-            for s in [s for s in subs if s.user_id == uid]:
-                ok = send(db, s, data) or ok
+            quiet = in_quiet(u, local) and (ev.severity or 0) < 5  # Desastre fura o horario silencioso
+            if maint or quiet:
+                db.add(PushSent(event_id=ev.id, user_id=uid, delivered=False, rec_sent=True))  # tratado: nao avisa depois
+                continue
+            ok = _deliver(db, subs, uid, payload(db, ev, u))
             db.add(PushSent(event_id=ev.id, user_id=uid))  # marca mesmo se falhou: nao insiste em aparelho morto
             sent += ok
         db.commit()
+    return sent
+
+
+def notify_recovered(db: Session) -> int:
+    """Avisa (uma vez) quem recebeu o push do incidente quando ele for resolvido, se a pessoa quiser."""
+    now = datetime.now(timezone.utc)
+    rows = list(db.execute(select(PushSent, Event).join(Event, Event.id == PushSent.event_id)
+                           .where(PushSent.delivered.is_(True), PushSent.rec_sent.is_(False), Event.status != "PROBLEM",
+                                  Event.recovered_at >= now - REC_AGE).limit(MAX_PER_RUN * 3)))
+    if not rows:
+        return 0
+    subs = list(db.scalars(select(PushSub)))
+    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_({r[0].user_id for r in rows})))}
+    sent = 0
+    for ps, ev in rows:
+        u = users.get(ps.user_id)
+        ps.rec_sent = True
+        if u and u.active and getattr(u, "push_recovery", True) and any(x.user_id == u.id for x in subs):
+            sent += _deliver(db, subs, u.id, payload(db, ev, u, recovered=True))
+    db.commit()
     return sent

@@ -47,7 +47,7 @@ def test_toda_rota_exige_autenticacao_exceto_as_publicas():
 def test_escrita_nunca_depende_so_de_permissao_de_leitura_na_equipe_exceto_previas():
     previas = {"/alerts/templates/preview", "/reports/{rid}/preview", "/settings/smtp/preview", "/finance/sync",
                "/finance/clients/{cid}/link", "/finance/clients/{cid}/link/{person_id}", "/auth/change-password",
-               "/push/subscribe", "/push/fcm", "/push/unsubscribe", "/push/test"}  # push: so o aparelho do proprio usuario logado
+               "/push/prefs", "/push/subscribe", "/push/fcm", "/push/unsubscribe", "/push/test"}  # push: so o aparelho do proprio usuario logado
     for r, full in _routes():
         if r.methods & {"POST", "PUT", "PATCH", "DELETE"} and full.startswith(f"{BASE}/api"):
             perms = [c.__closure__[0].cell_contents for c in _deps(r.dependant, []) if getattr(c, "__name__", "") == "dep" and c.__closure__]

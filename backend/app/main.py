@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from pathlib import Path
@@ -61,6 +62,15 @@ def apk_download():
     if not f.is_file():
         return JSONResponse({"detail": "APK ainda não publicado"}, status_code=404)
     return FileResponse(f, media_type="application/vnd.android.package-archive", filename="NAVI.apk", headers={"Cache-Control": "no-cache"})
+
+
+@app.get(f"{BASE}/app/version")
+def apk_version():
+    f = Path(st.NAVI_STORAGE) / "app" / "version.json"
+    try:
+        return JSONResponse(json.loads(f.read_text()), headers={"Cache-Control": "no-cache"})
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"code": 0, "name": ""}, headers={"Cache-Control": "no-cache"})
 
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
