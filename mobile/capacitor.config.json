@@ -1,0 +1,14 @@
+{
+  "appId": "br.com.orcati.navi",
+  "appName": "NAVI",
+  "webDir": "www",
+  "server": {
+    "url": "https://navi.orcati.com.br/cliente/",
+    "cleartext": false,
+    "allowNavigation": ["navi.orcati.com.br"]
+  },
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+  }
+}

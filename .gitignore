@@ -9,3 +9,7 @@ __pycache__/
 *.pyc
 node_modules/
 .venv/
+secrets/
+mobile/android/
+mobile/node_modules/
+mobile/package-lock.json

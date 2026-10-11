@@ -55,6 +55,14 @@ def health():
     return {"status": "ok"}
 
 
+@app.get(f"{BASE}/app/navi.apk")
+def apk_download():
+    f = Path(st.NAVI_STORAGE) / "app" / "navi.apk"
+    if not f.is_file():
+        return JSONResponse({"detail": "APK ainda não publicado"}, status_code=404)
+    return FileResponse(f, media_type="application/vnd.android.package-archive", filename="NAVI.apk", headers={"Cache-Control": "no-cache"})
+
+
 STATIC = Path(__file__).resolve().parent.parent / "static"
 if STATIC.exists():
     app.mount(f"{BASE}/assets", StaticFiles(directory=STATIC / "assets"), name="assets")
