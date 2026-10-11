@@ -30,6 +30,7 @@ JOBS = {
     "sync_cloud": ("Sincronização Cloud Orca (máquinas)", 120),
     "sync_finance": ("Sincronização financeira (Conta Azul)", 1800),
     "notices": ("Avisos ao cliente (boleto a vencer e resumo mensal)", 3600),
+    "push_notify": ("Notificações push (app)", 15),
     "escalate": ("Escalonamento de alertas", 60),
     "daily_digest": ("Resumo diário do NOC", 60),
     "cleanup": ("Limpeza de dados", 86400),
@@ -133,6 +134,14 @@ def notices(db):
     a, b = notice_service.send_boletos(db), notice_service.send_monthly(db)
     if a["sent"] or b["sent"]:
         log.info("avisos ao cliente: boletos=%s mensal=%s", a["sent"], b["sent"])
+
+
+@tracked("push_notify")
+def push_notify(db):
+    from .services import push_service
+    n = push_service.notify_new(db)
+    if n:
+        log.info("push enviado: %d", n)
 
 
 @tracked("escalate")
@@ -280,7 +289,7 @@ def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
     for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
-                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_cloud", sync_cloud), ("sync_finance", sync_finance), ("notices", notices), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
+                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_cloud", sync_cloud), ("sync_finance", sync_finance), ("notices", notices), ("push_notify", push_notify), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,
                     next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5 + 3 * list(JOBS).index(name)))

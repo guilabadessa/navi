@@ -1,10 +1,58 @@
-import React, { useState } from 'react'
-import { KeyRound, UserRound } from 'lucide-react'
-import { post, put, setCsrf } from '../api'
+import React, { useEffect, useState } from 'react'
+import { Bell, KeyRound, UserRound } from 'lucide-react'
+import { get, post, put, setCsrf } from '../api'
 import { Card, Field, useToast } from '../ui'
 
 const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analista NOC', VISUALIZADOR: 'Visualizador', CLIENTE: 'Cliente' }
 const rules = (p) => [['Pelo menos 10 caracteres', p.length >= 10], ['Letras e números', /[A-Za-z]/.test(p) && /\d/.test(p)]]
+
+const b64 = (k) => Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(k.length / 4) * 4, '=')), c => c.charCodeAt(0))
+const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+
+// Notificacoes push neste aparelho (incidentes Media ou superior)
+function PushCard() {
+  const toast = useToast()
+  const [st, setSt] = useState('...'); const [busy, setBusy] = useState(false)
+  const refresh = async () => {
+    if (!pushOk()) return setSt('unsupported')
+    if (Notification.permission === 'denied') return setSt('denied')
+    const reg = await navigator.serviceWorker.getRegistration('/cliente/')
+    setSt(reg && await reg.pushManager.getSubscription() ? 'on' : 'off')
+  }
+  useEffect(() => { refresh().catch(() => setSt('off')) }, [])
+  const enable = async () => {
+    setBusy(true)
+    try {
+      if (await Notification.requestPermission() !== 'granted') { setSt('denied'); return }
+      const reg = await navigator.serviceWorker.ready
+      const { key } = await get('/push/key')
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) })
+      const j = sub.toJSON()
+      await post('/push/subscribe', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth })
+      setSt('on'); toast('Notificações ativadas neste aparelho')
+    } catch (e) { toast(e.message, true) } finally { setBusy(false) }
+  }
+  const disable = async () => {
+    setBusy(true)
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/cliente/'); const sub = reg && await reg.pushManager.getSubscription()
+      if (sub) { await post('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe() }
+      setSt('off'); toast('Notificações desativadas neste aparelho')
+    } catch (e) { toast(e.message, true) } finally { setBusy(false) }
+  }
+  const test = async () => { try { await post('/push/test'); toast('Teste enviado') } catch (e) { toast(e.message, true) } }
+  const msg = { unsupported: 'Este navegador não suporta notificações. No Android use o Chrome; no iPhone, instale o app na tela inicial (iOS 16.4+).', denied: 'As notificações estão bloqueadas para este site. Libere nas configurações do navegador e volte aqui.' }[st]
+  return <Card title="Notificações no aparelho" actions={<Bell size={18} />}>
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ fontSize: 13, color: 'var(--mut)' }}>Receba um aviso neste aparelho quando abrir um incidente de severidade Média ou superior (dentro do que o seu acesso permite).</div>
+      {msg ? <div className="banner warn"><div className="grow">{msg}</div></div>
+        : <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {st === 'on' ? <><button className="btn" disabled={busy} onClick={disable}>Desativar</button><button className="btn" onClick={test}>Enviar teste</button></>
+            : <button className="btn primary" disabled={busy || st === '...'} onClick={enable}>{busy ? 'Ativando…' : 'Ativar notificações'}</button>}
+        </div>}
+    </div>
+  </Card>
+}
 
 // Minha conta: dados do usuario e troca de senha (staff e portal do cliente)
 export default function Account({ me, onChanged }) {
@@ -36,6 +84,7 @@ export default function Account({ me, onChanged }) {
         <div><button className="btn primary" disabled={savingName || name.trim().length < 2 || name === me.name} onClick={saveName}>{savingName ? 'Salvando…' : 'Salvar dados'}</button></div>
       </div>
     </Card>
+    <PushCard />
     <Card title="Alterar senha" actions={<KeyRound size={18} />}>
       <form style={{ display: 'grid', gap: 12 }} onSubmit={e => { e.preventDefault(); okPw && !busy && changePw() }}>
         <input type="text" autoComplete="username" value={me.email} readOnly hidden />

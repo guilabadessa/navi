@@ -533,3 +533,24 @@ class ClientPerson(Base):
     person_id: Mapped[str] = mapped_column(String(64), primary_key=True)  # um cadastro pertence a um unico cliente
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
     match: Mapped[str] = mapped_column(String(16), default="manual")  # cnpj | manual | blocked (desvinculado: nao revincular sozinho)
+
+
+class PushSub(Base):
+    """Aparelho/navegador inscrito para notificacoes push (Web Push) de um usuario."""
+    __tablename__ = "push_subs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(String(1024), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(64))
+    ua: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_ok: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PushSent(Base):
+    """Evita enviar o push do mesmo incidente duas vezes ao mesmo usuario."""
+    __tablename__ = "push_sent"
+    event_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("events.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
