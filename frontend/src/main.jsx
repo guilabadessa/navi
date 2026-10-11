@@ -11,3 +11,5 @@ applyTheme(); tvMode(getTv())
 
 createRoot(document.getElementById('root')).render(
   <BrowserRouter basename="/cliente"><ToastProvider><App /></ToastProvider></BrowserRouter>)
+
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/cliente/sw.js', { scope: '/cliente/' }).catch(() => {}))
