@@ -125,6 +125,90 @@ def reboot(cloud: Cloud, uuid: str):
             _reboots[uuid] = {"phase": "erro", "error": str(e)[:200], "since": time.time()}
 
 
+# ======================= saude da maquina (CPU, memoria, disco) =======================
+# A API da nuvem informa apenas estado e recursos contratados; o consumo real vem do monitoramento (Zabbix) quando a maquina
+# esta monitorada la (casa por IP e, se preciso, pelo nome). Sem monitoramento a tela diz isso, sem inventar numeros.
+import re  # noqa: E402
+
+_CPU_KEYS = ("system.cpu.util", "system.cpu.util[,,avg1]")
+_MEM_PUSED = ("vm.memory.utilization", "vm.memory.size[pused]")
+_FS_RE = re.compile(r"^vfs\.fs(?:\.dependent)?\.size\[(.+?),pused\]$")
+
+
+def _num(v):
+    try:
+        return round(float(v), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def find_zabbix_host(db: Session, ip: str | None, name: str | None):
+    from sqlalchemy import func, select
+
+    from ..models import ZbxHost
+    q = select(ZbxHost).where(ZbxHost.active.is_(True), ZbxHost.status == 0)
+    if ip:
+        h = db.scalar(q.where(ZbxHost.ip == ip).limit(1))
+        if h:
+            return h
+    if name:
+        return db.scalar(q.where(func.lower(ZbxHost.name) == name.lower()).limit(1))
+    return None
+
+
+def parse_health(items: list[dict]) -> dict:
+    """Converte os itens do Zabbix em CPU / memoria / discos (% de uso) e conectividade (ping). Puro: facil de testar."""
+    by = {i["key_"]: i for i in items if i.get("state") in (None, "0", 0)}
+    clock = max([int(i.get("lastclock") or 0) for i in by.values()] or [0])
+    cpu = next((_num(by[k]["lastvalue"]) for k in _CPU_KEYS if k in by), None)
+    mem = next((_num(by[k]["lastvalue"]) for k in _MEM_PUSED if k in by), None)
+    if mem is None and "vm.memory.size[pavailable]" in by:
+        a = _num(by["vm.memory.size[pavailable]"]["lastvalue"])
+        mem = None if a is None else round(100 - a, 1)
+    disks = []
+    for k, i in by.items():
+        m = _FS_RE.match(k)
+        if m and _num(i["lastvalue"]) is not None:
+            disks.append({"mount": m.group(1), "used_pct": _num(i["lastvalue"])})
+    disks.sort(key=lambda d: d["mount"])
+    ping = None
+    if "icmpping" in by:
+        up = str(by["icmpping"]["lastvalue"]) == "1"
+        try:
+            rtt = float(by["icmppingsec"]["lastvalue"]) if "icmppingsec" in by else None
+        except (TypeError, ValueError):
+            rtt = None
+        loss = _num(by["icmppingloss"]["lastvalue"]) if "icmppingloss" in by else None
+        ping = {"up": up, "rtt_ms": round(rtt * 1000, 1) if rtt is not None else None, "loss_pct": loss}
+    return {"cpu": cpu, "mem": mem, "disks": disks, "ping": ping, "clock": clock or None}
+
+
+def vm_health(db: Session, vm) -> dict:
+    """Saude de uma CloudVm. 'source' = 'zabbix' quando ha monitoramento; senao so o estado informado pela nuvem."""
+    from datetime import datetime, timezone
+
+    from . import factory
+    base = {"state": vm.state, "source": None, "host": None, "cpu": None, "mem": None, "disks": [],
+            "at": datetime.now(timezone.utc).isoformat(), "hint": None}
+    h = find_zabbix_host(db, vm.ip, vm.name)
+    if not h:
+        base["hint"] = "Esta máquina não tem monitoramento de CPU, memória e disco (acompanhamos apenas se está ligada ou desligada)."
+        return base
+    try:
+        items = factory.zabbix(db).items([h.hostid])
+    except Exception as e:  # noqa: BLE001
+        base["hint"] = f"Monitoramento indisponível no momento ({str(e)[:80]})."
+        return base
+    data = parse_health(items)
+    if data["cpu"] is None and data["mem"] is None and not data["disks"]:  # so ping (sem agente): nao e saude, trata como nao monitorada
+        base["hint"] = "Esta máquina não tem monitoramento de CPU, memória e disco (acompanhamos apenas se está ligada ou desligada)."
+        return base
+    base.update(source="zabbix", host=h.name, **{k: data[k] for k in ("cpu", "mem", "disks")})
+    if data["clock"]:
+        base["sampled_at"] = datetime.fromtimestamp(data["clock"], tz=timezone.utc).isoformat()
+    return base
+
+
 # ======================= sincronizacao (worker) =======================
 OFF_STATES = ("STOPPED", "SHUTOFF", "ERROR", "DESTROYED")
 

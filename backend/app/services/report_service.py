@@ -18,7 +18,7 @@ from weasyprint import HTML  # noqa: E402
 
 from .. import settings_store as S  # noqa: E402
 from ..config import get_settings  # noqa: E402
-from ..models import SEVERITIES, Client, Event, Report, ReportRun, ZbxHost  # noqa: E402
+from ..models import INCIDENT_MIN_SEV, SEVERITIES, Client, Event, Report, ReportRun, ZbxHost  # noqa: E402
 from . import factory, kpi_service, live_events, services_service  # noqa: E402
 from .notification_service import fmt_duration, tz  # noqa: E402
 
@@ -126,6 +126,8 @@ def build(db: Session, rep: Report, start: datetime, end: datetime) -> tuple[dic
     events = live_events.fetch(db, factory.zabbix(db), host_ids, start, end, rep.client_id)
     if rep.severities:
         events = [e for e in events if e.severity in rep.severities]
+    else:  # Atencao/Informacao nao sao incidentes
+        events = [e for e in events if (e.severity or 0) >= INCIDENT_MIN_SEV]
     for needle, attr in ((rep.triggers, "trigger_name"), (rep.items, "item_name")):
         if needle:
             events = [e for e in events if any(n.lower() in (getattr(e, attr) or "").lower() for n in needle)]

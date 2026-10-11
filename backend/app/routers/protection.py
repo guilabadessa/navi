@@ -2,17 +2,17 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import Client, Event, ExtAsset, ExtTenant
+from ..models import INCIDENT_MIN_SEV, Client, Event, ExtAsset, ExtTenant
 from ..security import current_user, require
 from ..security import RateLimiter, user_has
 from ..services import factory, protection_service as P
-from ..util import titlecase, to_dict
+from ..util import NO_CLIENT, by_client, titlecase, to_dict
 
 router = APIRouter(prefix="/protection", tags=["protection"])
 
@@ -20,7 +20,8 @@ router = APIRouter(prefix="/protection", tags=["protection"])
 def asset_status(a: ExtAsset, c: dict, now: datetime) -> str:
     if a.ignored:
         return "ignorado"
-    if a.online is False and a.offline_since and (now - a.offline_since) > timedelta(minutes=c["offline_min"]):
+    # estacao de trabalho desligada fora do expediente e normal: so servidor (24x7) fica "offline"
+    if a.online is False and a.offline_since and (now - a.offline_since) > timedelta(minutes=c["offline_min"]) and P.machine_role(a) == "server":
         return "offline"
     if a.last_success_at and (now - a.last_success_at) > timedelta(hours=c["stale_h"]):
         return "sem backup"
@@ -40,7 +41,7 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
     tmap = {t.id: t for t in tenants}
     assets = list(db.scalars(select(ExtAsset).where(ExtAsset.source == P.SRC, ExtAsset.active.is_(True)).order_by(ExtAsset.name)))
     if client_id:
-        ids = {t.id for t in tenants if t.client_id == client_id}
+        ids = {t.id for t in tenants if (t.client_id is None if client_id == NO_CLIENT else t.client_id == client_id)}
         assets = [a for a in assets if a.ext_tenant_id in ids]
     rows = []
     actions = S.get(db, "acronis.actions") == "1"
@@ -52,11 +53,11 @@ def overview(client_id: int | None = None, db: Session = Depends(get_db), _=Depe
                      "client": cn.get(t.client_id) if t else None, "policy": a.policy_name,
                      "last_success_at": a.last_success_at.isoformat() if a.last_success_at else None,
                      "last_failure_at": a.last_failure_at.isoformat() if a.last_failure_at else None, "last_result": a.last_result,
-                     "online": a.online, "ignored": a.ignored, "status": asset_status(a, c, now)})
+                     "online": a.online, "ignored": a.ignored, "role": P.machine_role(a), "status": asset_status(a, c, now)})
     counts = {k: sum(1 for r in rows if r["status"] == k) for k in ("ok", "falha", "sem backup", "offline", "sem dados", "ignorado")}
-    ev_stmt = select(Event).where(Event.kind == "backup", Event.status == "PROBLEM").order_by(Event.severity.desc(), Event.started_at)
+    ev_stmt = select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV).order_by(Event.severity.desc(), Event.started_at)
     if client_id:
-        ev_stmt = ev_stmt.where(Event.client_id == client_id)
+        ev_stmt = ev_stmt.where(by_client(Event.client_id, client_id))
     alerts = [to_dict(e) | {"client_name": cn.get(e.client_id)} for e in db.scalars(ev_stmt)]
     cnt_assets = {}
     for a in assets:
@@ -99,6 +100,27 @@ def ignore_asset(aid: int, body: IgnoreIn, request: Request, db: Session = Depen
     audit.log(db, request, "protection_ignore_asset", "ext_asset", aid, detail={"name": a.name, "ignored": body.ignored})
     db.commit()
     return {"ok": True}
+
+
+class RoleIn(BaseModel):
+    role: str = Field(pattern="^(server|workstation|auto)$")
+
+
+@router.put("/assets/{aid}/role")
+def set_role(aid: int, body: RoleIn, request: Request, db: Session = Depends(get_db), _=Depends(require("clients.edit"))):
+    """Servidor (24x7: offline e problema) ou estacao (desligada fora do expediente: offline nao e problema). 'auto' volta a deduzir."""
+    a = db.get(ExtAsset, aid)
+    if not a:
+        raise HTTPException(404)
+    m = dict(a.meta or {})
+    if body.role == "auto":
+        m.pop("role", None)
+    else:
+        m["role"] = body.role
+    a.meta = m
+    audit.log(db, request, "protection_asset_role", "ext_asset", aid, detail={"name": a.name, "role": body.role})
+    db.commit()
+    return {"ok": True, "role": P.machine_role(a)}
 
 
 class CfgIn(BaseModel):
@@ -218,22 +240,22 @@ def ems_overview(client_id: int | None = None, db: Session = Depends(get_db), _=
     tmap = {t.id: t for t in tenants}
     assets = list(db.scalars(select(ExtAsset).where(ExtAsset.source == P.EMS, ExtAsset.active.is_(True)).order_by(ExtAsset.name)))
     if client_id:
-        ids = {t.id for t in tenants if t.client_id == client_id}
+        ids = {t.id for t in tenants if (t.client_id is None if client_id == NO_CLIENT else t.client_id == client_id)}
         assets = [a for a in assets if a.ext_tenant_id in ids]
     rows = []
     for a in assets:
         t, m = tmap.get(a.ext_tenant_id), (a.meta or {})
         rows.append({"id": a.id, "name": a.name, "site": t.name if t else None, "client_id": t.client_id if t else None, "client": cn.get(t.client_id) if t else None,
                      "os": m.get("os"), "user": m.get("user"), "ip": m.get("ip"), "fct_version": m.get("fct_version"), "policy": a.policy_name,
-                     "online": a.online, "last_contact": a.last_success_at.isoformat() if a.last_success_at else None, "ignored": a.ignored,
+                     "online": a.online, "last_contact": a.last_success_at.isoformat() if a.last_success_at else None, "ignored": a.ignored, "role": P.machine_role(a),
                      "av_enabled": m.get("av_enabled"), "sig_ok": m.get("sig_ok"), "health_errors": m.get("health_errors", 0), "events": m.get("events") or {}, "vuln_sev": m.get("vuln_sev"),
                      "status": P.ems_status(a, days, now)})
     counts: dict = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-    stmt = select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM").order_by(Event.severity.desc(), Event.started_at)
+    stmt = select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV).order_by(Event.severity.desc(), Event.started_at)
     if client_id:
-        stmt = stmt.where(Event.client_id == client_id)
+        stmt = stmt.where(by_client(Event.client_id, client_id))
     return {"counts": counts, "total": len(rows), "online": sum(1 for r in rows if r["online"]), "assets": rows,
             "alerts": [to_dict(e) | {"client_name": cn.get(e.client_id)} for e in db.scalars(stmt)],
             "tenants": [{"id": t.id, "name": t.name, "client_id": t.client_id, "client_name": cn.get(t.client_id), "enabled": True, "ignored": bool((t.info or {}).get("ignored")),

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..util import ITEM_LABEL, KIND_LABEL
-from ..models import SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
+from ..models import INCIDENT_MIN_SEV, SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
 from . import commlog, destinations
 from .email_service import split_addrs
 from .evolution_service import normalize_target
@@ -165,7 +165,10 @@ def _rules_for(db: Session, client_id: int | None) -> list[AlertRule]:
 
 
 def plan_problem(db: Session, ev: Event):
-    """Cria despachos pendentes (WhatsApp e/ou e-mail) para um novo evento PROBLEM."""
+    """Cria despachos pendentes (WhatsApp e/ou e-mail) para um novo evento PROBLEM.
+    Abaixo de Media (Atencao, Informacao) o evento so e registrado: nao e incidente e nunca gera alerta."""
+    if (ev.severity or 0) < INCIDENT_MIN_SEV:
+        return 0
     client = db.get(Client, ev.client_id) if ev.client_id else None
     now = datetime.now(timezone.utc)
     if client and client.maintenance_until and client.maintenance_until > now:

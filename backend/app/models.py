@@ -13,6 +13,9 @@ def now():
 
 ROLES = ("ADMIN", "GESTOR", "ANALISTA_NOC", "VISUALIZADOR", "CLIENTE")
 SEVERITIES = {0: "Não classificado", 1: "Informação", 2: "Atenção", 3: "Média", 4: "Alta", 5: "Desastre"}
+# Abaixo de "Média" (Atenção, Informação, Não classificado) o evento fica registrado, mas NAO e incidente:
+# nao gera alerta, nao entra no resumo diario nem nos contadores de problemas em aberto.
+INCIDENT_MIN_SEV = 3
 
 
 class User(Base):

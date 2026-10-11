@@ -10,7 +10,7 @@ from .. import audit
 from ..config import get_settings
 from ..db import get_db
 from ..formats import try_phone
-from ..models import (UserClient, AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
+from ..models import (INCIDENT_MIN_SEV, UserClient, AlertRule, Client, ClientContact, ClientHost, ClientHostGroup, Event, MaintenanceWindow, Report, ReportRun,
                       User, ZbxHost, ZbxHostGroup, ExtAsset, ExtTenant)
 from pydantic import BaseModel, EmailStr, Field
 
@@ -89,7 +89,7 @@ def list_clients(q: str | None = None, db: Session = Depends(get_db), _=Depends(
     stmt = select(Client).order_by(Client.trade_name)
     if q:
         stmt = stmt.where(Client.trade_name.ilike(like(q), escape="\\") | Client.cnpj.ilike(like(q), escape="\\"))
-    open_by = dict(db.execute(select(Event.client_id, func.count()).where(Event.status == "PROBLEM")
+    open_by = dict(db.execute(select(Event.client_id, func.count()).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV)
                               .group_by(Event.client_id)).all())
     pu = dict(db.execute(select(User.client_id, func.count()).where(User.role == "CLIENTE").group_by(User.client_id)).all())
     for k_, n_ in db.execute(select(UserClient.client_id, func.count()).group_by(UserClient.client_id)).all():
@@ -306,7 +306,7 @@ def dashboard(cid: int, days: float = 30, db: Session = Depends(get_db), _=Depen
     evs = [e for e in allev if (e.kind or "infra") == "infra"]
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, cid, start, end))
-    active = [to_dict(e) for e in allev if e.status == "PROBLEM"]
+    active = [to_dict(e) for e in allev if e.status == "PROBLEM" and (e.severity or 0) >= INCIDENT_MIN_SEV]
     links = [h for h in hosts if any(w in (h.name or "").lower() for w in ("link", "wan", "vpn", "fortigate", "fw"))]
     from ..services import protection_service as P
     from .protection import asset_status
@@ -323,7 +323,7 @@ def dashboard(cid: int, days: float = 30, db: Session = Depends(get_db), _=Depen
             counts[st] = counts.get(st, 0) + 1
         kind = "backup" if source == "acronis" else "endpoint"
         alerts = [{"id": e.id, "host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
-                  for e in db.scalars(select(Event).where(Event.kind == kind, Event.status == "PROBLEM", Event.client_id == cid).order_by(Event.severity.desc()))]
+                  for e in db.scalars(select(Event).where(Event.kind == kind, Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.client_id == cid).order_by(Event.severity.desc()))]
         return {"enabled": True, "total": len(assets), "counts": counts, "alerts": alerts}
 
     backup = prot("acronis", lambda a: asset_status(a, pc, nowx))

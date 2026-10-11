@@ -91,11 +91,15 @@ def test_status_do_ativo_de_backup():
     from app.routers.protection import asset_status
     now = datetime.now(UTC)
     c = {"stale_h": 72, "offline_min": 240}
-    mk = lambda **k: NS(**{"ignored": False, "online": None, "offline_since": None, "last_success_at": None, "last_failure_at": None, **k})  # noqa: E731
+    mk = lambda **k: NS(**{"ignored": False, "online": None, "offline_since": None, "last_success_at": None, "last_failure_at": None,
+                           "meta": {"os_name": "Windows Server 2022 Standard"}, "name": "SRV-01", "source": "acronis", **k})  # noqa: E731
     assert asset_status(mk(last_success_at=now - timedelta(hours=2)), c, now) == "ok"
     assert asset_status(mk(last_success_at=now - timedelta(days=5)), c, now) == "sem backup"
     assert asset_status(mk(last_success_at=now - timedelta(hours=30), last_failure_at=now - timedelta(hours=1)), c, now) == "falha"
     assert asset_status(mk(online=False, offline_since=now - timedelta(hours=9)), c, now) == "offline"
+    # estacao de trabalho desligada fora do expediente NAO e "offline"
+    ws = {"os_name": "Windows 11 Pro"}
+    assert asset_status(mk(online=False, offline_since=now - timedelta(hours=9), meta=ws, name="NOTE-ANA", last_success_at=now - timedelta(hours=20)), c, now) == "ok"
     assert asset_status(mk(ignored=True, last_success_at=now - timedelta(days=9)), c, now) == "ignorado"
     assert asset_status(mk(), c, now) == "sem dados"
 
@@ -111,3 +115,52 @@ def test_status_do_endpoint_ems():
     assert ems_status(mk(meta={"av_enabled": True, "sig_ok": False}), 7, now) == "assinaturas"
     assert ems_status(mk(meta={"quarantined": True}), 7, now) == "quarentena"
     assert ems_status(mk(ignored=True), 7, now) == "ignorado"
+
+
+def test_servidor_x_estacao():
+    from app.services.protection_service import machine_role
+    mk = lambda name, **m: NS(name=name, source=m.pop("source", "acronis"), meta=m)  # noqa: E731
+    assert machine_role(mk("SRV-PS-PRD-40", os_name="Windows Server 2025 Datacenter")) == "server"
+    assert machine_role(mk("ubuntu01", os_name="Ubuntu", os_family="LINUX")) == "server"
+    assert machine_role(mk("EC-SEC-00025", os_name="Windows 11 Pro")) == "workstation"
+    assert machine_role(mk("PC-ANA", os="Microsoft Windows 10 Professional Edition", source="ems")) == "workstation"
+    assert machine_role(mk("srvmegadan", os_name="windows")) == "server"          # SO generico: o nome indica servidor
+    assert machine_role(mk("COC_NT_542", os_name="windows", source="ems")) == "workstation"
+    assert machine_role(mk("COCPRDFS", os_name="windows")) == "server"            # duvida no Acronis = servidor (nao esconde problema)
+    assert machine_role(mk("PC-ANA", os_name="Windows 11 Pro", role="server")) == "server"   # ajuste manual vale sempre
+    assert machine_role(mk("SRV-01", os_name="Windows Server 2019", role="workstation")) == "workstation"
+
+
+def test_atencao_nao_e_incidente():
+    from app.models import INCIDENT_MIN_SEV
+    from app.services import notification_service as N
+    assert INCIDENT_MIN_SEV == 3
+    ev = NS(severity=2)
+    assert N.plan_problem(None, ev) == 0       # nem consulta o banco: Atencao so fica registrado
+    assert N.plan_problem(None, NS(severity=1)) == 0
+
+
+def test_resumo_diario_so_incidentes_abertos():
+    from app.services import noc_service
+    d = {"now": datetime.now(UTC), "open": 3, "by_sev": {5: 1, 3: 2}, "maint": ["Cliente M"], "platform": [], "status": "crit",
+         "clients": [{"name": "Cocal", "worst": 5, "items": [{"sev": 5, "kind": "cloud", "host": "VM-01", "text": "Máquina virtual com erro"}]},
+                     {"name": "Codifica", "worst": 3, "items": [{"sev": 3, "kind": "infra", "host": "SRV", "text": "CPU alta"}, {"sev": 3, "kind": "infra", "host": "SRV2", "text": "Disco"}]}]}
+    txt = "\n".join(noc_service.digest_text(d, "10/10/2026"))
+    for banned in ("24h", "enviados", "há mais tempo", "novos", "resolvidos", "WhatsApp:", "E-mail:"):
+        assert banned not in txt
+    assert "3 incidentes em aberto" in txt and "Cocal" in txt and "VM-01" in txt and "Em manutenção" in txt
+    ok = noc_service.digest_text({**d, "open": 0, "by_sev": {}, "clients": [], "maint": [], "status": "ok"}, "10/10/2026")
+    assert "Tudo em ordem" in ok[0] and len(ok) == 1
+    ctx = noc_service.digest_ctx(d, "10/10/2026")
+    assert ctx["open"] == 3 and len(ctx["groups"]) == 2 and "new24" not in ctx
+
+
+def test_saude_da_vm_pelo_zabbix():
+    from app.services.cloud_service import parse_health
+    it = lambda k, v, c=1791644686: {"key_": k, "lastvalue": str(v), "lastclock": str(c), "state": "0"}  # noqa: E731
+    h = parse_health([it("system.cpu.util", 37.25), it("vm.memory.size[pavailable]", 40), it("vfs.fs.size[C:,pused]", 71.1), it("vfs.fs.size[/,pused]", 12),
+                      it("icmpping", 1), it("icmppingsec", 0.0021), it("icmppingloss", 0)])
+    assert h["cpu"] == 37.2 or h["cpu"] == 37.3
+    assert h["mem"] == 60.0 and [d["mount"] for d in h["disks"]] == ["/", "C:"] and h["ping"] == {"up": True, "rtt_ms": 2.1, "loss_pct": 0.0}
+    only_ping = parse_health([it("icmpping", 0)])
+    assert only_ping["cpu"] is None and only_ping["disks"] == [] and only_ping["ping"]["up"] is False

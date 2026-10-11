@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from .. import portal_access as PA
 from ..db import get_db
-from ..models import Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
+from ..models import INCIDENT_MIN_SEV, Client, Event, ExtAsset, ExtTenant, MaintenanceWindow, ReportRun, User, ZbxHostGroup
 from ..security import current_user, has_perm, require
 from ..services import finance_service, kpi_service, maintenance_service, services_service
 from .clients import client_hosts
@@ -89,7 +89,7 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
     evs = [e for e in allev if (e.kind or "infra") == "infra"]  # disponibilidade/KPIs sao so de infraestrutura
     k = kpi_service.compute(evs, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], start, end, None,
                             exclude=maintenance_service.exclusions(db, c.id, start, end))
-    vis = [e for e in allev if (e.severity or 0) >= msev]  # incidentes de TODAS as categorias (infra, backup, endpoints)
+    vis = [e for e in allev if (e.severity or 0) >= max(msev, INCIDENT_MIN_SEV)]  # incidentes de TODAS as categorias (infra, backup, endpoints)
     sm = dict(k["summary"])
     by_kind = {kd: {"total": sum(1 for e in vis if (e.kind or "infra") == kd), "open": sum(1 for e in vis if (e.kind or "infra") == kd and e.status == "PROBLEM")} for kd in ("infra", "backup", "endpoint", "cloud")}
     sm.update({"incidents": len(vis), "open": sum(1 for e in vis if e.status == "PROBLEM"), "resolved": sum(1 for e in vis if e.status != "PROBLEM"), "by_kind": by_kind})
@@ -137,9 +137,9 @@ def overview(days: float = 30, client_id: int | None = None, min_sev: int | None
                                       "status": asset_status(a, pc, now)}
                                      for a in db.scalars(select(ExtAsset).where(ExtAsset.ext_tenant_id.in_(tids), ExtAsset.active.is_(True), ExtAsset.ignored.is_(False)).order_by(ExtAsset.name))]
     bk_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
-                 for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.client_id == c.id))]
+                 for e in db.scalars(select(Event).where(Event.kind == "backup", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.client_id == c.id))]
     ep_alerts = [{"host": e.host, "trigger_name": e.trigger_name, "severity": e.severity, "started_at": e.started_at.isoformat()}
-                 for e in db.scalars(select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM", Event.client_id == c.id))]
+                 for e in db.scalars(select(Event).where(Event.kind == "endpoint", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.client_id == c.id))]
     ep_rows = P.endpoint_rows(db, c.id)
     ep_assets = [{"name": r["name"], "user": r["user"], "os": r["os"], "status": r["status"], "source": r["source"], "techs": r["techs"],
                   "last_contact": r["last"].isoformat() if r["last"] else None} for r in ep_rows]

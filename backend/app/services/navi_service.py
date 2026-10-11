@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Client, Event, ZbxHost
+from ..models import INCIDENT_MIN_SEV, Client, Event, ZbxHost
 
 
 class LLMProvider:
@@ -52,7 +52,7 @@ class NaviService:
         return [{"trigger": t, "incidents": c} for t, c in self.db.execute(q)]
 
     def open_alerts(self, kind=None, cid=None, n=30):
-        q = select(Event, Client.trade_name).join(Client, Client.id == Event.client_id, isouter=True).where(Event.status == "PROBLEM")
+        q = select(Event, Client.trade_name).join(Client, Client.id == Event.client_id, isouter=True).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV)
         if kind:
             q = q.where(Event.kind == kind)
         if cid:

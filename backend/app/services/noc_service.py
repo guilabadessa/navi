@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import settings_store as S
 from ..config import get_settings
-from ..models import SEVERITIES, Client, Dispatch, Event, HealthCheck, JobStatus
+from ..models import INCIDENT_MIN_SEV, SEVERITIES, Client, Dispatch, Event, HealthCheck, JobStatus
 from . import commlog
 from .email_service import split_addrs
 from .evolution_service import normalize_target
@@ -151,99 +151,97 @@ def group_email(kind: str, client: Client | None, items: list[tuple], tzname: st
 
 
 # ---------------- resumo diario ----------------
-KIND_NAMES = {"infra": "Infraestrutura (Zabbix)", "backup": "Backup (Acronis)", "endpoint": "Endpoints (FortiClient EMS)", "cloud": "Cloud Orca"}
+# Objetivo: so o que ainda esta quebrado agora (Media, Alta e Desastre). Sem historico, sem estatistica de envios.
 SEV_ICON = {5: "🔴", 4: "🟠", 3: "🟡", 2: "🔵", 1: "⚪", 0: "⚪"}
-
-
-def _age(dt: datetime, now: datetime) -> str:
-    m = int((now - dt).total_seconds() // 60)
-    return f"{m} min" if m < 60 else f"{m // 60} h" if m < 2880 else f"{m // 1440} dias"
+MAX_LINES = 25
 
 
 def digest_data(db: Session) -> dict:
+    from . import maintenance_service
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=24)
-    names = dict(db.execute(select(Client.id, Client.trade_name)).all())
-    open_ev = list(db.scalars(select(Event).where(Event.status == "PROBLEM").order_by(Event.severity.desc(), Event.started_at)))
+    clients_all = {c.id: c for c in db.scalars(select(Client))}
+    evs = list(db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV)
+                          .order_by(Event.severity.desc(), Event.started_at)))
+    maint, quiet = [], {}
+
+    def in_maint(cid) -> bool:
+        if cid not in quiet:
+            c = clients_all.get(cid)
+            quiet[cid] = bool(cid and ((c and c.maintenance_until and c.maintenance_until > now) or maintenance_service.active(db, cid, now)))
+            if quiet[cid] and c:
+                maint.append(c.trade_name)
+        return quiet[cid]
+
     by_sev: dict[int, int] = {}
-    by_kind: dict[str, int] = {}
-    clients: dict[str, dict] = {}
-    for e in open_ev:
-        by_sev[e.severity or 0] = by_sev.get(e.severity or 0, 0) + 1
-        by_kind[e.kind or "infra"] = by_kind.get(e.kind or "infra", 0) + 1
-        c = clients.setdefault(names.get(e.client_id) or "Sem cliente associado", {"infra": 0, "backup": 0, "endpoint": 0, "cloud": 0, "worst": 0, "top": None, "total": 0})
-        c[e.kind or "infra"] += 1
-        c["total"] += 1
-        if (e.severity or 0) >= c["worst"]:
-            c["worst"], c["top"] = e.severity or 0, f"{e.host}: {e.trigger_name}"
-    rows = sorted(({"name": k, **v} for k, v in clients.items()), key=lambda r: (-r["worst"], -r["total"], r["name"].lower()))
-    oldest = [{"host": e.host, "trigger": e.trigger_name, "client": names.get(e.client_id) or "Sem cliente", "sev": e.severity or 0, "age": _age(e.started_at, now)}
-              for e in sorted(open_ev, key=lambda x: x.started_at)[:5]]
-    ev24 = list(db.execute(select(Event.kind, func.count()).where(Event.started_at >= since).group_by(Event.kind)).all())
-    rs24 = list(db.execute(select(Event.kind, func.count()).where(Event.recovered_at >= since).group_by(Event.kind)).all())
-    disp = {}
-    for ch, st, n in db.execute(select(Dispatch.channel, Dispatch.status, func.count()).where(Dispatch.created_at >= since).group_by(Dispatch.channel, Dispatch.status)).all():
-        disp.setdefault(ch, {})[st] = n
+    groups: dict[str, dict] = {}
+    for e in evs:
+        if in_maint(e.client_id):
+            continue
+        by_sev[e.severity] = by_sev.get(e.severity, 0) + 1
+        c = clients_all.get(e.client_id)
+        g = groups.setdefault(c.trade_name if c else "Sem cliente associado", {"name": c.trade_name if c else "Sem cliente associado", "worst": 0, "items": []})
+        g["worst"] = max(g["worst"], e.severity)
+        g["items"].append({"sev": e.severity, "kind": e.kind or "infra", "host": e.host or "—", "text": (e.trigger_name or "—")[:90]})
+    clients = sorted(groups.values(), key=lambda r: (-r["worst"], -len(r["items"]), r["name"].lower()))
+    plat = []
     stale = [j.label or j.name for j in db.scalars(select(JobStatus)) if j.last_run and j.interval_s and (now - j.last_run).total_seconds() > max(j.interval_s * 4, 180)]
     bad = [h.name for h in db.scalars(select(HealthCheck)) if not h.ok]
-    maint = [c.trade_name for c in db.scalars(select(Client).where(Client.maintenance_until > now))]
+    if stale:
+        plat.append("rotinas com atraso: " + ", ".join(stale))
+    if bad:
+        plat.append("integrações com falha: " + ", ".join(bad))
+    total = sum(by_sev.values())
     worst = max(by_sev, default=-1)
-    status = "crit" if worst >= 4 else "warn" if open_ev else "ok"
-    return {"now": now, "open": len(open_ev), "by_sev": by_sev, "by_kind": by_kind, "clients": rows, "oldest": oldest,
-            "new24": sum(n for _, n in ev24), "resolved24": sum(n for _, n in rs24), "new_by_kind": dict(ev24), "disp": disp,
-            "stale": stale, "bad": bad, "maint": maint, "status": status, "no_client": clients.get("Sem cliente associado", {}).get("total", 0)}
+    return {"now": now, "open": total, "by_sev": by_sev, "clients": clients, "maint": sorted(set(maint)), "platform": plat,
+            "status": "crit" if worst >= 4 else "warn" if total else "ok"}
 
 
-def _sent(d: dict, ch: str) -> str:
-    x = d["disp"].get(ch, {})
-    return f"{x.get('sent', 0)} enviados · {x.get('failed', 0)} falhas · {x.get('skipped', 0)} ignorados"
+def _plural(n: int) -> str:
+    return f"{n} incidente em aberto" if n == 1 else f"{n} incidentes em aberto"
 
 
 def digest_text(d: dict, day: str, tzname: str = "America/Sao_Paulo") -> list[str]:
-    """Mensagem unica de WhatsApp (e texto puro do e-mail): situacao, categorias, clientes, mais antigos, alertas e plataforma."""
-    head = {"crit": "🔴 *Atenção: há problemas graves em aberto*", "warn": "🟡 *Há problemas em aberto, sem gravidade alta*", "ok": "🟢 *Tudo em ordem: nenhum problema em aberto*"}[d["status"]]
-    L = [head, "", f"📊 *Em aberto agora:* {d['open']}"]
-    if d["by_sev"]:
-        L.append("   " + " · ".join(f"{SEV_ICON.get(s, '')} {SEVERITIES.get(s)}: {n}" for s, n in sorted(d["by_sev"].items(), reverse=True)))
-    L += ["", "🗂️ *Por categoria*"]
-    for k, nm in KIND_NAMES.items():
-        L.append(f"   • {nm}: {d['by_kind'].get(k, 0)} em aberto · {d['new_by_kind'].get(k, 0)} novos nas últimas 24h")
-    if d["clients"]:
-        L += ["", f"🏢 *Por cliente* ({len(d['clients'])} com problemas)"]
-        for r in d["clients"][:12]:
-            parts = [f"{n} {lbl}" for n, lbl in ((r["infra"], "infra"), (r["backup"], "backup"), (r["endpoint"], "endpoints"), (r["cloud"], "cloud")) if n]
-            L.append(f"   {SEV_ICON.get(r['worst'], '')} *{r['name']}* — {', '.join(parts)} (maior: {SEVERITIES.get(r['worst'])})")
-        if len(d["clients"]) > 12:
-            L.append(f"   … e mais {len(d['clients']) - 12} cliente(s)")
-    if d["oldest"]:
-        L += ["", "⏳ *Abertos há mais tempo*"] + [f"   • {o['client']} · {o['host']} — {(o['trigger'] or '')[:60]} ({o['age']})" for o in d["oldest"]]
-    L += ["", f"📈 *Últimas 24h:* {d['new24']} novos · {d['resolved24']} resolvidos", f"📨 *Alertas enviados (24h)*",
-          f"   • WhatsApp: {_sent(d, 'whatsapp')}", f"   • E-mail: {_sent(d, 'email')}"]
+    """Mensagem unica de WhatsApp (e texto puro do e-mail): so incidentes que ainda existem, agrupados por cliente."""
+    if d["status"] == "ok":
+        L = ["🟢 *Tudo em ordem:* nenhum incidente em aberto"]
+    else:
+        L = [f"{SEV_ICON[max(d['by_sev'])]} *{_plural(d['open'])}*",
+             "   " + " · ".join(f"{SEVERITIES.get(s)}: {n}" for s, n in sorted(d["by_sev"].items(), reverse=True))]
+        shown = 0
+        for r in d["clients"]:
+            if shown >= MAX_LINES:
+                break
+            L += ["", f"🏢 *{r['name']}*"]
+            for it in r["items"]:
+                if shown >= MAX_LINES:
+                    break
+                L.append(f"   {SEV_ICON.get(it['sev'], '')} {it['host']} — {it['text']}")
+                shown += 1
+        if d["open"] > shown:
+            L += ["", f"… e mais {d['open'] - shown} incidente(s) no painel"]
     if d["maint"]:
-        L += ["", "🛠️ *Em manutenção agora:* " + ", ".join(d["maint"][:8])]
-    plat = []
-    if d["no_client"]:
-        plat.append(f"{d['no_client']} problema(s) em hosts sem cliente associado")
-    if d["stale"]:
-        plat.append("rotinas com atraso: " + ", ".join(d["stale"]))
-    if d["bad"]:
-        plat.append("integrações com falha: " + ", ".join(d["bad"]))
-    L += ["", "⚠️ *Plataforma:* " + "; ".join(plat)] if plat else ["", "✅ *Plataforma:* rotinas e integrações em dia"]
+        L += ["", "🛠️ *Em manutenção:* " + ", ".join(d["maint"][:8])]
+    if d["platform"]:
+        L += ["", "⚠️ *Plataforma:* " + "; ".join(d["platform"])]
     return L
 
 
 def digest_ctx(d: dict, day: str) -> dict:
-    """Contexto do e-mail (template digest.html)."""
+    """Contexto do e-mail (template digest.html): mesmo conteudo da mensagem de WhatsApp."""
     from .notification_service import SEV_COLORS
     st = {"crit": ("ATENÇÃO", "#bd1723"), "warn": ("EM OBSERVAÇÃO", "#e0a800"), "ok": ("TUDO EM ORDEM", "#16a34a")}[d["status"]]
-    return {"title": f"Resumo diário do NOC — {day}", "tag": "NOC · NAVI", "subtitle": "Situação consolidada de todos os clientes",
-            "preheader": f"{d['open']} problema(s) em aberto · {d['new24']} novos e {d['resolved24']} resolvidos nas últimas 24h",
+    shown, groups = 0, []
+    for r in d["clients"]:
+        items = r["items"][: max(0, MAX_LINES - shown)]
+        if not items:
+            break
+        shown += len(items)
+        groups.append({"name": r["name"], "items": [{**i, "color": SEV_COLORS.get(i["sev"], "#667090"), "label": SEVERITIES.get(i["sev"])} for i in items]})
+    return {"title": f"Resumo diário do NOC — {day}", "tag": "NOC · NAVI", "subtitle": "Incidentes em aberto agora",
+            "preheader": _plural(d["open"]) if d["open"] else "Nenhum incidente em aberto",
             "status_label": st[0], "status_color": st[1], "open": d["open"],
             "sev": [{"label": SEVERITIES.get(s), "n": n, "color": SEV_COLORS.get(s, "#667090")} for s, n in sorted(d["by_sev"].items(), reverse=True)],
-            "kinds": [{"name": nm, "open": d["by_kind"].get(k, 0), "new": d["new_by_kind"].get(k, 0)} for k, nm in KIND_NAMES.items()],
-            "clients": [{**r, "worst_label": SEVERITIES.get(r["worst"]), "color": SEV_COLORS.get(r["worst"], "#667090")} for r in d["clients"][:20]],
-            "more_clients": max(0, len(d["clients"]) - 20), "oldest": d["oldest"], "new24": d["new24"], "resolved24": d["resolved24"],
-            "wa": _sent(d, "whatsapp"), "mail": _sent(d, "email"), "maint": d["maint"][:10], "no_client": d["no_client"], "stale": d["stale"], "bad": d["bad"],
+            "groups": groups, "more": max(0, d["open"] - shown), "maint": d["maint"][:10], "platform": d["platform"],
             "plain": "\n".join(l.replace("*", "") for l in digest_text(d, day))}
 
 
@@ -259,7 +257,7 @@ def send_digest(db: Session, evo, manual: bool = False) -> str:
     res = []
     if c["noc_emails"]:
         try:
-            mailer.send(db, "digest", c["noc_emails"], f"{'[TESTE] ' if manual else ''}Resumo diário do NOC — {day} · {d['open']} em aberto", digest_ctx(d, day))
+            mailer.send(db, "digest", c["noc_emails"], f"{'[TESTE] ' if manual else ''}Resumo diário do NOC — {day} · {d['open']} em aberto" if d['open'] else f"{'[TESTE] ' if manual else ''}Resumo diário do NOC — {day} · tudo em ordem", digest_ctx(d, day))
             res.append("e-mail ok")
         except Exception as e:  # noqa: BLE001
             res.append(f"e-mail erro: {str(e)[:80]}")

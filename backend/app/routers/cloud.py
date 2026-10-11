@@ -177,6 +177,32 @@ def portal_power(uuid: str, body: PowerIn, request: Request, bg: BackgroundTasks
     return _do_power(db, request, _acc(db, c.id), uuid, body.action, f"portal:{user.email}", bg)
 
 
+# ---------------- saude da maquina (CPU / memoria / disco, sob demanda) ----------------
+_health_limiter = RateLimiter(30, 60)  # ate 30 consultas por minuto por usuario/maquina (o botao Monitorar consulta a cada ~5 s)
+
+
+def _health(db: Session, cid: int, uuid: str, who: str) -> dict:
+    v = db.scalar(select(CloudVm).where(CloudVm.uuid == uuid, CloudVm.client_id == cid, CloudVm.active.is_(True)))
+    if not v:
+        raise HTTPException(404, "Máquina não encontrada na conta deste cliente.")
+    key = f"{who}:{uuid}"
+    if _health_limiter.blocked(key):
+        raise HTTPException(429, "Muitas consultas seguidas. Aguarde alguns segundos.")
+    _health_limiter.hit(key)
+    return {"uuid": uuid, "name": v.name, **CS.vm_health(db, v)}
+
+
+@router.get("/cloud/clients/{cid}/instances/{uuid}/health")
+def vm_health_staff(cid: int, uuid: str, db: Session = Depends(get_db), user=Depends(require("clients.view"))):
+    return _health(db, cid, uuid, user.email)
+
+
+@router.get("/portal/cloud/{uuid}/health")
+def vm_health_portal(uuid: str, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_any_portal)):
+    c = _client_for(db, user, client_id)
+    return _health(db, c.id, uuid, user.email)
+
+
 # ---------------- visao global (monitoramento) ----------------
 @router.get("/cloud/vms")
 def all_vms(db: Session = Depends(get_db), user=Depends(require("monitoring.view"))):

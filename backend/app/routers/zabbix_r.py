@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import (Client, ClientHost, ClientHostGroup, Event, SyncRun, ZbxHost, ZbxHostGroup)
+from ..models import (INCIDENT_MIN_SEV, Client, ClientHost, ClientHostGroup, Event, SyncRun, ZbxHost, ZbxHostGroup)
 from ..schemas import ZabbixSettingsIn
 from ..security import require
 from ..services import event_service, factory, sync_service
@@ -98,7 +98,7 @@ def hosts(q: str | None = None, groupid: str | None = None, client_id: int | Non
         rows = [h for h in rows if h.hostid in ids or (set(h.group_ids or []) & gids)]
     if available is not None:
         rows = [h for h in rows if h.available == available]
-    open_by = dict(db.execute(select(Event.hostid, func.count()).where(Event.status == "PROBLEM").group_by(Event.hostid)).all())
+    open_by = dict(db.execute(select(Event.hostid, func.count()).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV).group_by(Event.hostid)).all())
     total = len(rows)
     out = []
     for h in rows[(page - 1) * size: page * size]:

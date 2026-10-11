@@ -52,6 +52,31 @@ def _dt(v) -> datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
+# ---------------- servidor x estacao ----------------
+# Servidor e 24x7: ficar offline e problema. Estacao de trabalho/notebook e desligada fora do expediente: offline nao e erro.
+_WS_RE = re.compile(r"windows\s*(xp|vista|7|8|8\.1|10|11)\b|mac\s?os|os\s?x|darwin|android|\bios\b|ipad|iphone", re.I)
+_SRV_HOST_RE = re.compile(r"(^|[-_ .])(srv|server|servidor|sql|db|bd|dc|ad|fs|bkp|vm)([-_ .\d]|$)", re.I)
+
+
+def machine_role(a: ExtAsset) -> str:
+    """'server' ou 'workstation'. Ajuste manual (meta.role) vale sempre; sem ele deduz pelo sistema operacional e, se este for
+    generico, pelo nome. Na duvida considera servidor (nao esconde um problema real)."""
+    m = a.meta or {}
+    if m.get("role") in ("server", "workstation"):
+        return m["role"]
+    os_name = f"{m.get('os_name') or ''} {m.get('os') or ''}".strip()
+    if "server" in os_name.lower() or (m.get("os_family") or "").upper() == "LINUX" or "linux" in os_name.lower():
+        return "server"
+    if _WS_RE.search(os_name):
+        return "workstation"
+    if _SRV_HOST_RE.search(a.name or "") or _SRV_HOST_RE.search(m.get("hostname") or ""):
+        return "server"
+    return "workstation" if a.source == EMS else "server"
+
+
+ROLE_LABEL = {"server": "Servidor", "workstation": "Estação"}
+
+
 # ---------------- tenants ----------------
 def sync_tenants(db: Session, svc, dc: str = "br") -> tuple[dict, dict]:
     tree = svc.tenant_tree()
@@ -207,7 +232,8 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict, dc: str = "br"):
         if ag is not None:
             units = [u.get("name") for u in ag.get("units") or []]
             a.meta = {**(a.meta or {}), "dc": dc, "techs": device_techs(units, tflags.get(a.ext_tenant_id or (tn.id if tn else None), {})),
-                      "agent_version": ((ag.get("core_version") or {}).get("current") or {}).get("release_id"), "hostname": ag.get("hostname")}
+                      "agent_version": ((ag.get("core_version") or {}).get("current") or {}).get("release_id"), "hostname": ag.get("hostname"),
+                      "os_name": (ag.get("platform") or {}).get("name"), "os_family": (ag.get("platform") or {}).get("family")}
             if a.ext_tenant_id is None:
                 t2 = by_name.get(((ag.get("tenant") or {}).get("name") or "").strip().lower())
                 a.ext_tenant_id = t2.id if t2 else None
@@ -268,6 +294,9 @@ def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dic
         rid = (det.get("resourceId") or "").lower()
         a = cache.get(rid)
         ten = tenants.get(a.ext_tenant_id) if a else None
+        if ten is None:  # o proprio alerta informa o tenant (ex.: caixa postal/Microsoft 365, que nao e uma maquina)
+            t_ = by_uuid.get(((al.get("tenant") or {}).get("uuid")) or "")
+            ten = tenants.get(t_.id) if t_ is not None else None
         out[f"alert:{al['id']}"] = {
             "host": det.get("resourceName") or (a.name if a else "—"), "hostid": rid or None, "tenant": ten,
             "triggerid": al.get("type"), "trigger_name": human_type(al.get("type")), "item_name": det.get("planName"),
@@ -278,21 +307,23 @@ def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dic
             continue
         ten = tenants.get(a.ext_tenant_id)
         last_ok = a.last_success_at
+        server = machine_role(a) == "server"
         if last_ok and (now - last_ok) > timedelta(hours=c["stale_h"]):
             h = int((now - last_ok).total_seconds() // 3600)
             out[f"stale:{a.ext_id}"] = {"host": a.name, "hostid": a.ext_id, "tenant": ten, "triggerid": "NoRecentBackup",
                                         "trigger_name": f"Sem backup bem-sucedido há {h // 24}d {h % 24}h" if h >= 48 else f"Sem backup bem-sucedido há {h}h",
-                                        "item_name": a.policy_name, "severity": 4, "started_at": now, "type": "NoRecentBackup",
+                                        "item_name": a.policy_name, "severity": 4 if server else 2, "started_at": now, "type": "NoRecentBackup",
                                         "opdata": f"Último sucesso: {last_ok.astimezone().strftime('%d/%m/%Y %H:%M')}"}
-        if a.online is False and a.offline_since and (now - a.offline_since) > timedelta(minutes=c["offline_min"]):
+        if server and a.online is False and a.offline_since and (now - a.offline_since) > timedelta(minutes=c["offline_min"]):
             out[f"offline:{a.ext_id}"] = {"host": a.name, "hostid": a.ext_id, "tenant": ten, "triggerid": "AgentOffline",
-                                          "trigger_name": "Agente de backup offline", "item_name": a.policy_name, "severity": 3,
+                                          "trigger_name": "Servidor offline (agente de backup)", "item_name": a.policy_name, "severity": 4,
                                           "started_at": a.offline_since, "type": "AgentOffline",
                                           "opdata": f"Offline desde {a.offline_since.astimezone().strftime('%d/%m/%Y %H:%M')}"}
     return out
 
 
-def reconcile(db: Session, desired: dict[str, dict], source: str = SRC, kind: str = "backup", origin: str = "Acronis") -> dict:
+def reconcile(db: Session, desired: dict[str, dict], source: str = SRC, kind: str = "backup", origin: str = "Acronis", quiet: frozenset | set = frozenset()) -> dict:
+    """quiet: chaves que, se deixarem de existir, fecham o evento SEM mensagem de restabelecimento (reclassificacao, nao recuperacao real)."""
     now = datetime.now(timezone.utc)
     stats = {"new": 0, "resolved": 0, "open": 0}
     open_evs = {e.zbx_eventid: e for e in db.scalars(select(Event).where(Event.kind == kind, Event.source == source, Event.status == "PROBLEM"))}
@@ -322,7 +353,7 @@ def reconcile(db: Session, desired: dict[str, dict], source: str = SRC, kind: st
                 N.plan_problem(db, ev)
     for eid, ev in open_evs.items():
         if eid.split(":", 1)[1] not in desired:
-            if event_service.mark_resolved(db, ev, now):
+            if event_service.mark_resolved(db, ev, now, alert=eid.split(":", 1)[1] not in quiet):
                 stats["resolved"] += 1
     db.commit()
     return stats
@@ -348,15 +379,16 @@ def sync_acronis(db: Session) -> dict:
     accounts = factory.acronis_all(db)
     if not accounts:
         return {"skipped": True}
-    desired, total_assets, total_tenants = {}, 0, 0
+    desired, total_assets, total_tenants, quiet = {}, 0, 0, set()
     for dc, sv in accounts:
         by_uuid, by_name = sync_tenants(db, sv, dc)
         sync_usages(db, sv, list({t.id: t for t in by_uuid.values()}.values()))
         cache = sync_assets(db, sv, by_uuid, by_name, dc)
         db.commit()
         desired.update(_desired(db, sv, cache, by_uuid, by_name))
+        quiet |= {f"offline:{a.ext_id}" for a in cache.values() if machine_role(a) != "server"}
         total_assets, total_tenants = len(cache), total_tenants + len(by_uuid)
-    stats = reconcile(db, desired)
+    stats = reconcile(db, desired, quiet=quiet)
     relink(db)
     return {**stats, "assets": total_assets, "tenants": total_tenants, "datacenters": [dc for dc, _ in accounts]}
 
@@ -430,7 +462,7 @@ def sync_ems(db: Session, svc) -> dict:
                 a.meta = {"av_enabled": e.get("av_enabled"), "sig_ok": e.get("client_av_sig_version_up_to_date"), "version_ok": e.get("client_version_up_to_date"),
                           "quarantined": bool(e.get("is_quarantined")), "health_errors": e.get("health_error_count") or 0,
                           "health_warnings": e.get("health_warning_count") or 0, "fct_version": e.get("fct_version"), "os": e.get("os_version"),
-                          "user": next((u for u in users if u), None), "ip": e.get("ip_addr"), "managed": bool(e.get("is_managed", True)),
+                          "user": next((u for u in users if u), None), "ip": e.get("ip_addr"), "managed": bool(e.get("is_managed", True)), "os_name": e.get("os_version"), "role": (a.meta or {}).get("role"),
                           # contadores de eventos do FortiClient (os "baloes" do EMS): av, sb, ae, wf, vf, fw, vuln, vpn, pua, rm, sys...
                           "events": {k: int(e.get(f"{k}_events_count") or 0) for k in EMS_EVENT_KEYS}, "vuln_sev": e.get("vuln_events_max_severity")}
                 seen.add(uid)
@@ -451,6 +483,9 @@ def sync_ems(db: Session, svc) -> dict:
                 d = (now - a.last_success_at).days
                 desired[f"offline:{a.ext_id}"] = {**base, "triggerid": "NoContact", "trigger_name": f"Endpoint sem contato com o EMS há {d} dias", "severity": 2, "type": "NoContact",
                                                   "started_at": a.last_success_at + timedelta(days=off_days), "opdata": f"Último contato: {a.last_success_at.astimezone().strftime('%d/%m/%Y %H:%M')}"}
+            if a.online is False and a.offline_since and machine_role(a) == "server" and (now - a.offline_since) > timedelta(minutes=cfg(db)["offline_min"]):
+                desired[f"srv_off:{a.ext_id}"] = {**base, "triggerid": "ServerOffline", "trigger_name": "Servidor offline (FortiClient EMS)", "severity": 4, "type": "ServerOffline",
+                                                  "started_at": a.offline_since, "opdata": f"Offline desde {a.offline_since.astimezone().strftime('%d/%m/%Y %H:%M')}"}
             if a.online and m.get("av_enabled") is False:
                 desired[f"av_off:{a.ext_id}"] = {**base, "triggerid": "AvDisabled", "trigger_name": "Antivírus (FortiClient) desativado", "severity": 3, "type": "AvDisabled",
                                                  "opdata": f"Usuário: {m.get('user') or '—'}"}

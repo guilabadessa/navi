@@ -9,7 +9,7 @@ from .. import audit
 from ..db import get_db
 from ..models import Client, Dispatch, Event
 from ..security import require
-from ..util import parse_dt, to_dict
+from ..util import by_client, parse_dt, to_dict
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -28,7 +28,7 @@ def list_events(kind: str | None = None, status: str | None = None, client_id: i
     if status:
         stmt = stmt.where(Event.status == status.upper())
     if client_id:
-        stmt = stmt.where(Event.client_id == client_id)
+        stmt = stmt.where(by_client(Event.client_id, client_id))
     if hostid:
         stmt = stmt.where(Event.hostid == hostid)
     if min_severity is not None:

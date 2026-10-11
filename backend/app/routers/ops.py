@@ -14,7 +14,7 @@ from ..db import get_db
 from ..models import Client, ClientHost, ClientHostGroup, Event, MaintenanceWindow, SeverityRule, ZbxHost, ZbxHostGroup
 from ..security import require
 from ..services import commlog, event_service, factory, maintenance_service, noc_service, severity_service
-from ..util import parse_dt, to_dict
+from ..util import by_client, parse_dt, to_dict
 
 router = APIRouter(tags=["ops"])
 
@@ -189,7 +189,7 @@ def export_events(status: str | None = None, client_id: int | None = None, q: st
     if status:
         stmt = stmt.where(Event.status == status.upper())
     if client_id:
-        stmt = stmt.where(Event.client_id == client_id)
+        stmt = stmt.where(by_client(Event.client_id, client_id))
     if min_severity is not None:
         stmt = stmt.where(Event.severity >= min_severity)
     if since:

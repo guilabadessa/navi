@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
-import { BellOff, BellRing, Play, Power, RotateCw, ShieldAlert } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Activity, BellOff, BellRing, Play, Power, RotateCw, ShieldAlert } from 'lucide-react'
 import { get, post, put, del } from '../api'
-import { Card, Field, Loading, Pill, Stat, Table, useLoad, useToast } from '../ui'
+import { Card, Field, Loading, Modal, Pill, Stat, Table, useLoad, useToast } from '../ui'
 
 const ST = { RUNNING: ['ok', 'ligada'], STOPPED: ['mut', 'desligada'], SHUTOFF: ['mut', 'desligada'], STARTING: ['warn', 'ligando'], STOPPING: ['warn', 'desligando'], ERROR: ['bad', 'com erro'], DESTROYED: ['mut', 'removida'] }
 const QL = { Instance: 'Máquinas', IP: 'IPs públicos', Volume: 'Discos', Snapshot: 'Snapshots', CPU: 'vCPUs', Memory: 'Memória', PrimaryStorage: 'Armazenamento', SecondaryStorage: 'Armazenamento secundário', Network: 'Redes', Template: 'Templates', VPC: 'VPCs' }
@@ -9,6 +9,45 @@ const ram = (mb) => mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 ? 1 : 0).repla
 const qfmt = (q, v) => q.unit === 'mb' ? ram(v) : q.unit === 'gb' ? `${v} GB` : String(v)
 const ago = (v) => { if (!v) return ''; const m = Math.round((Date.now() - new Date(v).getTime()) / 60000); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : m < 2880 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} d` }
 const confirmText = (name, action, label) => `${label} a máquina “${name}”?\n\n` + (action === 'start' ? 'A máquina será ligada agora.' : action === 'reboot' ? 'A máquina será desligada e ligada de novo. Os usuários conectados serão desconectados e os serviços ficam indisponíveis por alguns minutos.' : action === 'force-stop' ? 'DESLIGAMENTO FORÇADO: equivale a puxar o cabo de energia e pode causar perda de dados ou corromper o sistema.' : 'A máquina será desligada. Os usuários conectados serão desconectados e os serviços ficam indisponíveis até ligar de novo.')
+
+// Saude da maquina (CPU, memoria, disco, ping). "Monitorar ao vivo" consulta a cada 5 s por ate 5 minutos.
+const tone = (p) => p == null ? '' : p >= 90 ? 'var(--crit)' : p >= 80 ? 'var(--orange)' : undefined
+function Meter({ label, pct, desc, hist }) {
+  const p = pct == null ? null : Math.max(0, Math.min(100, pct))
+  return <div style={{ marginBottom: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><b>{label}</b><span>{p == null ? 'sem dados' : `${pct.toFixed(1).replace('.', ',')}%`}</span></div>
+    <div className="progress"><i style={{ width: (p || 0) + '%', background: tone(p) }} /></div>
+    {desc && <div className="sub">{desc}</div>}
+    {hist && hist.length > 1 && <svg viewBox="0 0 100 20" preserveAspectRatio="none" style={{ width: '100%', height: 28, marginTop: 4 }} aria-hidden="true">
+      <polyline fill="none" stroke="var(--acc, #1e73f8)" strokeWidth="1.4" vectorEffect="non-scaling-stroke" points={hist.map((v, i) => `${(i / (hist.length - 1)) * 100},${20 - (Math.max(0, Math.min(100, v)) / 100) * 20}`).join(' ')} /></svg>}
+  </div>
+}
+export function VmHealth({ vm, path, onClose }) {
+  const [h, setH] = useState(null); const [err, setErr] = useState(null); const [live, setLive] = useState(false)
+  const [hist, setHist] = useState({ cpu: [], mem: [] }); const started = useRef(0)
+  const load = async () => { try { const d = await get(path); setH(d); setErr(null); setHist(x => ({ cpu: d.cpu != null ? [...x.cpu, d.cpu].slice(-60) : x.cpu, mem: d.mem != null ? [...x.mem, d.mem].slice(-60) : x.mem })) } catch (e) { setErr(e.message); setLive(false) } }
+  useEffect(() => { load() }, [path]) // eslint-disable-line
+  useEffect(() => {
+    if (!live) return
+    started.current = Date.now()
+    const t = setInterval(() => { if (Date.now() - started.current > 300000) { setLive(false); return } load() }, 5000)
+    return () => clearInterval(t)
+  }, [live]) // eslint-disable-line
+  const mon = h && h.source === 'zabbix'
+  return <Modal title={`Saúde · ${vm.name}`} onClose={onClose} footer={<>
+    {mon && <button className={'btn ' + (live ? 'danger' : 'primary')} onClick={() => setLive(!live)}><Activity size={15} />{live ? 'Parar monitoramento' : 'Monitorar ao vivo'}</button>}
+    <button className="btn" onClick={onClose}>Fechar</button></>}>
+    {!h ? <Loading err={err} /> : <>
+      {err && <div className="banner bad"><div className="grow">{err}</div></div>}
+      <div className="sub" style={{ marginBottom: 12 }}>{vm.ip ? <span className="mono">{vm.ip}</span> : null}{h.sampled_at ? ` · medido ${new Date(h.sampled_at).toLocaleTimeString('pt-BR')}` : ''}{live ? ' · ao vivo (atualiza a cada 5 s, por até 5 min)' : ''}</div>
+      {h.hint && <div className="banner"><div className="grow">{h.hint}</div></div>}
+      {mon && h.cpu != null && <Meter label="Processador (CPU)" pct={h.cpu} desc={`${vm.cpu} vCPU`} hist={hist.cpu} />}
+      {mon && h.mem != null && <Meter label="Memória" pct={h.mem} desc={ram(vm.ram_mb)} hist={hist.mem} />}
+      {mon && (h.disks || []).map(d => <Meter key={d.mount} label={`Disco ${d.mount}`} pct={d.used_pct} />)}
+      {!mon && <div className="sub">Estado informado pela nuvem: <b>{(ST[h.state] || [0, h.state])[1]}</b> · {vm.cpu} vCPU · {ram(vm.ram_mb)} · {vm.disk_gb || '—'} GB provisionados.</div>}
+    </>}
+  </Modal>
+}
 
 // Botoes de acao de uma maquina (ligar / reiniciar / desligar [/ forcar]), todos com confirmacao
 function VmActions({ vm, busy, onAct, staff }) {
@@ -24,8 +63,8 @@ const StateCell = ({ r }) => r.reboot && ['parando', 'ligando'].includes(r.reboo
 
 // Maquinas da Cloud Orca de um cliente: estado, recursos, consumo do plano e ligar / desligar / reiniciar.
 // `path`: GET da visao geral; `powerPath(uuid)`: POST das acoes.
-export function CloudPanel({ path, powerPath }) {
-  const toast = useToast(); const [busy, setBusy] = useState(''); const [q, setQ] = useState(''); const [st, setSt] = useState('')
+export function CloudPanel({ path, powerPath, healthPath }) {
+  const toast = useToast(); const [busy, setBusy] = useState(''); const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [hv, setHv] = useState(null)
   const { data: d, err, reload } = useLoad(() => get(path), [path], 15000)
   if (!d) return <Loading err={err} />
   const act = async (v, action, label) => {
@@ -52,13 +91,14 @@ export function CloudPanel({ path, powerPath }) {
       { h: 'Estado', r: r => <StateCell r={r} /> },
       { h: 'Máquina', r: r => <><b>{r.name}</b><div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB`, cls: 'nw' },
       { h: 'Rede', r: r => <><span className="mono">{r.ip || '—'}</span><div className="sub">{r.network}</div></> }, { h: 'Zona', k: 'zone' },
-      { h: 'Ações', cls: 'nw', r: r => d.can_run ? <VmActions vm={r} busy={busy} onAct={act} staff={d.staff} /> : <span className="sub">somente consulta</span> }]} /></Card>
+      { h: 'Ações', cls: 'nw', r: r => <div className="vm-actions">{healthPath && r.state === 'RUNNING' && <button className="btn sm" title="Ver CPU, memória e disco" onClick={() => setHv(r)}><Activity size={15} />Saúde</button>}{d.can_run ? <VmActions vm={r} busy={busy} onAct={act} staff={d.staff} /> : <span className="sub">somente consulta</span>}</div> }]} /></Card>
+    {hv && <VmHealth vm={hv} path={healthPath(hv.uuid)} onClose={() => setHv(null)} />}
     <p className="hint" style={{ marginTop: 8 }}>Atualizado automaticamente a cada 15 segundos. Máquinas desligadas pela NAVI não geram alerta; as desligadas por outros meios geram um incidente na categoria Cloud Orca.</p></>
 }
 
 // Frota inteira (Monitoramento): todas as maquinas de todos os clientes, com filtros e acoes
 export function CloudFleet() {
-  const toast = useToast(); const [busy, setBusy] = useState(''); const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [cl, setCl] = useState('')
+  const toast = useToast(); const [busy, setBusy] = useState(''); const [q, setQ] = useState(''); const [st, setSt] = useState(''); const [cl, setCl] = useState(''); const [hv, setHv] = useState(null)
   const { data: d, err, reload } = useLoad(() => get('/cloud/vms'), [], 30000)
   if (!d) return <Loading err={err} />
   const act = async (v, action, label) => {
@@ -85,8 +125,9 @@ export function CloudFleet() {
       { h: 'Estado', r: r => <><Pill tone={(ST[r.state] || ['mut'])[0]}>{(ST[r.state] || [0, r.state])[1]}</Pill>{r.state !== 'RUNNING' && r.since && <div className="sub">{ago(r.since)}{r.expected_off ? ' · desligada pela NAVI' : r.ignored ? ' · ignorada' : ''}</div>}</> },
       { h: 'Cliente', r: r => <b>{r.client}</b> }, { h: 'Máquina', r: r => <>{r.name}<div className="sub">{r.os}</div></> }, { h: 'Recursos', r: r => `${r.cpu} vCPU · ${ram(r.ram_mb)} · ${r.disk_gb || '—'} GB`, cls: 'nw' },
       { h: 'IP', r: r => <span className="mono">{r.ip || '—'}</span>, cls: 'nw' }, { h: 'Zona', k: 'zone' },
-      { h: 'Ações', cls: 'nw', r: r => <div className="vm-actions">{d.can_run && <VmActions vm={r} busy={busy} onAct={act} staff />}
-        <button className="btn sm" title={r.ignored ? 'Voltar a alertar quando desligada' : 'Não alertar quando esta máquina estiver desligada'} aria-label={r.ignored ? 'Voltar a alertar' : 'Ignorar alertas desta máquina'} onClick={() => ign(r)}>{r.ignored ? <BellRing size={15} /> : <BellOff size={15} />}</button></div> }]} /></Card></>
+      { h: 'Ações', cls: 'nw', r: r => <div className="vm-actions">{r.state === 'RUNNING' && <button className="btn sm" title="Ver CPU, memória e disco" onClick={() => setHv(r)}><Activity size={15} />Saúde</button>}{d.can_run && <VmActions vm={r} busy={busy} onAct={act} staff />}
+        <button className="btn sm" title={r.ignored ? 'Voltar a alertar quando desligada' : 'Não alertar quando esta máquina estiver desligada'} aria-label={r.ignored ? 'Voltar a alertar' : 'Ignorar alertas desta máquina'} onClick={() => ign(r)}>{r.ignored ? <BellRing size={15} /> : <BellOff size={15} />}</button></div> }]} /></Card>
+    {hv && <VmHealth vm={hv} path={`/cloud/clients/${hv.client_id}/instances/${hv.uuid}/health`} onClose={() => setHv(null)} />}</>
 }
 
 // Configuracao da chave de API da conta do cliente (cadastro do cliente)

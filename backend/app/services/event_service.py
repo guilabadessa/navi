@@ -38,6 +38,20 @@ def resolve_client(hostid, group_ids, gmap, hmap) -> int | None:
     return None
 
 
+def infer_client(db: Session, trigger_name: str | None, cache: dict | None = None) -> int | None:
+    """Evento sem host (host/gatilho removido do Zabbix depois do problema, ex.: tuneis VPN descobertos): o cliente e deduzido
+    quando o MESMO gatilho ja pertence, sem ambiguidade, a um unico cliente. Duvida = continua sem cliente."""
+    if not trigger_name:
+        return None
+    if cache is not None and trigger_name in cache:
+        return cache[trigger_name]
+    ids = db.scalars(select(Event.client_id).where(Event.kind == "infra", Event.trigger_name == trigger_name, Event.client_id.is_not(None)).distinct().limit(2)).all()
+    cid = ids[0] if len(ids) == 1 else None
+    if cache is not None:
+        cache[trigger_name] = cid
+    return cid
+
+
 def _host_info(db: Session, hostid: str | None):
     h = db.get(ZbxHost, hostid) if hostid else None
     gnames = []
@@ -74,7 +88,7 @@ def upsert_problem(db: Session, d: dict, alert: bool = True) -> tuple[Event, boo
     ev.tags = d.get("tags") or ev.tags
     ev.opdata = d.get("opdata") or ev.opdata
     ev.group_ids, ev.group_names = gids, gnames
-    ev.client_id = resolve_client(d.get("hostid"), gids, gmap, hmap)
+    ev.client_id = resolve_client(d.get("hostid"), gids, gmap, hmap) or (infer_client(db, ev.trigger_name) if not ev.hostid else None)
     ev.source = d.get("source", ev.source or "api")
     if d.get("acknowledged") is not None:
         ev.acknowledged = bool(int(d["acknowledged"]))
@@ -239,11 +253,11 @@ def relink_events(db: Session) -> int:
     gmap, hmap = client_map(db)
     hosts = {h.hostid: h for h in db.scalars(select(ZbxHost))}
     gnames = {g.groupid: g.name for g in db.scalars(select(ZbxHostGroup))}
-    changed = 0
+    changed, cache = 0, {}
     for ev in db.scalars(select(Event).where(Event.kind == "infra")):
         h = hosts.get(ev.hostid) if ev.hostid else None
         gids = (h.group_ids if h else None) or ev.group_ids or []
-        cid = resolve_client(ev.hostid, gids, gmap, hmap)
+        cid = resolve_client(ev.hostid, gids, gmap, hmap) or (infer_client(db, ev.trigger_name, cache) if not ev.hostid else None)
         if h:
             names = [gnames.get(g, g) for g in gids]
             if ev.group_ids != gids:

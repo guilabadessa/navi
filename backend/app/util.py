@@ -14,6 +14,14 @@ def to_dict(obj, exclude: set[str] | None = None) -> dict:
     return out
 
 
+NO_CLIENT = -1  # valor de client_id nos filtros para "somente itens sem cliente associado"
+
+
+def by_client(col, client_id: int):
+    """Condicao SQL do filtro de cliente: -1 = sem cliente associado."""
+    return col.is_(None) if client_id == NO_CLIENT else col == client_id
+
+
 def parse_dt(v: str | None):
     if not v:
         return None

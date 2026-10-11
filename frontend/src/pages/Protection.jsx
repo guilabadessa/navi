@@ -29,7 +29,7 @@ export function Overview({ ov, clients, edit, reload }) {
       <Table rows={ov.alerts} onRow={r => nav(`/eventos?kind=backup&q=${encodeURIComponent(r.host || '')}&days=`)} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Cliente', r: r => r.client_name || <Pill tone="warn">sem cliente</Pill> },
         { h: 'Item', r: r => <b>{r.host}</b> }, { h: 'Problema', r: r => r.trigger_name }, { h: 'Plano', r: r => <span className="sub">{r.item_name || '—'}</span> }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
     <div className="bar"><div className="grow"><input placeholder="Buscar máquina, banco ou cliente…" value={q} onChange={e => setQ(e.target.value)} /></div>
-      <select value={cl} onChange={e => setCl(e.target.value)}><option value="">Todos os clientes</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select>
+      <select value={cl} onChange={e => setCl(e.target.value)}><option value="">Todos os clientes</option><option value="-1">Sem cliente associado</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select>
       <select value={st} onChange={e => setSt(e.target.value)}><option value="">Todos os status</option>{Object.keys(ST).map(k => <option key={k}>{k}</option>)}</select>
       <select value={ty} onChange={e => setTy(e.target.value)}><option value="">Todos os tipos</option>{Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
     <Card pad={false}><Table rows={rows} empty="Nada encontrado." cols={[
@@ -37,10 +37,18 @@ export function Overview({ ov, clients, edit, reload }) {
       { h: 'Cliente (Acronis)', r: r => <>{r.tenant}{r.client ? <div className="sub">→ {r.client}</div> : <div className="sub" style={{ color: 'var(--orange)' }}>não associado</div>}</> },
       { h: 'Proteção', r: r => <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{(r.techs || []).map(t => <span key={t} className="badge b-info">{t}</span>)}</span> }, { h: 'Plano', r: r => <span className="sub">{r.policy || '—'}</span> }, { h: 'Último sucesso', r: r => <span title={fmtDT(r.last_success_at)}>{ago(r.last_success_at)}</span> },
       { h: 'Última falha', r: r => r.last_failure_at ? <span title={fmtDT(r.last_failure_at)}>{ago(r.last_failure_at)}</span> : '—' },
+      { h: 'Perfil', r: r => r.type === 'machine' ? <RoleTag r={r} edit={edit} reload={reload} /> : '—' },
       { h: 'Agente', r: r => r.online === null || r.online === undefined ? '—' : r.online ? <Pill tone="ok">online</Pill> : <Pill tone="warn">offline</Pill> },
       { h: '', r: r => <div style={{ display: 'flex', gap: 6 }}>{r.can_run && <button className="btn sm" title="Executar o plano de backup agora" onClick={() => run(r)}><Play />Executar</button>}{edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar (não gerar alerta de backup antigo / offline)'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button>}</div> }]} /></Card></>
 }
 
+// Servidor (24x7: offline e problema) x estacao (desligada fora do expediente: offline nao e problema). Clique alterna.
+function RoleTag({ r, edit, reload }) {
+  const toast = useToast(); const srv = r.role === 'server'
+  const flip = async () => { try { await put(`/protection/assets/${r.id}/role`, { role: srv ? 'workstation' : 'server' }); reload() } catch (e) { toast(e.message, true) } }
+  const tip = srv ? 'Servidor: ficar offline gera alerta. Clique para marcar como estação.' : 'Estação de trabalho: ficar offline não é erro. Clique para marcar como servidor.'
+  return edit ? <button className={'badge ' + (srv ? 'b-info' : 'b-mut')} style={{ cursor: 'pointer', border: 0 }} title={tip} onClick={flip}>{srv ? 'Servidor' : 'Estação'}</button> : <span className={'badge ' + (srv ? 'b-info' : 'b-mut')} title={tip}>{srv ? 'Servidor' : 'Estação'}</span>
+}
 const EST = { online: 'ok', offline: 'mut', 'sem contato': 'warn', 'antivírus off': 'bad', assinaturas: 'warn', quarentena: 'bad', atenção: 'warn', ignorado: 'mut' }
 export function Endpoints({ ov, clients, edit, reload }) {
   const toast = useToast(); const nav = useNavigate()
@@ -60,7 +68,7 @@ export function Endpoints({ ov, clients, edit, reload }) {
       <Table rows={ov.alerts} onRow={r => nav(`/eventos?kind=endpoint&q=${encodeURIComponent(r.host || '')}&days=`)} cols={[{ h: 'Sev.', r: r => <SevBadge n={r.severity} /> }, { h: 'Cliente', r: r => r.client_name || <Pill tone="warn">sem cliente</Pill> },
         { h: 'Endpoint', r: r => <b>{r.host}</b> }, { h: 'Problema', r: r => r.trigger_name }, { h: 'Detalhe', r: r => <span className="sub">{r.opdata || ''}</span> }, { h: 'Desde', r: r => fmtDT(r.started_at) }]} /></Card>}
     <div className="bar"><div className="grow"><input placeholder="Buscar endpoint, usuário ou site…" value={q} onChange={e => setQ(e.target.value)} /></div>
-      <select value={cl} onChange={e => setCl(e.target.value)}><option value="">Todos os clientes</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select>
+      <select value={cl} onChange={e => setCl(e.target.value)}><option value="">Todos os clientes</option><option value="-1">Sem cliente associado</option>{clients.map(x => <option key={x.id} value={x.id}>{x.trade_name}</option>)}</select>
       <select value={st} onChange={e => setSt(e.target.value)}><option value="">Todos os status</option>{Object.keys(EST).map(k => <option key={k}>{k}</option>)}</select></div>
     <Card pad={false}><Table rows={rows} empty="Nenhum endpoint (a integração está ativa e já sincronizou?)." cols={[
       { h: 'Status', r: r => <Pill tone={EST[r.status]}>{r.status}</Pill> }, { h: 'Endpoint', r: r => <b>{r.name}</b> }, { h: 'Usuário', k: 'user' },
@@ -68,6 +76,7 @@ export function Endpoints({ ov, clients, edit, reload }) {
       { h: 'Sistema', r: r => <span className="sub">{(r.os || '').replace('Microsoft ', '').replace(' Edition, 64-bit', '').slice(0, 38)}</span> },
       { h: 'FortiClient', r: r => <span className="sub">{r.fct_version || '—'}</span> }, { h: 'Antivírus', r: r => r.av_enabled === false ? <Pill tone="bad">desativado</Pill> : r.sig_ok === false ? <Pill tone="warn">assin. antigas</Pill> : <Pill tone="ok">ok</Pill> },
       { h: 'Eventos', r: r => <EventBalloons events={r.events} vulnSev={r.vuln_sev} /> },
+      { h: 'Perfil', r: r => <RoleTag r={r} edit={edit} reload={reload} /> },
       { h: 'Último contato', r: r => <span title={fmtDT(r.last_contact)}>{ago(r.last_contact)}</span> },
       { h: '', r: r => edit && <button className="btn sm" title={r.ignored ? 'Voltar a monitorar' : 'Ignorar'} onClick={() => toggle(r)}>{r.ignored ? <Eye /> : <EyeOff />}</button> }]} /></Card></>
 }

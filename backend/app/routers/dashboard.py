@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from .. import audit, settings_store
-from ..models import Client, ClientHost, ClientHostGroup, Dispatch, Event, ExtAsset, ExtTenant, HealthCheck, JobStatus, ZbxHost
+from ..models import INCIDENT_MIN_SEV, Client, ClientHost, ClientHostGroup, Dispatch, Event, ExtAsset, ExtTenant, HealthCheck, JobStatus, ZbxHost
 from ..security import current_user, require
 from ..services import kpi_service, maintenance_service, services_service
-from ..util import to_dict
+from ..util import NO_CLIENT, by_client, to_dict
 from .clients import client_hosts
 
 router = APIRouter(tags=["dashboard"])
@@ -106,15 +106,20 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
         d24 = now - timedelta(hours=24)
         today = datetime.now(timezone.utc).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
         hosts = list(db.scalars(select(ZbxHost).where(ZbxHost.active.is_(True), ZbxHost.status == 0)))
-        evf = [Event.kind == "infra"] + ([Event.client_id == client_id] if client_id else [])
-        if client_id:
+        nocl = client_id == NO_CLIENT  # filtro "Sem cliente associado"
+        evf = [Event.kind == "infra", Event.severity >= INCIDENT_MIN_SEV] + ([by_client(Event.client_id, client_id)] if client_id else [])
+        if nocl:
+            assigned = set(db.scalars(select(ClientHostGroup.zbx_groupid)))
+            hids = set(db.scalars(select(ClientHost.zbx_hostid)))
+            hosts = [h for h in hosts if not (set(h.group_ids or []) & assigned) and h.hostid not in hids]
+        elif client_id:
             c = db.get(Client, client_id)
             hosts = client_hosts(db, c) if c else []
         open_ev = list(db.scalars(select(Event).where(Event.status == "PROBLEM", *evf).order_by(Event.severity.desc(), Event.started_at)))
         cnt = lambda since: db.scalar(select(func.count()).select_from(Event).where(Event.started_at >= since, *evf))  # noqa: E731
         evN = list(db.scalars(select(Event).where(Event.started_at < now, (Event.recovered_at.is_(None)) | (Event.recovered_at > dN), *evf)))
         k = kpi_service.compute(evN, [{"hostid": h.hostid, "name": h.name, "ip": h.ip} for h in hosts], dN, now,
-                                exclude=maintenance_service.exclusions(db, client_id, dN, now) if client_id else None)
+                                exclude=maintenance_service.exclusions(db, client_id, dN, now) if client_id and not nocl else None)
         names = dict(db.execute(select(Client.id, Client.trade_name)).all())
         top_clients = {}
         for e in evN:
@@ -129,9 +134,9 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
             hk = e.started_at.astimezone().strftime("%H")
             by_hour[hk] = by_hour.get(hk, 0) + 1
         hours = [(now - timedelta(hours=i)).astimezone().strftime("%H") for i in range(23, -1, -1)]
-        bk = [Event.kind == "backup", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
+        bk = [Event.kind == "backup", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV] + ([by_client(Event.client_id, client_id)] if client_id else [])
         backup_active = db.scalar(select(func.count()).select_from(Event).where(*bk)) or 0
-        ep = [Event.kind == "endpoint", Event.status == "PROBLEM"] + ([Event.client_id == client_id] if client_id else [])
+        ep = [Event.kind == "endpoint", Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV] + ([by_client(Event.client_id, client_id)] if client_id else [])
         endpoint_active = db.scalar(select(func.count()).select_from(Event).where(*ep)) or 0
         sent = dict(db.execute(select(Dispatch.status, func.count()).where(Dispatch.created_at >= d24).group_by(Dispatch.status)).all())
         shadow = settings_store.get(db, "alerts.shadow") == "1"
@@ -156,7 +161,7 @@ def dashboard(client_id: int | None = None, days: float = 30, db: Session = Depe
             "by_severity": k["by_severity"], "by_day": k["by_day"],
             "by_hour": [{"h": h + "h", "v": by_hour.get(h, 0)} for h in hours],
             "live": [to_dict(e) | {"client_name": names.get(e.client_id)} for e in open_ev[:30]], "health": health,
-            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "cloud": cloud_stats(db, client_id), "services": services_service.of_client(db, db.get(Client, client_id)) if client_id and db.get(Client, client_id) else None, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
+            "backup_active": backup_active, "endpoint_active": endpoint_active, "coverage": cov, "cloud": cloud_stats(db, client_id), "services": services_service.of_client(db, db.get(Client, client_id)) if client_id and not nocl and db.get(Client, client_id) else None, "alerts_24h": sent, "shadow": shadow, "generated_at": now.isoformat()}
     return {**_cached(f"dash{client_id}-{days}", 20, build), "stale_jobs": job_alerts(db), "failed_dispatches": failed_dispatches(db)}
 
 
@@ -181,7 +186,7 @@ def clients_health(db: Session = Depends(get_db), _=Depends(require("dashboard.v
             if svc[c.id]["endpoint"]:
                 eps = P.endpoint_rows(db, c.id)
                 rows[c.id]["endpoint_items"], rows[c.id]["endpoint_bad"] = len(eps), sum(1 for e in eps if not e["ok"])
-        for e in db.scalars(select(Event).where(Event.status == "PROBLEM", Event.client_id.in_(list(rows) or [0]))):
+        for e in db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV, Event.client_id.in_(list(rows) or [0]))):
             r = rows[e.client_id]
             key = e.kind if e.kind in ("infra", "backup", "endpoint", "cloud") else "infra"
             r[key] += 1

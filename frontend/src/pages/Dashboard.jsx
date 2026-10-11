@@ -83,7 +83,7 @@ export default function Dashboard() {
   return <>
     <PageHead title="Painel do NOC" desc={`Situação de todos os clientes em tempo real · atualizado às ${new Date(d.generated_at).toLocaleTimeString('pt-BR')}`}>
       <select style={{ width: 'auto' }} value={cl} onChange={e => { setCl(e.target.value); lset('cl', e.target.value) }}>
-        <option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
+        <option value="">Todos os clientes</option><option value="-1">Sem cliente associado</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
       <select style={{ width: 'auto' }} value={days} onChange={e => { setDays(e.target.value); lset('period', e.target.value) }} aria-label="Período">
         {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
     </PageHead>
