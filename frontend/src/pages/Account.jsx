@@ -7,6 +7,10 @@ const ROLES = { ADMIN: 'Administrador', GESTOR: 'Gestor', ANALISTA_NOC: 'Analist
 const rules = (p) => [['Pelo menos 10 caracteres', p.length >= 10], ['Letras e números', /[A-Za-z]/.test(p) && /\d/.test(p)]]
 
 const b64 = (k) => Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(k.length / 4) * 4, '=')), c => c.charCodeAt(0))
+const native = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+const PN = () => window.Capacitor.Plugins.PushNotifications
+const FCM_KEY = 'navi_fcm_token'
+const ls = { get: () => { try { return localStorage.getItem(FCM_KEY) } catch (_) { return null } }, set: (v) => { try { v ? localStorage.setItem(FCM_KEY, v) : localStorage.removeItem(FCM_KEY) } catch (_) {} } }
 const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
 // Notificacoes push neste aparelho (incidentes Media ou superior)
@@ -14,6 +18,7 @@ function PushCard() {
   const toast = useToast()
   const [st, setSt] = useState('...'); const [busy, setBusy] = useState(false)
   const refresh = async () => {
+    if (native()) return setSt(ls.get() ? 'on' : 'off')
     if (!pushOk()) return setSt('unsupported')
     if (Notification.permission === 'denied') return setSt('denied')
     const reg = await navigator.serviceWorker.getRegistration('/cliente/')
@@ -23,6 +28,16 @@ function PushCard() {
   const enable = async () => {
     setBusy(true)
     try {
+      if (native()) {
+        const p = PN(); const perm = await p.requestPermissions()
+        if (perm.receive !== 'granted') { setSt('denied'); return }
+        const token = await new Promise((ok, no) => {
+          p.addListener('registration', t => ok(t.value)); p.addListener('registrationError', e => no(new Error(e.error || 'Falha ao registrar no Firebase')))
+          p.register()
+        })
+        await post('/push/fcm', { token }); ls.set(token); setSt('on'); toast('Notificações ativadas neste aparelho')
+        return
+      }
       if (await Notification.requestPermission() !== 'granted') { setSt('denied'); return }
       const reg = await navigator.serviceWorker.ready
       const { key } = await get('/push/key')
@@ -35,6 +50,7 @@ function PushCard() {
   const disable = async () => {
     setBusy(true)
     try {
+      if (native()) { const t = ls.get(); if (t) await post('/push/unsubscribe', { endpoint: 'fcm:' + t }).catch(() => {}); ls.set(null); setSt('off'); toast('Notificações desativadas neste aparelho'); return }
       const reg = await navigator.serviceWorker.getRegistration('/cliente/'); const sub = reg && await reg.pushManager.getSubscription()
       if (sub) { await post('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe() }
       setSt('off'); toast('Notificações desativadas neste aparelho')

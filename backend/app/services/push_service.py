@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import portal_access as PA
 from .. import settings_store as S
+from . import fcm
 from ..models import INCIDENT_MIN_SEV, SEVERITIES, Client, Event, PushSent, PushSub, User
 
 log = logging.getLogger("navi.push")
@@ -54,6 +55,8 @@ def payload(db: Session, ev: Event) -> dict:
 
 def send(db: Session, sub: PushSub, data: dict) -> bool:
     """True se entregue ao servico de push. Inscricao expirada (404/410) e removida."""
+    if sub.endpoint.startswith("fcm:"):
+        return _send_fcm(db, sub, data)
     from pywebpush import WebPushException, webpush
     priv, _ = vapid_keys(db)
     try:
@@ -68,6 +71,22 @@ def send(db: Session, sub: PushSub, data: dict) -> bool:
         else:
             log.warning("push falhou (%s): %s", code, str(e)[:200])
         return False
+
+
+def _send_fcm(db: Session, sub: PushSub, data: dict) -> bool:
+    raw = S.get(db, "push.fcm_sa")
+    if not raw:
+        return False
+    try:
+        res = fcm.send(json.loads(raw), sub.endpoint[4:], data)
+    except Exception as e:  # noqa: BLE001
+        log.warning("fcm falhou: %s", str(e)[:200])
+        return False
+    if res == "gone":
+        db.delete(sub)
+    elif res == "ok":
+        sub.last_ok = datetime.now(timezone.utc)
+    return res == "ok"
 
 
 def notify_new(db: Session) -> int:

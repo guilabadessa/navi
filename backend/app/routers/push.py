@@ -40,6 +40,23 @@ def subscribe(body: SubIn, request: Request, db: Session = Depends(get_db), user
     return {"ok": True}
 
 
+class FcmIn(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+
+
+@router.post("/fcm")
+def subscribe_fcm(body: FcmIn, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Aparelho do app Android (FCM). Guardado como endpoint 'fcm:<token>' na mesma tabela das inscricoes web."""
+    ep = "fcm:" + body.token
+    s = db.scalar(select(PushSub).where(PushSub.endpoint == ep))
+    if s is None:
+        s = PushSub(endpoint=ep)
+        db.add(s)
+    s.user_id, s.p256dh, s.auth, s.ua = user.id, "", "", "app-android"
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/unsubscribe")
 def unsubscribe(body: EndpointIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     db.execute(delete(PushSub).where(PushSub.endpoint == body.endpoint, PushSub.user_id == user.id))
