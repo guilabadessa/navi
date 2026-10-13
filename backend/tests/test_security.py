@@ -70,7 +70,7 @@ def test_permissoes_extras_respeitam_o_perfil():
     assert not user_has(NS(role="CLIENTE", extra_perms=["finance.view"]), "finance.view")  # permissao da equipe nao vale para cliente
     assert not user_has(NS(role="GESTOR", extra_perms=["portal.finance"]), "portal.finance")
     assert not user_has(NS(role="CLIENTE", extra_perms=[]), "portal.finance")
-    assert PERMS["CLIENTE"] == {"portal.view", "portal.run", "cloud.run"}  # o cliente so enxerga o proprio ambiente e pode pedir novo backup dos itens dele
+    assert PERMS["CLIENTE"] == {"portal.view", "portal.run", "cloud.run", "portal.tickets"}  # o cliente so enxerga o proprio ambiente, pode pedir novo backup e abrir chamado
 
 
 def test_sessao_assinada_e_adulteracao():

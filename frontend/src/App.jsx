@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, Globe, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, MessageCircle, Radar,
+import { Activity, Globe, BarChart3, Bell, Building2, ClipboardList, FileText, LayoutDashboard, LifeBuoy, LogOut, Mail, MessageCircle, Radar,
   HardDrive, Menu, Search, UserRound, Settings as Cog, ShieldCheck, Sparkles, Sun, Moon, Timer, Tv, Users as UsersIcon } from 'lucide-react'
 import { get, post, setCsrf } from './api'
 import { useToast } from './ui'
@@ -23,6 +23,7 @@ import AppUpdate from './pages/AppUpdate'
 import PortalSwitch from './pages/PortalSwitch'
 import NaviGuide, { STAFF_ASKS, STAFF_TIPS } from './pages/NaviGuide'
 import Protection from './pages/Protection'
+import Tickets from './pages/Tickets'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
@@ -37,6 +38,7 @@ const NAV = [
   ['/eventos', 'Eventos', Activity, 'events.view'],
   ['/protecao', 'Backup e Endpoints', HardDrive, 'monitoring.view'],
   ['/portal', 'Portal do cliente', Globe, 'clients.view'],
+  ['/chamados', 'Chamados', LifeBuoy, 'tickets.view'],
   ['/alertas', 'Alertas', Bell, 'alerts.view'],
   ['/relatorios', 'Relatórios', FileText, 'reports.view'],
   ['/rotinas', 'Rotinas', Timer, 'routines.view'],
@@ -93,6 +95,7 @@ function Shell({ me, onLogout, reloadMe }) {
           <Route path="/eventos" element={<Events key={loc.search} />} />
           <Route path="/protecao" element={<Protection />} />
           <Route path="/portal" element={<PortalSwitch />} />
+          <Route path="/chamados" element={<Tickets />} />
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/rotinas" element={<Routines />} />

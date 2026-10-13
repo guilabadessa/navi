@@ -560,3 +560,66 @@ class PushSent(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     delivered: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # False = suprimido (manutencao / horario silencioso)
     rec_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # aviso de recuperacao ja tratado
+
+
+# ---------------- Chamados (helpdesk) ----------------
+TICKET_STATUSES = ("aberto", "andamento", "aguardando_cliente", "resolvido", "fechado")
+TICKET_OPEN_STATUSES = ("aberto", "andamento", "aguardando_cliente")
+TICKET_PRIORITIES = ("baixa", "media", "alta", "critica")
+
+
+class TicketQueue(Base):
+    """Fila de chamados por tecnologia (SOC, Cloud, Backup...); define quem recebe aviso de chamado novo."""
+    __tablename__ = "ticket_queues"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    notify_emails: Mapped[str | None] = mapped_column(Text)  # separados por virgula
+    notify_wa_jid: Mapped[str | None] = mapped_column(String(128))  # grupo ou numero do WhatsApp
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[int] = mapped_column(Integer, unique=True, index=True)  # numero exibido ao usuario (#1024)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    queue_id: Mapped[int | None] = mapped_column(ForeignKey("ticket_queues.id"))
+    subject: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(24), default="aberto", index=True)
+    priority: Mapped[str] = mapped_column(String(16), default="media")
+    origin: Mapped[str] = mapped_column(String(16), default="staff")  # staff | portal
+    created_by_id: Mapped[int | None] = mapped_column(Integer)
+    created_by_name: Mapped[str | None] = mapped_column(String(255))
+    assigned_to_id: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    client: Mapped["Client"] = relationship(lazy="joined")
+    queue: Mapped["TicketQueue"] = relationship(lazy="joined")
+    watchers: Mapped[list["TicketWatcher"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+
+
+class TicketWatcher(Base):
+    """Quem recebe copia das atualizacoes do chamado, alem da fila: e-mail ou WhatsApp (numero ou grupo)."""
+    __tablename__ = "ticket_watchers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # email | whatsapp
+    target: Mapped[str] = mapped_column(String(255))
+    label: Mapped[str | None] = mapped_column(String(120))
+
+
+class TicketMessage(Base):
+    __tablename__ = "ticket_messages"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int | None] = mapped_column(Integer)
+    author_name: Mapped[str | None] = mapped_column(String(255))
+    origin: Mapped[str] = mapped_column(String(16), default="staff")  # staff | portal | sistema
+    internal: Mapped[bool] = mapped_column(Boolean, default=False)  # nota interna: nao aparece no portal nem notifica
+    body: Mapped[str] = mapped_column(Text)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
