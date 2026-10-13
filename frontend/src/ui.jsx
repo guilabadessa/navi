@@ -10,6 +10,21 @@ export function ToastProvider({ children }) {
   return <ToastCtx.Provider value={show}>{children}{t && <div className={'toast ' + (t.err ? 'err' : '')} role={t.err ? 'alert' : 'status'} aria-live={t.err ? 'assertive' : 'polite'}>{t.msg}</div>}</ToastCtx.Provider>
 }
 
+// Rede de seguranca: um erro de tela (ex.: bug de programacao) nao deixa a aplicacao toda "zumbi" sem aviso.
+export class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  componentDidCatch(err, info) { console.error('Erro na tela:', err, info) } // eslint-disable-line no-console
+  render() {
+    if (!this.state.err) return this.props.children
+    return <div className="empty" style={{ margin: 40, textAlign: 'center' }}>
+      <p style={{ color: 'var(--crit)', fontWeight: 600, marginBottom: 10 }}>Ocorreu um erro inesperado nesta tela.</p>
+      <p className="sub" style={{ marginBottom: 16 }}>Recarregue a página. Se o problema persistir, avise a equipe da Orca TI.</p>
+      <button className="btn primary" onClick={() => window.location.reload()}>Recarregar</button>
+    </div>
+  }
+}
+
 export const Card = ({ title, actions, children, pad = true, style }) => (
   <div className="card" style={style}>
     {(title || actions) && <div className="hd"><h3>{title}</h3><div style={{ display: 'flex', gap: 8 }}>{actions}</div></div>}

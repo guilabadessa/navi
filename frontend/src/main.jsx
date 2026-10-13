@@ -4,13 +4,13 @@ import { BrowserRouter } from 'react-router-dom'
 import './fonts.css'
 import './styles.css'
 import App from './App'
-import { ToastProvider } from './ui'
+import { ErrorBoundary, ToastProvider } from './ui'
 import { applyTheme, getTv, tvMode } from './theme'
 
 applyTheme(); tvMode(getTv())
 
 createRoot(document.getElementById('root')).render(
-  <BrowserRouter basename="/cliente"><ToastProvider><App /></ToastProvider></BrowserRouter>)
+  <BrowserRouter basename="/cliente"><ToastProvider><ErrorBoundary><App /></ErrorBoundary></ToastProvider></BrowserRouter>)
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/cliente/sw.js', { scope: '/cliente/' }).catch(() => {}))
 

@@ -56,7 +56,7 @@ export function PortalTicketsTab({ clientId }) {
       { h: '#', r: r => <b>{r.number}</b> }, { h: 'Assunto', r: r => <div className="trunc" style={{ maxWidth: 320 }}>{r.subject}</div> },
       { h: 'Prioridade', r: r => <Pill tone={PRIORITY_TONE[r.priority]}>{r.priority_label}</Pill> },
       { h: 'Situação', r: r => <Pill tone={STATUS_TONE[r.status]}>{r.status_label}</Pill> }, { h: 'Atualizado', r: r => fmt(r.updated_at) }]} /> : <Loading />}</Card>
-    {openId && <TicketDetail id={openId} path={itemPath + (clientId ? '?client_id=' + clientId : '')} onClose={() => setOpenId(null)} onChanged={list.reload} />}
+    {openId && <TicketDetail id={openId} clientId={clientId} onClose={() => setOpenId(null)} onChanged={list.reload} />}
     {newT && <NewTicketForm qs={qs.data || []} path={path} onClose={() => setNewT(false)} onSaved={() => { setNewT(false); list.reload() }} />}
   </>
 }
