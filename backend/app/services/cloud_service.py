@@ -142,6 +142,36 @@ def _num(v):
         return None
 
 
+def _tokens(s: str | None) -> set:
+    return set(re.findall(r"[a-z0-9]+", (s or "").lower()))
+
+
+def same_machine(vm_name: str, names: list) -> bool:
+    """A VM da nuvem e o ativo de outra integracao (Acronis/EMS) sao a mesma maquina? Nome igual, ou o nome do ativo
+    (com 2+ palavras) contido no da VM (ex.: 'orcati-pbx' em 'OrcaTi-Pbx-Telefonia')."""
+    v = _tokens(vm_name)
+    for n in names:
+        t = _tokens(n)
+        if t and (t == v or (len(t) >= 2 and t <= v)):
+            return True
+    return False
+
+
+def linked_ignored(db: Session, client_id: int, vm) -> bool:
+    """A mesma maquina foi ignorada em outra integracao (Acronis/EMS) do mesmo cliente: o silencio vale aqui tambem."""
+    from sqlalchemy import select
+
+    from ..models import ExtAsset, ExtTenant
+    rows = db.execute(select(ExtAsset.name, ExtAsset.meta).join(ExtTenant, ExtTenant.id == ExtAsset.ext_tenant_id)
+                      .where(ExtTenant.client_id == client_id, ExtAsset.ignored.is_(True), ExtAsset.active.is_(True))).all()
+    zh = find_zabbix_host(db, vm.ip, vm.name)
+    for name, meta in rows:
+        names = [name, (meta or {}).get("hostname")]
+        if same_machine(vm.name, names) or (zh and (zh.name or "").lower() in [(n or "").lower() for n in names]):
+            return True
+    return False
+
+
 def find_zabbix_host(db: Session, ip: str | None, name: str | None):
     from sqlalchemy import func, select
 
@@ -227,6 +257,7 @@ def sync_all(db: Session) -> dict:
     stats = {"accounts": 0, "vms": 0, "errors": 0}
     names = dict(db.execute(select(Client.id, Client.trade_name)).all())
     desired: dict[str, dict] = {}
+    quiet: set = set()
     for acc in db.scalars(select(CloudAccount).where(CloudAccount.enabled.is_(True))):
         stats["accounts"] += 1
         tenant = NS(ext_id=f"cloud:{acc.client_id}", name="Cloud Orca", client_id=acc.client_id)
@@ -258,11 +289,14 @@ def sync_all(db: Session) -> dict:
                 row.active = False
         db.flush()
         for row in db.scalars(select(CloudVm).where(CloudVm.client_id == acc.client_id, CloudVm.active.is_(True))):
+            if row.state in OFF_STATES and not row.expected_off and (row.ignored or linked_ignored(db, acc.client_id, row)):
+                quiet.add(f"off:{row.uuid}")  # silenciada (aqui ou em outra integracao): fecha sem aviso de recuperacao
+                continue
             if row.state in OFF_STATES and not (row.ignored or row.expected_off) and not (row.grace_until and row.grace_until > now) and row.state_since and now - row.state_since > timedelta(minutes=3):
                 err = row.state == "ERROR"
                 desired[f"off:{row.uuid}"] = {"host": row.name, "hostid": row.uuid, "tenant": tenant, "triggerid": "CloudVmOff", "item_name": f"{names.get(acc.client_id) or ''} · {row.zone or ''}".strip(" ·"),
                                               "trigger_name": "Máquina virtual com erro" if err else "Máquina virtual desligada", "severity": 5 if err else 4, "started_at": row.state_since, "type": "CloudVmOff",
                                               "opdata": f"{row.cpu} vCPU · {round((row.ram_mb or 0) / 1024)} GB · {row.ip or ''}"}
     db.commit()
-    stats.update(P.reconcile(db, desired, source="cloud", kind="cloud", origin="Cloud Orca"))
+    stats.update(P.reconcile(db, desired, source="cloud", kind="cloud", origin="Cloud Orca", quiet=quiet))
     return stats

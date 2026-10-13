@@ -14,6 +14,7 @@ from . import notification_service as N
 
 log = logging.getLogger("navi.protection")
 SRC = "acronis"
+OFFLINE_ALERTS = {"AgentOffline"}
 SEV = {"critical": 5, "error": 4, "warning": 2, "information": 1}
 TEXT = {
     "BackupFailed": "Falha no backup",
@@ -55,6 +56,7 @@ def _dt(v) -> datetime | None:
 # ---------------- servidor x estacao ----------------
 # Servidor e 24x7: ficar offline e problema. Estacao de trabalho/notebook e desligada fora do expediente: offline nao e erro.
 _WS_RE = re.compile(r"windows\s*(xp|vista|7|8|8\.1|10|11)\b|mac\s?os|os\s?x|darwin|android|\bios\b|ipad|iphone", re.I)
+_TAG_HOST_RE = re.compile(r"[-_ ]\d{3,}$")
 _SRV_HOST_RE = re.compile(r"(^|[-_ .])(srv|server|servidor|sql|db|bd|dc|ad|fs|bkp|vm)([-_ .\d]|$)", re.I)
 
 
@@ -69,7 +71,14 @@ def machine_role(a: ExtAsset) -> str:
         return "server"
     if _WS_RE.search(os_name):
         return "workstation"
-    if _SRV_HOST_RE.search(a.name or "") or _SRV_HOST_RE.search(m.get("hostname") or ""):
+    srv_name = _SRV_HOST_RE.search(a.name or "") or _SRV_HOST_RE.search(m.get("hostname") or "")
+    if "windows" in os_name.lower() or (m.get("os_family") or "").upper() == "WINDOWS":
+        # Windows Server sempre traz "Server" no nome; agentes antigos informam so "windows". Nome de servidor -> servidor;
+        # etiqueta de patrimonio (EC-SEC-00002, PC-0153) -> estacao; na duvida, servidor (nao esconde um problema real)
+        if srv_name:
+            return "server"
+        return "workstation" if _TAG_HOST_RE.search(a.name or "") or _TAG_HOST_RE.search(m.get("hostname") or "") else "server"
+    if srv_name:
         return "server"
     return "workstation" if a.source == EMS else "server"
 
@@ -284,7 +293,8 @@ def sync_assets(db: Session, svc, by_uuid: dict, by_name: dict, dc: str = "br"):
 
 
 # ---------------- eventos ----------------
-def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dict[str, dict]:
+def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict, dropped: set | None = None) -> dict[str, dict]:
+    """dropped (saida): ids dos alertas nativos descartados por ignorar/estacao, para fechar sem aviso de recuperacao."""
     now = datetime.now(timezone.utc)
     c = cfg(db)
     tenants = {t.id: t for t in db.scalars(select(ExtTenant).where(ExtTenant.source == SRC))}
@@ -297,6 +307,11 @@ def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dic
         if ten is None:  # o proprio alerta informa o tenant (ex.: caixa postal/Microsoft 365, que nao e uma maquina)
             t_ = by_uuid.get(((al.get("tenant") or {}).get("uuid")) or "")
             ten = tenants.get(t_.id) if t_ is not None else None
+        if a is not None and (a.ignored or (al.get("type") in OFFLINE_ALERTS and machine_role(a) != "server")):
+            # ignorada no painel (nem os alertas nativos do Acronis valem) ou estacao desligada (normal)
+            if dropped is not None:
+                dropped.add(f"alert:{al['id']}")
+            continue
         out[f"alert:{al['id']}"] = {
             "host": det.get("resourceName") or (a.name if a else "—"), "hostid": rid or None, "tenant": ten,
             "triggerid": al.get("type"), "trigger_name": human_type(al.get("type")), "item_name": det.get("planName"),
@@ -316,7 +331,7 @@ def _desired(db: Session, svc, cache: dict, by_uuid: dict, by_name: dict) -> dic
                                         "opdata": f"Último sucesso: {last_ok.astimezone().strftime('%d/%m/%Y %H:%M')}"}
         if server and a.online is False and a.offline_since and (now - a.offline_since) > timedelta(minutes=c["offline_min"]):
             out[f"offline:{a.ext_id}"] = {"host": a.name, "hostid": a.ext_id, "tenant": ten, "triggerid": "AgentOffline",
-                                          "trigger_name": "Servidor offline (agente de backup)", "item_name": a.policy_name, "severity": 4,
+                                          "trigger_name": "Servidor offline (agente Acronis)", "item_name": a.policy_name, "severity": 4,
                                           "started_at": a.offline_since, "type": "AgentOffline",
                                           "opdata": f"Offline desde {a.offline_since.astimezone().strftime('%d/%m/%Y %H:%M')}"}
     return out
@@ -385,8 +400,10 @@ def sync_acronis(db: Session) -> dict:
         sync_usages(db, sv, list({t.id: t for t in by_uuid.values()}.values()))
         cache = sync_assets(db, sv, by_uuid, by_name, dc)
         db.commit()
-        desired.update(_desired(db, sv, cache, by_uuid, by_name))
+        dropped: set = set()
+        desired.update(_desired(db, sv, cache, by_uuid, by_name, dropped))
         quiet |= {f"offline:{a.ext_id}" for a in cache.values() if machine_role(a) != "server"}
+        quiet |= dropped
         total_assets, total_tenants = len(cache), total_tenants + len(by_uuid)
     stats = reconcile(db, desired, quiet=quiet)
     relink(db)
