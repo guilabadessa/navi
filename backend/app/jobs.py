@@ -32,6 +32,7 @@ JOBS = {
     "notices": ("Avisos ao cliente (boleto a vencer e resumo mensal)", 3600),
     "push_notify": ("Notificações push (app)", 15),
     "escalate": ("Escalonamento de alertas", 60),
+    "ticket_escalation": ("Lembrete de chamado sem resposta (24h)", 1800),
     "daily_digest": ("Resumo diário do NOC", 60),
     "cleanup": ("Limpeza de dados", 86400),
     "backup": ("Backup do banco NAVI", 86400),
@@ -147,6 +148,14 @@ def push_notify(db):
 @tracked("escalate")
 def escalate(db):
     noc_service.escalate(db)
+
+
+@tracked("ticket_escalation")
+def ticket_escalation(db):
+    from .services import ticket_service
+    n = ticket_service.check_escalations(db)
+    if n:
+        log.info("lembrete de chamado enviado: %d", n)
 
 
 @tracked("daily_digest")
@@ -289,7 +298,7 @@ def start():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     sch = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 120})
     for name, fn in [("sync_inventory", sync_inventory), ("poll_events", poll_events),
-                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_cloud", sync_cloud), ("sync_finance", sync_finance), ("notices", notices), ("push_notify", push_notify), ("escalate", escalate), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
+                     ("dispatch_alerts", dispatch_alerts), ("sync_acronis", sync_acronis), ("sync_ems", sync_ems), ("sync_cloud", sync_cloud), ("sync_finance", sync_finance), ("notices", notices), ("push_notify", push_notify), ("escalate", escalate), ("ticket_escalation", ticket_escalation), ("daily_digest", daily_digest), ("run_schedules", run_schedules),
                      ("health_checks", health_checks), ("cleanup", cleanup), ("backup", backup)]:
         sch.add_job(fn, "interval", seconds=JOBS[name][1], id=name,
                     next_run_time=datetime.now(timezone.utc) + timedelta(seconds=5 + 3 * list(JOBS).index(name)))

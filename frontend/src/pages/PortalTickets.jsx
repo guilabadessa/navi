@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
-import { MessageSquareText, Plus, Send } from 'lucide-react'
-import { get, post } from '../api'
+import { MessageSquareText, Paperclip, Plus, Send } from 'lucide-react'
+import { get, post, upload, download } from '../api'
 import { Card, Field, Loading, Modal, Pill, Table, useLoad, useToast } from '../ui'
 
-const STATUS_TONE = { aberto: 'bad', andamento: 'warn', aguardando_cliente: 'info', resolvido: 'ok', fechado: 'mut' }
+const STATUS_TONE = { aberto: 'bad', andamento: 'warn', aguardando_cliente: 'info', aguardando_orca: 'bad', resolvido: 'ok', fechado: 'mut' }
 const PRIORITY_TONE = { critica: 'bad', alta: 'warn', media: 'info', baixa: 'mut' }
 const PRIORITIES = [['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta'], ['critica', 'Crítica']]
 const fmt = (v) => v ? new Date(v).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'
@@ -24,9 +24,16 @@ function NewTicketForm({ qs, path, onClose, onSaved }) {
 }
 
 function TicketDetail({ id, clientId, onClose, onChanged }) {
-  const qs = clientId ? '?client_id=' + clientId : ''
-  const t = useLoad(() => get(`/portal/tickets/${id}${qs}`), [id]); const [reply, setReply] = useState(''); const toast = useToast()
-  const send = async () => { if (!reply.trim()) return; try { await post(`/portal/tickets/${id}/messages${qs}`, { body: reply }); setReply(''); t.reload(); onChanged() } catch (e) { toast(e.message, true) } }
+  const qsuf = clientId ? '?client_id=' + clientId : ''
+  const t = useLoad(() => get(`/portal/tickets/${id}${qsuf}`), [id]); const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false); const toast = useToast()
+  const send = async () => { if (!reply.trim()) return; try { await post(`/portal/tickets/${id}/messages${qsuf}`, { body: reply }); setReply(''); t.reload(); onChanged() } catch (e) { toast(e.message, true) } }
+  const sendFile = async (e) => {
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return
+    if (file.size > 15 * 1024 * 1024) { toast('Arquivo maior que 15 MB', true); return }
+    setSending(true); try { await upload(`/portal/tickets/${id}/attachments${qsuf}`, file); t.reload(); onChanged() } catch (e2) { toast(e2.message, true) } finally { setSending(false) }
+  }
+  const getAttachment = (m) => download(`/portal/tickets/${id}/attachments/${m.attachment.id}${qsuf}`, m.attachment.filename)
   if (!t.data) return <Modal title="Chamado" onClose={onClose}><Loading err={t.err} /></Modal>
   const d = t.data; const closed = d.status === 'resolvido' || d.status === 'fechado'
   return <Modal wide title={`#${d.number} · ${d.subject}`} onClose={onClose}>
@@ -36,11 +43,15 @@ function TicketDetail({ id, clientId, onClose, onChanged }) {
     <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 12, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {d.messages.map(m => <div key={m.id} style={{ background: m.origin === 'portal' ? '#eef4ff' : '#f3f4f6', borderRadius: 10, padding: '8px 12px' }}>
         <div className="sub" style={{ marginBottom: 2 }}><b>{m.origin === 'portal' ? 'Você' : m.author_name || 'Orca TI'}</b> · {fmt(m.created_at)}</div>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div></div>)}
+        <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
+        {m.attachment && <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => getAttachment(m)}><Paperclip size={14} />{m.attachment.filename} ({Math.ceil(m.attachment.size_bytes / 1024)} KB)</button>}</div>)}
     </div>
     {closed ? <p className="hint">Este chamado já foi encerrado. Se o problema persistir, abra um novo chamado.</p> : <>
       <Field label="RESPONDER"><textarea style={{ minHeight: 80 }} value={reply} onChange={e => setReply(e.target.value)} placeholder="Escreva sua mensagem..." /></Field>
-      <button className="btn primary" onClick={send}><MessageSquareText size={15} />Enviar</button></>}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn primary" onClick={send}><MessageSquareText size={15} />Enviar</button>
+        <label className="btn sm" style={{ cursor: sending ? 'wait' : 'pointer' }}><Paperclip size={15} />{sending ? 'Enviando…' : 'Anexar arquivo'}<input type="file" style={{ display: 'none' }} disabled={sending} onChange={sendFile} /></label>
+        <span className="sub">Até 15 MB</span></div></>}
   </Modal>
 }
 

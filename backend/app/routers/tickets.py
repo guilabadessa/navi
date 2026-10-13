@@ -1,20 +1,50 @@
 """Chamados (helpdesk): fila por tecnologia (equipe define quem e avisado), equipe abre/atualiza para qualquer
 cliente, cliente abre/acompanha os proprios pelo portal. Observadores (CC) recebem copia por e-mail ou WhatsApp."""
+import re
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..config import get_settings
 from ..db import get_db
-from ..models import Client, Ticket, TicketMessage, TicketQueue, TicketWatcher, TICKET_OPEN_STATUSES, TICKET_PRIORITIES, TICKET_STATUSES, User
+from ..models import (Client, Ticket, TicketAttachment, TicketMessage, TicketQueue, TicketWatcher, TICKET_ATTACHMENT_EXTS, TICKET_ATTACHMENT_MAX_BYTES,
+                      TICKET_OPEN_STATUSES, TICKET_PRIORITIES, TICKET_STATUSES, User)
 from ..security import require
 from ..services import ticket_service as TS
 from .portal import _client_for
 
 router = APIRouter(tags=["tickets"])
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _attach_dir(tid: int) -> Path:
+    d = Path(get_settings().NAVI_STORAGE) / "tickets" / str(tid)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+async def _save_attachment(db: Session, t: Ticket, file: UploadFile, author_id: int | None, author_name: str | None, origin: str) -> TicketMessage:
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in TICKET_ATTACHMENT_EXTS:
+        raise HTTPException(422, f"Tipo de arquivo não permitido. Use: {', '.join(TICKET_ATTACHMENT_EXTS)}")
+    data = await file.read(TICKET_ATTACHMENT_MAX_BYTES + 1)
+    if len(data) > TICKET_ATTACHMENT_MAX_BYTES:
+        raise HTTPException(413, f"Arquivo maior que {TICKET_ATTACHMENT_MAX_BYTES // (1024 * 1024)} MB.")
+    safe = _SAFE_NAME.sub("_", Path(file.filename or "arquivo").name)[:150]
+    stored = _attach_dir(t.id) / f"{uuid.uuid4().hex}_{safe}"
+    stored.write_bytes(data)
+    m = TicketMessage(ticket_id=t.id, author_id=author_id, author_name=author_name, origin=origin, body=f"📎 Anexo: {safe}", notified=True)
+    db.add(m)
+    db.flush()
+    db.add(TicketAttachment(ticket_id=t.id, message_id=m.id, filename=safe, stored_path=str(stored), content_type=file.content_type, size_bytes=len(data)))
+    return m
 
 
 # ---------------- filas (somente ADMIN: define quem e avisado por tecnologia) ----------------
@@ -70,7 +100,9 @@ def delete_queue(qid: int, request: Request, db: Session = Depends(get_db), _=De
 
 # ---------------- chamados ----------------
 def _msg_out(m: TicketMessage) -> dict:
-    return {"id": m.id, "author_name": m.author_name, "origin": m.origin, "internal": m.internal, "body": m.body, "created_at": m.created_at.isoformat()}
+    a = m.attachment
+    return {"id": m.id, "author_name": m.author_name, "origin": m.origin, "internal": m.internal, "body": m.body, "created_at": m.created_at.isoformat(),
+            "attachment": {"id": a.id, "filename": a.filename, "size_bytes": a.size_bytes} if a else None}
 
 
 def _ticket_out(t: Ticket, portal: bool = False) -> dict:
@@ -133,11 +165,14 @@ def _create(db: Session, request: Request, client_id: int, queue_id: int | None,
     if not db.get(Client, client_id):
         raise HTTPException(404, "Cliente não encontrado")
     t = Ticket(number=TS.next_number(db), client_id=client_id, queue_id=queue_id, subject=subject.strip(), priority=priority,
-              origin=origin, created_by_id=user.id, created_by_name=user.name)
+              origin=origin, created_by_id=user.id, created_by_name=user.name,
+              status="aguardando_cliente" if origin == "staff" else "aguardando_orca")
     db.add(t)
     db.flush()
     for w in watchers:
         db.add(TicketWatcher(ticket_id=t.id, kind=w.kind, target=w.target.strip(), label=w.label))
+    if origin == "portal" and user.email and not any(w.kind == "email" and w.target.strip().lower() == user.email.lower() for w in watchers):
+        db.add(TicketWatcher(ticket_id=t.id, kind="email", target=user.email, label=user.name))  # quem abriu pelo portal recebe copia por padrao
     msg = TicketMessage(ticket_id=t.id, author_id=user.id, author_name=user.name, origin=origin, body=body.strip(), notified=True)
     db.add(msg)
     db.flush()
@@ -188,12 +223,37 @@ def add_message(tid: int, body: MessageIn, request: Request, db: Session = Depen
     m = TicketMessage(ticket_id=tid, author_id=user.id, author_name=user.name, origin="staff", internal=body.internal,
                       body=body.body.strip(), notified=body.notify and not body.internal)
     db.add(m)
+    if not body.internal and t.status not in ("resolvido", "fechado"):
+        t.status, t.escalated_at = "aguardando_cliente", None  # gatilho automatico: equipe respondeu, agora e a vez do cliente (pode ser alterado manualmente)
     t.updated_at = datetime.now(timezone.utc)
     audit.log(db, request, "ticket_message", "ticket", tid, detail={"numero": t.number, "interna": body.internal})
     db.commit()
     if body.notify and not body.internal:
         TS.notify(db, t, "atualizado", m)
     return _msg_out(m)
+
+
+@router.post("/tickets/{tid}/attachments")
+async def add_attachment(tid: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(require("tickets.edit"))):
+    t = db.get(Ticket, tid)
+    if not t:
+        raise HTTPException(404)
+    m = await _save_attachment(db, t, file, user.id, user.name, "staff")
+    if t.status not in ("resolvido", "fechado"):
+        t.status, t.escalated_at = "aguardando_cliente", None
+    t.updated_at = datetime.now(timezone.utc)
+    audit.log(db, request, "ticket_attachment", "ticket", tid, detail={"numero": t.number, "arquivo": m.attachment.filename})
+    db.commit()
+    TS.notify(db, t, "atualizado", m)
+    return _msg_out(m)
+
+
+@router.get("/tickets/{tid}/attachments/{aid}")
+def get_attachment(tid: int, aid: int, db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
+    a = db.get(TicketAttachment, aid)
+    if not a or a.ticket_id != tid:
+        raise HTTPException(404)
+    return FileResponse(a.stored_path, filename=a.filename, media_type=a.content_type or "application/octet-stream")
 
 
 @router.put("/tickets/{tid}")
@@ -292,10 +352,42 @@ def portal_add_message(tid: int, body: MessageIn, request: Request, client_id: i
         raise HTTPException(409, "Este chamado já foi encerrado. Abra um novo chamado se o problema persistir.")
     m = TicketMessage(ticket_id=tid, author_id=user.id, author_name=user.name, origin="portal", internal=False, body=body.body.strip(), notified=True)
     db.add(m)
-    if t.status == "aguardando_cliente":
-        t.status = "andamento"
+    t.status, t.escalated_at = "aguardando_orca", None  # gatilho automatico: cliente respondeu, agora e a vez da equipe (pode ser alterado manualmente)
     t.updated_at = datetime.now(timezone.utc)
     audit.log(db, request, "ticket_message", "ticket", tid, detail={"numero": t.number, "origem": "portal"})
     db.commit()
     TS.notify(db, t, "atualizado", m)
     return _msg_out(m)
+
+
+@router.post("/portal/tickets/{tid}/attachments")
+async def portal_add_attachment(tid: int, request: Request, file: UploadFile = File(...), client_id: int | None = None, db: Session = Depends(get_db),
+                                user: User = Depends(require("portal.tickets"))):
+    c = _client_for(db, user, client_id)
+    t = db.get(Ticket, tid)
+    if not t or t.client_id != c.id:
+        raise HTTPException(404)
+    if t.status in ("resolvido", "fechado"):
+        raise HTTPException(409, "Este chamado já foi encerrado. Abra um novo chamado se o problema persistir.")
+    m = await _save_attachment(db, t, file, user.id, user.name, "portal")
+    t.status, t.escalated_at = "aguardando_orca", None
+    t.updated_at = datetime.now(timezone.utc)
+    audit.log(db, request, "ticket_attachment", "ticket", tid, detail={"numero": t.number, "arquivo": m.attachment.filename, "origem": "portal"})
+    db.commit()
+    TS.notify(db, t, "atualizado", m)
+    return _msg_out(m)
+
+
+@router.get("/portal/tickets/{tid}/attachments/{aid}")
+def portal_get_attachment(tid: int, aid: int, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require("portal.tickets"))):
+    c = _client_for(db, user, client_id)
+    t = db.get(Ticket, tid)
+    if not t or t.client_id != c.id:
+        raise HTTPException(404)
+    a = db.get(TicketAttachment, aid)
+    if not a or a.ticket_id != tid:
+        raise HTTPException(404)
+    m = db.get(TicketMessage, a.message_id)
+    if m and m.internal:
+        raise HTTPException(404)
+    return FileResponse(a.stored_path, filename=a.filename, media_type=a.content_type or "application/octet-stream")

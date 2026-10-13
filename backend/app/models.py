@@ -563,8 +563,8 @@ class PushSent(Base):
 
 
 # ---------------- Chamados (helpdesk) ----------------
-TICKET_STATUSES = ("aberto", "andamento", "aguardando_cliente", "resolvido", "fechado")
-TICKET_OPEN_STATUSES = ("aberto", "andamento", "aguardando_cliente")
+TICKET_STATUSES = ("aberto", "andamento", "aguardando_cliente", "aguardando_orca", "resolvido", "fechado")
+TICKET_OPEN_STATUSES = ("aberto", "andamento", "aguardando_cliente", "aguardando_orca")
 TICKET_PRIORITIES = ("baixa", "media", "alta", "critica")
 
 
@@ -596,6 +596,7 @@ class Ticket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # ultimo lembrete de escalonamento enviado (sem resposta da Orca ha 24h+)
 
     client: Mapped["Client"] = relationship(lazy="joined")
     queue: Mapped["TicketQueue"] = relationship(lazy="joined")
@@ -623,3 +624,24 @@ class TicketMessage(Base):
     body: Mapped[str] = mapped_column(Text)
     notified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+    attachment: Mapped["TicketAttachment"] = relationship(uselist=False, back_populates="message", lazy="joined")
+
+
+# Tamanho e tipos permitidos de anexo (comunicacao do chamado, nao e area de armazenamento de arquivo grande)
+TICKET_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+TICKET_ATTACHMENT_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".log", ".csv", ".xml", ".json", ".zip", ".7z", ".bak")
+
+
+class TicketAttachment(Base):
+    __tablename__ = "ticket_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    message_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("ticket_messages.id", ondelete="CASCADE"), unique=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    stored_path: Mapped[str] = mapped_column(String(512))
+    content_type: Mapped[str | None] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    message: Mapped["TicketMessage"] = relationship(back_populates="attachment")

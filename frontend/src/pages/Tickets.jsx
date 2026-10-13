@@ -1,13 +1,13 @@
 import React, { useState } from 'react'
-import { ListPlus, MessageSquareText, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
-import { get, post, put, del } from '../api'
+import { ListPlus, MessageSquareText, Paperclip, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
+import { get, post, put, del, upload, download } from '../api'
 import { Card, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { maskTarget } from '../mask'
 
-const STATUS_TONE = { aberto: 'bad', andamento: 'warn', aguardando_cliente: 'info', resolvido: 'ok', fechado: 'mut' }
+const STATUS_TONE = { aberto: 'bad', andamento: 'warn', aguardando_cliente: 'info', aguardando_orca: 'bad', resolvido: 'ok', fechado: 'mut' }
 const PRIORITY_TONE = { critica: 'bad', alta: 'warn', media: 'info', baixa: 'mut' }
-const STATUSES = [['aberto', 'Aberto'], ['andamento', 'Em andamento'], ['aguardando_cliente', 'Aguardando cliente'], ['resolvido', 'Resolvido'], ['fechado', 'Fechado']]
+const STATUSES = [['aberto', 'Aberto'], ['andamento', 'Em andamento'], ['aguardando_orca', 'Aguardando Orca TI'], ['aguardando_cliente', 'Aguardando cliente'], ['resolvido', 'Resolvido'], ['fechado', 'Fechado']]
 const PRIORITIES = [['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta'], ['critica', 'Crítica']]
 const fmt = (v) => v ? new Date(v).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'
 
@@ -26,7 +26,8 @@ function QueueForm({ q, onClose, onSaved }) {
 function QueuesTab() {
   const me = useAuth(); const admin = can(me, 'settings.edit')
   const queues = useLoad(() => get('/tickets/queues'), []); const [ed, setEd] = useState(null)
-  return <Card pad={false} title={admin ? undefined : 'Filas de chamado'}>
+  return <>
+    <Card pad={false} title={admin ? undefined : 'Filas de chamado'}>
     {admin && <div style={{ padding: 14, display: 'flex', justifyContent: 'flex-end' }}><button className="btn primary" onClick={() => setEd({})}><Plus />Nova fila</button></div>}
     {queues.data ? <Table rows={queues.data} empty="Nenhuma fila cadastrada ainda." cols={[
       { h: 'Fila', r: r => <b>{r.name}</b> },
@@ -35,9 +36,10 @@ function QueuesTab() {
       { h: 'Estado', r: r => <Pill tone={r.active ? 'ok' : 'mut'}>{r.active ? 'ativa' : 'desligada'}</Pill> },
       { h: '', r: r => admin && <div style={{ display: 'flex', gap: 6 }}><button className="btn sm" onClick={() => setEd(r)}><Pencil /></button>
         <button className="btn sm danger" onClick={async () => { if (confirm('Excluir esta fila? Os chamados ficam sem fila.')) { await del('/tickets/queues/' + r.id); queues.reload() } }}><Trash2 /></button></div> }]} /> : <Loading />}
-    {ed && <QueueForm q={ed} onClose={() => setEd(null)} onSaved={() => { setEd(null); queues.reload() }} />}
     {!admin && <p className="hint" style={{ padding: 14 }}>Somente um administrador pode criar ou editar filas.</p>}
-  </Card>
+    </Card>
+    {ed && <QueueForm q={ed} onClose={() => setEd(null)} onSaved={() => { setEd(null); queues.reload() }} />}
+  </>
 }
 
 function NewTicketForm({ clients, queues, onClose, onSaved }) {
@@ -71,9 +73,15 @@ function NewTicketForm({ clients, queues, onClose, onSaved }) {
 
 function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
   const t = useLoad(() => get('/tickets/' + id), [id]); const toast = useToast()
-  const [reply, setReply] = useState(''); const [internal, setInternal] = useState(false)
+  const [reply, setReply] = useState(''); const [internal, setInternal] = useState(false); const [sending, setSending] = useState(false)
   const [wk, setWk] = useState('email'); const [wt, setWt] = useState(''); const [wl, setWl] = useState('')
   const send = async () => { if (!reply.trim()) return; try { await post(`/tickets/${id}/messages`, { body: reply, internal }); setReply(''); t.reload(); onChanged() } catch (e) { toast(e.message, true) } }
+  const sendFile = async (e) => {
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return
+    if (file.size > 15 * 1024 * 1024) { toast('Arquivo maior que 15 MB', true); return }
+    setSending(true); try { await upload(`/tickets/${id}/attachments`, file); t.reload(); onChanged() } catch (e2) { toast(e2.message, true) } finally { setSending(false) }
+  }
+  const getAttachment = (m) => download(`/tickets/${id}/attachments/${m.attachment.id}`, m.attachment.filename)
   const setStatus = async (status) => { try { await put('/tickets/' + id, { status, priority: t.data.priority, queue_id: t.data.queue_id }); t.reload(); onChanged() } catch (e) { toast(e.message, true) } }
   const setField = async (field, value) => { try { await put('/tickets/' + id, { status: t.data.status, priority: t.data.priority, queue_id: t.data.queue_id, [field]: value }); t.reload(); onChanged() } catch (e) { toast(e.message, true) } }
   const addWatcher = async () => { if (!wt.trim()) return; try { await post(`/tickets/${id}/watchers`, { kind: wk, target: wk === 'whatsapp' ? maskTarget(wt) : wt.trim(), label: wl.trim() || null }); setWt(''); setWl(''); t.reload() } catch (e) { toast(e.message, true) } }
@@ -91,13 +99,16 @@ function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
       {d.messages.length === 0 && <span className="sub">Sem mensagens.</span>}
       {d.messages.map(m => <div key={m.id} style={{ background: m.internal ? '#fff7e0' : m.origin === 'portal' ? '#eef4ff' : '#f3f4f6', borderRadius: 10, padding: '8px 12px' }}>
         <div className="sub" style={{ marginBottom: 2 }}><b>{m.author_name || 'NAVI'}</b>{m.internal ? ' · nota interna' : m.origin === 'portal' ? ' · cliente' : ''} · {fmt(m.created_at)}</div>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div></div>)}
+        <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
+        {m.attachment && <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => getAttachment(m)}><Paperclip size={14} />{m.attachment.filename} ({Math.ceil(m.attachment.size_bytes / 1024)} KB)</button>}</div>)}
     </div>
     {canEdit && <>
       <Field label="RESPONDER"><textarea style={{ minHeight: 80 }} value={reply} onChange={e => setReply(e.target.value)} placeholder="Mensagem para o cliente (ou nota interna)..." /></Field>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={internal} onChange={e => setInternal(e.target.checked)} /> Nota interna (não avisa o cliente/fila)</label>
-        <button className="btn primary" onClick={send}><MessageSquareText size={15} />Enviar</button></div>
+        <button className="btn primary" onClick={send}><MessageSquareText size={15} />Enviar</button>
+        <label className="btn sm" style={{ cursor: sending ? 'wait' : 'pointer' }}><Paperclip size={15} />{sending ? 'Enviando…' : 'Anexar arquivo'}<input type="file" style={{ display: 'none' }} disabled={sending} onChange={sendFile} /></label>
+        <span className="sub">Até 15 MB · imagens, PDF, TXT, CSV, ZIP, 7z, backups (.bak)</span></div>
       <Field label="OBSERVADORES (CC) DESTE CHAMADO">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>{d.watchers.map(w => <span key={w.id} className="chip">{w.label ? `${w.label} · ` : ''}{w.target}
           <X size={12} style={{ cursor: 'pointer', marginLeft: 4 }} onClick={async () => { await del(`/tickets/${id}/watchers/${w.id}`); t.reload() }} /></span>)}</div>
