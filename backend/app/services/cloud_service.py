@@ -39,6 +39,12 @@ class Cloud:
         if r.status_code == 550 or r.status_code == 401:
             raise CloudError("A nuvem recusou a chave de API (confira a chave, o segredo e se o IP do servidor da NAVI está liberado).")
         if r.status_code != 200:
+            try:
+                msg = (r.json().get("listErrorResponse") or {}).get("errorMsg")
+            except ValueError:
+                msg = None
+            if msg:
+                raise CloudError(f"A nuvem recusou o pedido: {msg} (HTTP {r.status_code}). Confira o estado da máquina no painel da nuvem.")
             raise CloudError(f"{path}: HTTP {r.status_code} {r.text[:160]}")
         try:
             return r.json()

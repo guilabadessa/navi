@@ -210,7 +210,8 @@ def all_vms(db: Session = Depends(get_db), user=Depends(require("monitoring.view
     names = dict(db.execute(select(Client.id, Client.trade_name)).all())
     accs = {a.client_id: a for a in db.scalars(select(CloudAccount))}
     rows = [{"uuid": v.uuid, "client_id": v.client_id, "client": names.get(v.client_id), "name": v.name, "state": v.state, "zone": v.zone, "cpu": v.cpu, "ram_mb": v.ram_mb, "disk_gb": v.disk_gb,
-             "ip": v.ip, "os": v.os, "since": v.state_since.isoformat() if v.state_since else None, "expected_off": v.expected_off, "ignored": v.ignored}
+             "ip": v.ip, "os": v.os, "since": v.state_since.isoformat() if v.state_since else None, "expected_off": v.expected_off, "ignored": v.ignored,
+             "linked_ignored": bool(not v.ignored and v.state not in ("RUNNING", "STARTING") and CS.linked_ignored(db, v.client_id, v))}
             for v in db.scalars(select(CloudVm).where(CloudVm.active.is_(True)).order_by(CloudVm.client_id, CloudVm.name))]
     return {"vms": rows, "can_run": user_has(user, "cloud.run"),
             "accounts": [{"client_id": cid, "client": names.get(cid), "enabled": a.enabled, "owner": a.owner, "last_ok": a.last_ok.isoformat() if a.last_ok else None, "last_error": a.last_error, "fails": a.fails}
