@@ -107,7 +107,22 @@ function TagsSection({ edit }) {
   </Card>
 }
 
-const SECTIONS = [['filas', 'Filas', QueuesSection], ['etiquetas', 'Etiquetas', TagsSection], ['respostas', 'Respostas prontas', RepliesSection], ['geral', 'Geral', GeneralSection]]
+const DAY_LABEL = [['mon', 'Segunda-feira'], ['tue', 'Terça-feira'], ['wed', 'Quarta-feira'], ['thu', 'Quinta-feira'], ['fri', 'Sexta-feira'], ['sat', 'Sábado'], ['sun', 'Domingo']]
+function HoursSection({ edit }) {
+  const { f, setF, save } = useCfg()
+  if (!f) return <Loading />
+  const hours = f.hours || {}
+  const set = (day, win) => setF({ ...f, hours: { ...hours, [day]: win } })
+  return <Card title="Horário de atendimento">
+    <p className="sub" style={{ marginBottom: 12 }}>Horário de Brasília. Usado pelo passo <b>Horário de atendimento</b> do fluxo, que decide o caminho do cliente (ex.: mensagem “fora do expediente”). Dia sem janela = fechado.</p>
+    {DAY_LABEL.map(([k, l]) => { const w = hours[k]; return <div key={k} className="cfg-row"><div className="grow"><b>{l}</b></div>
+      <Check label="Aberto" checked={!!w} onChange={v => edit && set(k, v ? ['08:00', '18:00'] : null)} />
+      {w && <><input type="time" value={w[0]} disabled={!edit} onChange={e => set(k, [e.target.value, w[1]])} /> até <input type="time" value={w[1]} disabled={!edit} onChange={e => set(k, [w[0], e.target.value])} /></>}</div> })}
+    {edit && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => save({})}>Salvar</button>}
+  </Card>
+}
+
+const SECTIONS = [['filas', 'Filas', QueuesSection], ['etiquetas', 'Etiquetas', TagsSection], ['horario', 'Horário', HoursSection], ['respostas', 'Respostas prontas', RepliesSection], ['geral', 'Geral', GeneralSection]]
 
 export default function AtendimentoConfig() {
   const me = useAuth(); const edit = can(me, 'settings.edit'); const [sec, setSec] = useState('filas')
