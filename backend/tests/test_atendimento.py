@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 from app.models import WaConversation, WaMessage
@@ -159,3 +160,108 @@ def test_on_inbound_chama_atendimento_e_engole_erro(monkeypatch):
 def test_job_registrado():
     from app import jobs
     assert "atendimento_tick" in jobs.JOBS and callable(jobs.atendimento_tick)
+
+
+# ---- API ----
+from types import SimpleNamespace as NS
+
+from fastapi.testclient import TestClient
+
+from app.db import get_db
+from app.main import app
+from app.security import current_user
+
+
+_patches = []
+
+
+def _api(role="ANALISTA_NOC", db=None):
+    from unittest.mock import patch
+    db = db or MagicMock()
+    p = patch.object(A, "cfg", lambda d: A.DEFAULT_CFG)  # S.get nao funciona com banco simulado
+    p.start()
+    _patches.append(p)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[current_user] = lambda: NS(id=7, email="a@x.com", name="Ana", role=role, active=True, extra_perms=[])
+    return TestClient(app), db
+
+
+def _done():
+    app.dependency_overrides.clear()
+    while _patches:
+        _patches.pop().stop()
+
+
+def test_api_sem_permissao_da_403():
+    c, _ = _api("CLIENTE")
+    try:
+        assert c.get("/cliente/api/atendimento/queues").status_code == 403
+        c2, _ = _api("VISUALIZADOR")
+        assert c2.get("/cliente/api/atendimento/queues").status_code in (200, 500)  # ver pode
+        assert c2.post("/cliente/api/atendimento/conversations/1/assume").status_code == 403
+        assert c2.put("/cliente/api/atendimento/config", json={}).status_code in (403, 422)
+    finally:
+        _done()
+
+
+def test_assumir_devolve_409_quando_outro_chegou_primeiro(monkeypatch):
+    c, db = _api()
+    db.get.return_value = _conv("aguardando")
+    monkeypatch.setattr(A, "assume", lambda d, i, u: False)
+    try:
+        assert c.post("/cliente/api/atendimento/conversations/1/assume").status_code == 409
+    finally:
+        _done()
+
+
+def test_enviar_falha_do_gateway_da_502_e_guarda_a_mensagem(monkeypatch):
+    from app.services.wa_akg_service import WaAkgError
+    c, db = _api()
+    db.get.return_value = _conv("atendendo")
+    db.scalar.return_value = None
+    monkeypatch.setattr("app.services.factory.wa_akg", lambda d: MagicMock(send_text=MagicMock(side_effect=WaAkgError("fora"))))
+    try:
+        r = c.post("/cliente/api/atendimento/conversations/1/send", json={"text": "ola"})
+        assert r.status_code == 502 and db.commit.called
+        assert db.add.call_args.args[0].failed is True
+    finally:
+        _done()
+
+
+def test_enviar_em_conversa_encerrada_da_409():
+    c, db = _api()
+    db.get.return_value = _conv("encerrada")
+    try:
+        assert c.post("/cliente/api/atendimento/conversations/1/send", json={"text": "ola"}).status_code == 409
+        assert c.post("/cliente/api/atendimento/conversations/1/send", json={"text": ""}).status_code == 422
+    finally:
+        _done()
+
+
+def test_transferir_exige_destino_e_rejeita_cliente_como_analista():
+    c, db = _api()
+    db.get.side_effect = lambda model, i: _conv("atendendo") if model.__name__ == "WaConversation" else NS(id=9, active=True, role="CLIENTE")
+    try:
+        assert c.post("/cliente/api/atendimento/conversations/1/transfer", json={}).status_code == 422
+        assert c.post("/cliente/api/atendimento/conversations/1/transfer", json={"user_id": 9}).status_code == 422
+        assert c.post("/cliente/api/atendimento/conversations/1/transfer", json={"queue": "bogus"}).status_code == 422
+    finally:
+        _done()
+
+
+def test_config_so_admin_edita_e_grava_json(monkeypatch):
+    saved = {}
+    monkeypatch.setattr("app.routers.atendimento.S.put", lambda db, k, v, user=None: saved.setdefault(k, v))
+    body = {"greeting": "Oi", "menu_timeout_min": 3, "wait_alert_min": 5, "closing_message": "Tchau",
+            "queues": {"suporte": {"alert_enabled": True, "alert_to": [" 120@g.us ", ""]}, "xpto": {"alert_enabled": True, "alert_to": []}}}
+    c, _ = _api("ANALISTA_NOC")
+    try:
+        assert c.put("/cliente/api/atendimento/config", json=body).status_code == 403
+        c, _ = _api("ADMIN")
+        r = c.put("/cliente/api/atendimento/config", json=body)
+        assert r.status_code == 200
+        gravado = json.loads(saved["atendimento.config"])
+        assert gravado["queues"] == {"suporte": {"alert_enabled": True, "alert_to": ["120@g.us"]}}
+        assert c.put("/cliente/api/atendimento/config", json={**body, "menu_timeout_min": 0}).status_code == 422
+    finally:
+        _done()
