@@ -299,3 +299,24 @@ select{max-width:100%}
 @media(min-width:861px){.top .tleft{display:none!important}.topr{justify-content:flex-start}.topr .pills{margin-left:auto}}
 
 @media (prefers-reduced-motion:reduce){.content>*,.side-mascot,.pmascot{animation:none!important}}
+
+/* Atendimento (WhatsApp) */
+.at-queues{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+.at-q{display:flex;flex-direction:column;gap:2px;text-align:left;border:1px solid var(--line);background:var(--card);color:var(--navy);border-radius:14px;padding:12px 14px;cursor:pointer}
+.at-q b{font-size:28px;line-height:1.1}.at-q small{color:var(--muted,#6b7a99)}.at-q.on{border-color:var(--blue);box-shadow:0 0 0 2px rgba(30,115,248,.18)}
+.at-q.late{border-color:#bd1723;background:rgba(189,23,35,.08)}.at-q.late b{color:#bd1723}
+.at-grid{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px;align-items:start}
+.at-filters{display:flex;gap:16px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.at-list{max-height:62vh;overflow:auto}
+.at-item{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--navy);padding:10px 14px;cursor:pointer}
+.at-item:hover,.at-item.on{background:rgba(30,115,248,.08)}
+.at-unread{background:var(--blue);color:#fff;border-radius:999px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;padding:0 6px}
+.at-chat{border:1px solid var(--line);background:var(--card);border-radius:14px;display:flex;flex-direction:column;min-height:62vh}
+.at-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}
+.at-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px;max-height:52vh}
+.at-msg{max-width:78%;padding:8px 12px;border-radius:12px;background:rgba(127,140,170,.16)}
+.at-msg.out{align-self:flex-end;background:rgba(30,115,248,.16)}.at-msg.failed{outline:1px solid #bd1723}
+.at-msg small{display:block;opacity:.65;font-size:11.5px;margin-top:2px}
+.at-send{display:flex;gap:8px;align-items:flex-end;padding:10px 14px;border-top:1px solid var(--line)}
+.at-send textarea{flex:1;resize:none}
+@media(max-width:860px){.at-grid{grid-template-columns:1fr}}

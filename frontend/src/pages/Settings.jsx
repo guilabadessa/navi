@@ -55,6 +55,32 @@ function WaAkgTab({ edit }) {
       <button className="btn" style={{ marginTop: 8 }} onClick={async () => { try { setQr(await get('/wa/qr')) } catch (e) { toast(e.message, true) } }}>Mostrar QR code para parear</button></>}</Card>
 }
 
+const AT_Q = [['comercial', 'Comercial'], ['financeiro', 'Financeiro'], ['suporte', 'Suporte'], ['geral', 'Geral']]
+function AtendimentoTab({ edit }) {
+  const toast = useToast(); const { data, reload } = useLoad(() => get('/atendimento/config'), []); const [f, setF] = useState(null)
+  useEffect(() => { if (data) setF({ ...data, queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: data.queues[q].alert_enabled, alert_to: (data.queues[q].alert_to || []).join('\n') }])) }) }, [data])
+  if (!f) return <Loading />
+  const setQ = (q, k, v) => setF({ ...f, queues: { ...f.queues, [q]: { ...f.queues[q], [k]: v } } })
+  const save = async () => {
+    try {
+      await put('/atendimento/config', { greeting: f.greeting, menu_timeout_min: +f.menu_timeout_min, wait_alert_min: +f.wait_alert_min, closing_message: f.closing_message,
+        queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: f.queues[q].alert_enabled, alert_to: f.queues[q].alert_to.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean) }])) })
+      toast('Salvo'); reload()
+    } catch (e) { toast(e.message, true) }
+  }
+  return <Card title="Atendimento por WhatsApp (menu e filas)">
+    <Field label="SAUDAÇÃO / MENU" hint="Enviada quando o cliente escreve. Use as opções 1 (comercial), 2 (financeiro) e 3 (suporte)."><textarea style={{ minHeight: 130 }} value={f.greeting} onChange={e => setF({ ...f, greeting: e.target.value })} disabled={!edit} /></Field>
+    <div className="row r2"><Field label="SEM RESPOSTA NO MENU (min)" hint="Depois disso o cliente vai para a fila geral."><input type="number" min="1" max="60" value={f.menu_timeout_min} onChange={e => setF({ ...f, menu_timeout_min: e.target.value })} disabled={!edit} /></Field>
+      <Field label="ESPERA EM ALERTA (min)" hint="A fila fica vermelha no monitor acima deste tempo."><input type="number" min="1" max="240" value={f.wait_alert_min} onChange={e => setF({ ...f, wait_alert_min: e.target.value })} disabled={!edit} /></Field></div>
+    <Field label="MENSAGEM DE ENCERRAMENTO"><input value={f.closing_message} onChange={e => setF({ ...f, closing_message: e.target.value })} disabled={!edit} /></Field>
+    <h3 style={{ margin: '18px 0 8px' }}>Aviso quando alguém entra na fila</h3>
+    <p className="sub" style={{ marginBottom: 10 }}>Um número ou ID de grupo por linha. Todos os analistas veem todas as filas; isto define apenas quem é avisado.</p>
+    <div className="row r2">{AT_Q.map(([q, l]) => <div key={q} className="card" style={{ padding: 14 }}>
+      <Check label={`Avisar — ${l}`} checked={f.queues[q].alert_enabled} onChange={v => setQ(q, 'alert_enabled', v)} />
+      <textarea style={{ minHeight: 70, marginTop: 8 }} value={f.queues[q].alert_to} onChange={e => setQ(q, 'alert_to', e.target.value)} placeholder={'120363...@g.us\n(14) 99999-9999'} disabled={!edit} /></div>)}</div>
+    {edit && <button className="btn primary" style={{ marginTop: 14 }} onClick={save}>Salvar</button>}</Card>
+}
+
 function SmtpTab({ edit }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/settings/smtp'), [])
   const [f, setF] = useState({ host: '', port: 587, user: '', from: '', from_name: '', password: '', sig_enabled: false, sig_mode: 'text', sig_text: '' })
@@ -122,6 +148,6 @@ export default function Settings() {
   const me = useAuth(); const caq = new URLSearchParams(window.location.search).get('ca'); const toast = useToast(); const [tab, setTab] = useState(caq ? 'ca' : 'zbx'); useEffect(() => { if (caq) toast(caq === 'ok' ? 'Conta Azul autorizado com sucesso' : 'Não foi possível autorizar o Conta Azul. Gere um novo código e tente de novo.', caq !== 'ok') }, []); const edit = can(me, 'settings.edit')
   return <>
     <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS, Conta Azul), papel timbrado e webhook" />
-    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['wa', 'WhatsApp (WA-AKG)'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
-    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
+    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['wa', 'WhatsApp (WA-AKG)'], ['at', 'Atendimento'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
+    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'at' && <AtendimentoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
 }

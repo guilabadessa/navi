@@ -42,6 +42,11 @@ export async function upload(path, file) {
   if (!r.ok) throw new Error((await r.json()).detail || 'Falha no upload')
   return r.json()
 }
+export async function uploadForm(path, fd) {
+  const r = await fetch(BASE + path, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
+  if (!r.ok) { let d = ''; try { d = (await r.json()).detail } catch { /* corpo nao e json */ } throw new Error(d || 'Falha no envio') }
+  return r.json()
+}
 export async function download(path, name) {
   const r = await api(path, { raw: true })
   if (!r.ok) throw new Error('Falha no download')

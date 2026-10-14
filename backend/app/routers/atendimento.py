@@ -65,6 +65,13 @@ def queues(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))
     return {"queues": list(out.values()), "wait_alert_min": A.cfg(db)["wait_alert_min"]}
 
 
+@router.get("/agents")
+def agents(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    """Analistas que podem receber uma transferencia."""
+    rows = db.scalars(select(User).where(User.active.is_(True), User.role.in_(("ADMIN", "GESTOR", "ANALISTA_NOC"))).order_by(User.name)).all()
+    return [{"id": u.id, "name": u.name} for u in rows]
+
+
 @router.get("/conversations")
 def conversations(queue: str = "", state: str = "", mine: bool = False, db: Session = Depends(get_db), user: User = Depends(require("atendimento.view"))):
     stmt = select(WaConversation)
