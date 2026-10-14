@@ -360,3 +360,6 @@ select{max-width:100%}
 .at-tabs button{flex:1;border:0;background:transparent;color:var(--navy);padding:10px 8px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
 .at-tabs button.on{color:var(--blue);border-bottom-color:var(--blue)}.at-tabs span{margin-left:6px;background:rgba(30,115,248,.15);border-radius:999px;padding:0 7px;font-size:12px}
 .fl-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.fl-grid:focus{outline:none}
+.sevchips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.sevchip{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 12px 3px 4px;cursor:pointer;color:var(--navy)}
+.sevchip:disabled{opacity:.45;cursor:default}.sevchip.on{border-color:var(--blue);box-shadow:0 0 0 2px rgba(30,115,248,.2)}
