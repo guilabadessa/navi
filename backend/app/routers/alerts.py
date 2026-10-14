@@ -143,7 +143,7 @@ def test_rule(body: RuleTestIn, request: Request, db: Session = Depends(get_db),
     """Envia um alerta de TESTE pelos canais da regra (aceita regra ainda nao salva)."""
     data = body.model_dump(exclude={"to_whatsapp", "to_email"})
     rule = AlertRule(**data)
-    res = N.test_rule(db, factory.evolution(db), rule, body.to_whatsapp or None, body.to_email or None)
+    res = N.test_rule(db, factory.whatsapp(db), rule, body.to_whatsapp or None, body.to_email or None)
     audit.log(db, request, "alert_rule_test", "alert_rule", detail={"name": body.name, "result": {k: v.get("ok") for k, v in res.items() if isinstance(v, dict) and "ok" in v}})
     db.commit()
     return res
@@ -160,7 +160,7 @@ def diagnose(event_id: int, db: Session = Depends(get_db), _=Depends(require("al
 @router.post("/test-whatsapp")
 def test_whatsapp(body: TestSend, request: Request, db: Session = Depends(get_db), _=Depends(require("alerts.edit"))):
     try:
-        resp = factory.evolution(db).send_text(body.to if "@" in body.to else body.to, body.text)
+        resp = factory.whatsapp(db).send_text(body.to if "@" in body.to else body.to, body.text)
         ok, detail = True, "Mensagem enviada"
     except Exception as e:  # noqa: BLE001
         ok, detail = False, str(e)

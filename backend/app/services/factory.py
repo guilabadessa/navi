@@ -5,7 +5,6 @@ from .. import settings_store as S
 from .acronis_service import AcronisService
 from .email_service import EmailService
 from .ems_service import EmsService
-from .evolution_service import EvolutionService
 from .wa_akg_service import WaAkgService
 from .zabbix_service import ZabbixService
 
@@ -14,21 +13,9 @@ def zabbix(db: Session) -> ZabbixService:
     return ZabbixService(S.get(db, "zabbix.url"), S.get(db, "zabbix.token"))
 
 
-def whatsapp(db: Session) -> EvolutionService | WaAkgService:
-    """Provedor de WhatsApp ativo (`whatsapp.provider`): evolution (padrao) ou wa_akg. Mesma interface nos dois."""
-    if S.get(db, "whatsapp.provider", "evolution") == "wa_akg":
-        return WaAkgService(S.get(db, "wa_akg.url"), S.get(db, "wa_akg.session"), S.get(db, "wa_akg.api_key"))
-    return EvolutionService(S.get(db, "evolution.url"), S.get(db, "evolution.instance"), S.get(db, "evolution.api_key"))
-
-
-def wa_akg(db: Session) -> WaAkgService:
-    """Sempre o WA-AKG (atendimento por WhatsApp), independente do provedor dos alertas."""
+def whatsapp(db: Session) -> WaAkgService:
+    """Gateway de WhatsApp (WA-AKG): alertas, relatorios, avisos de chamado e atendimento."""
     return WaAkgService(S.get(db, "wa_akg.url"), S.get(db, "wa_akg.session"), S.get(db, "wa_akg.api_key"))
-
-
-def evolution(db: Session) -> EvolutionService | WaAkgService:
-    """Nome legado: todos os chamadores antigos recebem o provedor ativo."""
-    return whatsapp(db)
 
 
 def email(db: Session) -> EmailService:

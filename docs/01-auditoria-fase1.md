@@ -50,7 +50,7 @@ Observações:
 - **Banco NAVI**: PostgreSQL existente (`navi` em 172.16.31.208, SSL, usuário `navi`).
 - **Execução**: Docker Compose isolado em `/opt/noc`; proxy reverso pelo **Apache já existente**
   (novo vhost/`Location /navi`, sem alterar o `/zabbix`).
-- **Integrações**: `ZabbixService` (API), `EvolutionService`, `EmailService`, `PdfService`,
+- **Integrações**: `ZabbixService` (API), `WaAkgService`, `EmailService`, `PdfService`,
   `ReportService`, `NotificationService`, `NaviService` (abstração de IA).
 - **Alertas em tempo real**: webhook do Zabbix para a NAVI (Media Type novo, em paralelo ao atual).
 
@@ -60,7 +60,7 @@ Observações:
 |---|---|---|
 | 2 Base | Docker, compose, migrations, login, admin, esqueleto API/UI | `docker compose down`; banco `navi` é isolado |
 | 3 Zabbix | Conexão API, sync de hosts/groups/triggers/items, clientes↔host groups | desligar worker; dados locais |
-| 4 Alertas | Webhook PROBLEM/RESOLVED, Evolution, quoted reply | manter Media Type atual ativo |
+| 4 Alertas | Webhook PROBLEM/RESOLVED, WA-AKG, quoted reply | manter Media Type atual ativo |
 | 5 Relatórios | KPIs, PDF com identidade Orca, histórico | — |
 | 6 Agendamento | Rotinas diária/semanal/mensal, WhatsApp e e-mail | desabilitar rotinas |
 | 7 NAVI IA | Camada de consulta/análise | feature flag |
@@ -82,5 +82,5 @@ Observações:
 1. Autorizar instalação do Docker + Compose no APP.
 2. Confirmar RAM: aumentar APP (recomendado ≥ 8 GB) ou aceitar limite apertado.
 3. Subdomínio/caminho desejado (`/navi` em sonar.orcati.com.br ou `navi.orcati.com.br`).
-4. Fornecer: token da API do Zabbix, API key/instância da Evolution, SMTP.
+4. Fornecer: token da API do Zabbix, API key/instância da WA-AKG, SMTP.
 5. Corrigir o SMTP atual do Zabbix (senha recusada) — fora do escopo, mas afeta alertas.

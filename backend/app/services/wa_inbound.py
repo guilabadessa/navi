@@ -48,7 +48,7 @@ def on_inbound(db: Session, msg: WaMessage) -> None:
     log.info("whatsapp %s %s (%s)", msg.direction, msg.jid, msg.type)
     try:
         from . import atendimento_service, factory
-        atendimento_service.handle_inbound(db, msg, factory.wa_akg(db))
+        atendimento_service.handle_inbound(db, msg, factory.whatsapp(db))
         db.commit()
     except Exception:  # noqa: BLE001
         db.rollback()

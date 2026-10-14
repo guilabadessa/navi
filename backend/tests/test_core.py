@@ -3,7 +3,7 @@ from types import SimpleNamespace as NS
 
 from app.formats import fmt_phone
 from app.services import severity_service
-from app.services.evolution_service import normalize_target
+from app.services.wa_common import normalize_target
 from app.services.notification_service import _match
 
 

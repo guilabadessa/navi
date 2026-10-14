@@ -334,11 +334,11 @@ def noc_test(body: NocTest, db: Session = Depends(get_db), _=Depends(require("al
     """Envia ao NOC (destinos internos) uma mensagem de teste ou o resumo diario agora."""
     c = noc_service.cfg(db)
     if body.what == "digest":
-        return {"result": noc_service.send_digest(db, factory.evolution(db), manual=True)}
+        return {"result": noc_service.send_digest(db, factory.whatsapp(db), manual=True)}
     res = []
     if c["noc_wa"]:
         try:
-            factory.evolution(db).send_text(c["noc_wa"], "🧪 *TESTE NAVI* — este é o canal do NOC para escalonamentos e resumo diário. Não é um incidente real.")
+            factory.whatsapp(db).send_text(c["noc_wa"], "🧪 *TESTE NAVI* — este é o canal do NOC para escalonamentos e resumo diário. Não é um incidente real.")
             res.append("WhatsApp ok")
             commlog.record("whatsapp", "Teste do canal do NOC", c["noc_wa"], "sent")
         except Exception as e:  # noqa: BLE001

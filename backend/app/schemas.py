@@ -199,12 +199,6 @@ class ZabbixSettingsIn(BaseModel):
     token: str | None = None  # vazio = manter
 
 
-class EvolutionSettingsIn(BaseModel):
-    url: str = Field(max_length=512)
-    instance: str = Field(max_length=128)
-    api_key: str | None = None
-
-
 class SmtpSettingsIn(BaseModel):
     host: str = Field(max_length=255)
     port: int = Field(ge=1, le=65535)

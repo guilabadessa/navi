@@ -5,7 +5,7 @@
 Navegador ──HTTPS──> Cloudflare ──> Apache (orca-zabbix-app) ──/cliente──> 127.0.0.1:8100  [container api: FastAPI + SPA React]
                                                                            [container worker: APScheduler — mesmo código, mesmo banco]
                                    PostgreSQL (banco próprio da NAVI)      Zabbix (somente API, banco do Zabbix nunca é tocado)
-Integrações (somente leitura): Zabbix · Acronis · FortiClient EMS · Conta Azul · Evolution API (envio) · SMTP (envio)
+Integrações (somente leitura): Zabbix · Acronis · FortiClient EMS · Conta Azul · WA-AKG (WhatsApp) (envio) · SMTP (envio)
 ```
 - **api** atende HTTP e o front (build estático em `/cliente/`). **worker** roda as rotinas (sincronizações, alertas, avisos, relatórios, backup).
 - Segredos: `.env` (chmod 600) e tabela `settings` criptografada (Fernet derivado de `NAVI_SECRET_KEY`). Nunca vão para o git nem para o front.
@@ -34,7 +34,7 @@ Integrações (somente leitura): Zabbix · Acronis · FortiClient EMS · Conta A
 - **Backup:** diário em `backups/navi-db/` (7 dias). Antes de mudança crítica: `pg_dump` manual. Restauração: `gunzip -c arquivo.sql.gz | psql …` (parar o worker antes).
 - **Testes:** `cd backend && pip install -r requirements-dev.txt && PYTHONPATH=. pytest -q tests`. Teste de telas com dados reais: `tools/ui-smoke/README.md`.
 - **Dependências:** o CI roda `pip-audit`; atualize `requirements.txt` com versões fixas e rode os testes + o smoke antes do deploy.
-- **Rotação de segredos:** Acronis/EMS/Conta Azul/SMTP/Evolution em Configurações; `NAVI_SECRET_KEY` só com recriptografia dos segredos do banco.
+- **Rotação de segredos:** Acronis/EMS/Conta Azul/SMTP/WA-AKG em Configurações; `NAVI_SECRET_KEY` só com recriptografia dos segredos do banco.
 
 ## Pontos de atenção conhecidos
 - Servidor único (decisão do negócio): backup só local; o worker e a API compartilham a mesma máquina.

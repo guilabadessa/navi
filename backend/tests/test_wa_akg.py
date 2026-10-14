@@ -103,23 +103,16 @@ def test_qr_le_codigo_da_sessao():
 from unittest.mock import patch
 
 from app.services import factory
-from app.services.evolution_service import EvolutionService
 
 
 def _cfg(values):
     return lambda db, key, default=None: values.get(key, default or "")
 
 
-def test_factory_padrao_e_evolution():
-    with patch.object(factory.S, "get", side_effect=_cfg({"evolution.url": "http://e", "evolution.instance": "i", "evolution.api_key": "k"})):
-        assert isinstance(factory.whatsapp(None), EvolutionService)
-        assert isinstance(factory.evolution(None), EvolutionService)
-
-
-def test_factory_escolhe_wa_akg_quando_configurado():
-    cfg = {"whatsapp.provider": "wa_akg", "wa_akg.url": "http://wa:3000", "wa_akg.session": "orca", "wa_akg.api_key": "wag_x"}
+def test_factory_monta_o_wa_akg_com_as_configuracoes():
+    cfg = {"wa_akg.url": "http://wa:3000", "wa_akg.session": "orca", "wa_akg.api_key": "wag_x"}
     with patch.object(factory.S, "get", side_effect=_cfg(cfg)):
-        s = factory.evolution(None)
+        s = factory.whatsapp(None)
         assert isinstance(s, WaAkgService) and s.session == "orca" and s.base == "http://wa:3000"
 
 
@@ -228,10 +221,10 @@ def test_webhook_valido_grava_e_evento_irrelevante_da_200_sem_gravar():
         p.stop(); app.dependency_overrides.clear()
 
 
-def test_teste_e_qr_usam_o_wa_akg_mesmo_com_evolution_ativa():
+def test_gateway_do_painel_e_o_wa_akg():
     from app.routers import whatsapp_r as R
-    cfg = {"wa_akg.url": "http://wa:3000", "wa_akg.session": "orca", "wa_akg.api_key": "wag_x", "whatsapp.provider": "evolution"}
-    with patch.object(R.S, "get", side_effect=_cfg(cfg)):
+    cfg = {"wa_akg.url": "http://wa:3000", "wa_akg.session": "orca", "wa_akg.api_key": "wag_x"}
+    with patch.object(factory.S, "get", side_effect=_cfg(cfg)):
         g = R._gateway(None)
     assert isinstance(g, WaAkgService) and g.session == "orca"
 

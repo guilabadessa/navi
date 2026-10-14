@@ -254,7 +254,7 @@ def transfer(conv_id: int, body: TransferIn, request: Request, db: Session = Dep
         raise HTTPException(422, "Informe o analista ou o setor")
     if body.queue and (body.queue not in A.queue_map(db) or not A.queue_map(db)[body.queue].active):
         raise HTTPException(422, "Setor inválido")
-    A.transfer(db, c, body.user_id, body.queue, factory.wa_akg(db))
+    A.transfer(db, c, body.user_id, body.queue, factory.whatsapp(db))
     audit.log(db, request, "atendimento_transferir", "whatsapp", resource_id=c.jid, detail={"user_id": body.user_id, "queue": body.queue})
     db.commit()
     return _out(db, [c])[0]
@@ -269,7 +269,7 @@ def close(conv_id: int, body: CloseIn, request: Request, db: Session = Depends(g
     c = _conv(db, conv_id)
     if c.state == "encerrada":
         raise HTTPException(409, "Conversa já encerrada")
-    A.close(db, c, user.id, body.send_closing, factory.wa_akg(db))
+    A.close(db, c, user.id, body.send_closing, factory.whatsapp(db))
     audit.log(db, request, "atendimento_encerrar", "whatsapp", resource_id=c.jid)
     db.commit()
     return _out(db, [c])[0]
@@ -305,7 +305,7 @@ def _open_conv(db: Session, conv_id: int) -> WaConversation:
 def send(conv_id: int, body: SendIn, db: Session = Depends(get_db), user: User = Depends(require("atendimento.act"))):
     c = _open_conv(db, conv_id)
     try:
-        m = A.send(db, c, user.id, body.text.strip(), factory.wa_akg(db))
+        m = A.send(db, c, user.id, body.text.strip(), factory.whatsapp(db))
     except WaAkgError:
         db.commit()  # guarda a mensagem como "nao enviada" para o analista reenviar
         raise HTTPException(502, "Não foi possível enviar pelo WhatsApp. A mensagem ficou marcada como não enviada.")
@@ -324,7 +324,7 @@ async def send_media(conv_id: int, caption: str = Form(default="", max_length=10
     if len(data) > MEDIA_MAX:
         raise HTTPException(413, "Arquivo maior que 15 MB")
     try:
-        m = A.send_media(db, c, user.id, data, file.filename or "arquivo", mime, caption, factory.wa_akg(db))
+        m = A.send_media(db, c, user.id, data, file.filename or "arquivo", mime, caption, factory.whatsapp(db))
     except WaAkgError:
         db.commit()
         raise HTTPException(502, "Não foi possível enviar pelo WhatsApp.")

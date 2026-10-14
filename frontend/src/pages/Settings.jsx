@@ -28,23 +28,12 @@ function ZabbixTab({ edit }) {
       <p className="hint" style={{ marginTop: 12 }}>A NAVI espelha apenas grupos e hosts. Itens, triggers e o histórico de relatórios são consultados diretamente na API do Zabbix, e o que deixa de existir no Zabbix também é removido da NAVI. Eventos resolvidos são mantidos por 90 dias.</p></Card></div>
 }
 
-function EvoTab({ edit }) {
-  const toast = useToast(); const { data, reload } = useLoad(() => get('/settings/evolution'), []); const [f, setF] = useState({ url: '', instance: '', api_key: '' }); const [res, setRes] = useState(null)
-  useEffect(() => { if (data) setF(x => ({ ...x, url: data.url, instance: data.instance })) }, [data])
-  if (!data) return <Loading />
-  return <Card title="Evolution API (WhatsApp)"><div className="row r2"><Field label="URL BASE"><input value={f.url} onChange={e => setF({ ...f, url: e.target.value })} /></Field><Field label="INSTÂNCIA"><input value={f.instance} onChange={e => setF({ ...f, instance: e.target.value })} /></Field></div>
-    <div className="row"><Field label="API KEY" hint={data.api_key_set ? 'Configurada (oculta). Preencha somente para substituir.' : 'Não configurada.'}><input type="password" autoComplete="off" value={f.api_key} onChange={e => setF({ ...f, api_key: e.target.value })} /></Field></div>
-    {res && <div style={{ marginBottom: 10 }}><Pill tone={res.ok ? 'ok' : 'bad'}>{res.ok ? 'Conectada' : 'Falha'}</Pill> <span className="sub">{res.detail}</span></div>}
-    {edit && <Save onClick={async () => { try { await put('/settings/evolution', { ...f, api_key: f.api_key || null }); setF({ ...f, api_key: '' }); toast('Salvo'); reload() } catch (e) { toast(e.message, true) } }} test={async () => setRes(await post('/settings/evolution/test'))} />}</Card>
-}
-
 function WaAkgTab({ edit }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/wa/settings'), []); const [res, setRes] = useState(null); const [qr, setQr] = useState(null)
-  const [f, setF] = useState({ provider: 'evolution', url: '', session: '', api_key: '', webhook_secret: '' })
-  useEffect(() => { if (data) setF(x => ({ ...x, provider: data.provider, url: data.url, session: data.session })) }, [data])
+  const [f, setF] = useState({ url: '', session: '', api_key: '', webhook_secret: '' })
+  useEffect(() => { if (data) setF(x => ({ ...x, url: data.url, session: data.session })) }, [data])
   if (!data) return <Loading />
   return <Card title="WhatsApp — WA-AKG (gateway)">
-    <Field label="PROVEDOR ATIVO" hint="Troque para WA-AKG somente depois do pareamento e do teste. Voltar para Evolution é imediato."><select value={f.provider} onChange={e => setF({ ...f, provider: e.target.value })}><option value="evolution">Evolution API (atual)</option><option value="wa_akg">WA-AKG</option></select></Field>
     <div className="row r2"><Field label="URL BASE" hint="Rede interna: http://wa-akg:3000"><input value={f.url} onChange={e => setF({ ...f, url: e.target.value })} placeholder="http://wa-akg:3000" /></Field><Field label="SESSÃO"><input value={f.session} onChange={e => setF({ ...f, session: e.target.value })} placeholder="orca" /></Field></div>
     <div className="row r2"><Field label="API KEY" hint={data.api_key_set ? 'Configurada (oculta). Preencha somente para substituir.' : 'Não configurada.'}><input type="password" autoComplete="off" value={f.api_key} onChange={e => setF({ ...f, api_key: e.target.value })} /></Field>
       <Field label="SEGREDO DO WEBHOOK" hint={data.webhook_secret_set ? 'Configurado (oculto). Preencha somente para substituir.' : 'Não configurado: mensagens recebidas serão recusadas.'}><input type="password" autoComplete="off" value={f.webhook_secret} onChange={e => setF({ ...f, webhook_secret: e.target.value })} /></Field></div>
@@ -107,7 +96,7 @@ function WebhookTab({ edit }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/settings/webhook'), []); const [tok, setTok] = useState('')
   if (!data) return <Loading />
   const url = location.origin + data.path
-  return <Card title="Webhook de eventos do Zabbix (tempo real)"><p className="sub" style={{ marginBottom: 12 }}>Configure um Media Type do tipo Webhook no Zabbix que envie um POST JSON a esta URL com o cabeçalho <code>X-Navi-Token</code>. Pode coexistir com o Media Type atual (Evolution).</p>
+  return <Card title="Webhook de eventos do Zabbix (tempo real)"><p className="sub" style={{ marginBottom: 12 }}>Configure um Media Type do tipo Webhook no Zabbix que envie um POST JSON a esta URL com o cabeçalho <code>X-Navi-Token</code>. Pode coexistir com o Media Type atual (WhatsApp).</p>
     <div className="kv"><b>URL</b><code>{url}</code><b>Token</b><span>{data.token_set ? <Pill tone="ok">configurado</Pill> : <Pill tone="warn">não configurado</Pill>}</span></div>
     {tok && <div className="card" style={{ padding: 14, margin: '14px 0', borderColor: 'var(--blue)' }}><b>Novo token (exibido uma única vez):</b><div className="mono" style={{ wordBreak: 'break-all', marginTop: 6 }}>{tok}</div></div>}
     {edit && <button className="btn primary" style={{ marginTop: 14 }} onClick={async () => { if (!confirm('Gerar novo token? O anterior deixará de funcionar.')) return; try { setTok((await post('/settings/webhook/rotate')).token); reload() } catch (e) { toast(e.message, true) } }}>{data.token_set ? 'Rotacionar token' : 'Gerar token'}</button>}
@@ -127,6 +116,6 @@ export default function Settings() {
   const me = useAuth(); const caq = new URLSearchParams(window.location.search).get('ca'); const toast = useToast(); const [tab, setTab] = useState(caq ? 'ca' : 'zbx'); useEffect(() => { if (caq) toast(caq === 'ok' ? 'Conta Azul autorizado com sucesso' : 'Não foi possível autorizar o Conta Azul. Gere um novo código e tente de novo.', caq !== 'ok') }, []); const edit = can(me, 'settings.edit')
   return <>
     <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS, Conta Azul), papel timbrado e webhook" />
-    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['wa', 'WhatsApp (WA-AKG)'], ['at', 'Atendimento'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
-    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'at' && <AtendimentoTab />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
+    <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['wa', 'WhatsApp (WA-AKG)'], ['at', 'Atendimento'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
+    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'at' && <AtendimentoTab />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
 }

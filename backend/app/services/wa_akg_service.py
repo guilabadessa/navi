@@ -1,13 +1,13 @@
-"""Integracao com o WA-AKG (gateway WhatsApp). Mesma interface do EvolutionService: quem chama nao sabe qual provedor esta ativo."""
+"""Integracao com o WA-AKG (gateway WhatsApp): envio de texto/midia/documento, status e QR de pareamento."""
 import re
 from urllib.parse import quote
 
 import httpx
 
-from .evolution_service import EvolutionError, _br_alternative, normalize_target
+from .wa_common import WhatsAppError, _br_alternative, normalize_target
 
 
-class WaAkgError(EvolutionError):
+class WaAkgError(WhatsAppError):
     pass
 
 

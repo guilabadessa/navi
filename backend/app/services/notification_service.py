@@ -1,4 +1,4 @@
-"""Regras de alerta -> despachos (dispatches) -> envio via Evolution. Mensagens por template."""
+"""Regras de alerta -> despachos (dispatches) -> envio via WhatsApp. Mensagens por template."""
 import fnmatch
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -11,7 +11,7 @@ from ..util import ITEM_LABEL, KIND_LABEL
 from ..models import INCIDENT_MIN_SEV, SEVERITIES, AlertRule, Client, Dispatch, Event, MessageTemplate
 from . import commlog, destinations
 from .email_service import split_addrs
-from .evolution_service import normalize_target
+from .wa_common import normalize_target
 
 ALERT_WINDOW_S = 20 * 60  # igual a event_service.ALERT_WINDOW
 

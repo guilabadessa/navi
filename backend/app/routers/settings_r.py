@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..models import HealthCheck
-from ..schemas import EvolutionSettingsIn, LetterheadIn, PreviewIn, SmtpSettingsIn, TestSend
+from ..schemas import LetterheadIn, PreviewIn, SmtpSettingsIn, TestSend
 from ..security import require
 from ..services import factory, mailer
 from ..services.email_service import split_addrs
@@ -23,34 +23,6 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 @router.get("/status")
 def status(db: Session = Depends(get_db), _=Depends(require("dashboard.view"))):
     return {h.name: {"ok": h.ok, "detail": h.detail, "checked_at": h.checked_at.isoformat()} for h in db.scalars(select(HealthCheck))}
-
-
-@router.get("/evolution")
-def evo(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
-    return {"url": S.get(db, "evolution.url"), "instance": S.get(db, "evolution.instance"), "api_key_set": bool(S.get(db, "evolution.api_key"))}
-
-
-@router.put("/evolution")
-def evo_put(body: EvolutionSettingsIn, request: Request, db: Session = Depends(get_db), me=Depends(require("settings.edit"))):
-    S.put(db, "evolution.url", body.url, me.email)
-    S.put(db, "evolution.instance", body.instance, me.email)
-    if body.api_key:
-        S.put(db, "evolution.api_key", body.api_key, me.email)
-    audit.log(db, request, "settings_evolution", "settings", detail={"url": body.url, "instance": body.instance, "key_changed": bool(body.api_key)})
-    db.commit()
-    return {"ok": True}
-
-
-@router.post("/evolution/test")
-def evo_test(request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
-    try:
-        st = factory.evolution(db).status()
-        res = {"ok": True, "detail": f"Conectado: {json.dumps(st)[:200]}"}
-    except Exception as e:  # noqa: BLE001
-        res = {"ok": False, "detail": str(e)}
-    audit.log(db, request, "evolution_test", "settings", result="ok" if res["ok"] else "falha")
-    db.commit()
-    return res
 
 
 @router.get("/smtp")

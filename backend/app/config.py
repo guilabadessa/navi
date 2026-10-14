@@ -26,9 +26,6 @@ class Settings(BaseSettings):
     # Integracoes (podem ser sobrescritas no painel -> tabela settings)
     ZABBIX_URL: str = "https://sonar.orcati.com.br/zabbix/api_jsonrpc.php"
     ZABBIX_API_TOKEN: str = ""
-    EVOLUTION_API_URL: str = "https://orcafy.orcati.com.br/evolution"
-    EVOLUTION_INSTANCE: str = ""
-    EVOLUTION_API_KEY: str = ""
     ACRONIS_URL: str = ""
     ACRONIS_CLIENT_ID: str = ""
     ACRONIS_CLIENT_SECRET: str = ""

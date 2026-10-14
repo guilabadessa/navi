@@ -163,7 +163,7 @@ def test_on_inbound_chama_atendimento_e_engole_erro(monkeypatch):
     from app.services import wa_inbound
     chamado = {}
     monkeypatch.setattr("app.services.atendimento_service.handle_inbound", lambda db, m, gw: chamado.setdefault("ok", True))
-    monkeypatch.setattr("app.services.factory.wa_akg", lambda db: MagicMock())
+    monkeypatch.setattr("app.services.factory.whatsapp", lambda db: MagicMock())
     db = MagicMock()
     wa_inbound.on_inbound(db, _msg("oi"))
     assert chamado["ok"] and db.commit.called
@@ -235,7 +235,7 @@ def test_enviar_falha_do_gateway_da_502_e_guarda_a_mensagem(monkeypatch):
     c, db = _api()
     db.get.return_value = _conv("atendendo")
     db.scalar.return_value = None
-    monkeypatch.setattr("app.services.factory.wa_akg", lambda d: MagicMock(send_text=MagicMock(side_effect=WaAkgError("fora"))))
+    monkeypatch.setattr("app.services.factory.whatsapp", lambda d: MagicMock(send_text=MagicMock(side_effect=WaAkgError("fora"))))
     try:
         r = c.post("/cliente/api/atendimento/conversations/1/send", json={"text": "ola"})
         assert r.status_code == 502 and db.commit.called

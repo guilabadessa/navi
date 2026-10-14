@@ -1,5 +1,5 @@
 # NAVI — Inteligência operacional Orca TI
-Plataforma de NOC da **Orca TI**: monitoramento (Zabbix), incidentes, SLA/KPIs, alertas por WhatsApp (Evolution API),
+Plataforma de NOC da **Orca TI**: monitoramento (Zabbix), incidentes, SLA/KPIs, alertas por WhatsApp (gateway WA-AKG),
 relatórios executivos/técnicos em PDF e rotinas agendadas. Acesso: `https://navi.orcati.com.br/cliente/`.
 
 ## Arquitetura
@@ -7,11 +7,11 @@ relatórios executivos/técnicos em PDF e rotinas agendadas. Acesso: `https://na
 Navegador ──HTTPS──> Apache (já existente, /zabbix intocado) ──/cliente──> 127.0.0.1:8100  [container api]
                                                                          │  FastAPI + SPA React (Vite)
 Zabbix Server/API  <───── ZabbixService ─────────────────────────────────┤
-Evolution API      <───── EvolutionService ──────────────[container worker: APScheduler]
+WA-AKG (WhatsApp)  <───── WaAkgService ───────────────[container worker: APScheduler]
 SMTP (Office 365)  <───── EmailService                    sync · eventos · alertas · relatórios · backup · health
 PostgreSQL 16 (172.16.31.208, db `navi`, SSL)  <── SQLAlchemy/Alembic
 ```
-- `backend/app`: `routers/` (API), `services/` (zabbix, evolution, email, sync, event, notification, kpi, report, delivery, navi), `jobs.py` (worker), `models.py`, `security.py`.
+- `backend/app`: `routers/` (API), `services/` (zabbix, wa_akg, email, sync, event, notification, kpi, report, delivery, navi), `jobs.py` (worker), `models.py`, `security.py`.
 - `frontend/src`: React (Dashboard, Clientes, Monitoramento, Eventos, Alertas, Relatórios, Rotinas, SLA, WhatsApp, E-mail, NAVI IA, Usuários, Auditoria, Configurações).
 - O banco do Zabbix **não** é usado como banco da NAVI e nada é gravado nele.
 - **API-first / retenção mínima**: a NAVI espelha só grupos e hosts (e remove o que sumiu do Zabbix). Itens, triggers e os eventos
@@ -45,7 +45,7 @@ segredos só em `.env`/banco cifrado (Fernet) · nenhuma chave no frontend · au
 | 1 Auditoria | ✅ `docs/01-auditoria-fase1.md` |
 | 2 Base (Docker, banco, migrations, login, admin, UI) | ✅ |
 | 3 Zabbix (API, sync, clientes↔grupos, hosts, eventos) | ✅ código pronto · **falta o token da API** |
-| 4 Alertas (webhook, PROBLEM/RESOLVED, Evolution, quoted reply) | ✅ código pronto · **falta instância/API key da Evolution** |
+| 4 Alertas (webhook, PROBLEM/RESOLVED, WA-AKG, quoted reply) | ✅ código pronto · gateway WA-AKG em produção |
 | 5 Relatórios (KPIs, PDF Orca, histórico, filtros) | ✅ validado ponta a ponta |
 | 6 Agendamento (diário/semanal/mensal, WA, e-mail) | ✅ código pronto · e-mail depende do SMTP |
 | 7 NAVI IA | ✅ consultas determinísticas · LLM plugável (`NaviService`) |

@@ -1,6 +1,6 @@
 # Operação do atendimento por WhatsApp
 
-- **Número:** pareado no WA-AKG (sessão `orca`). Provedor ativo em Configurações > WhatsApp. Voltar para a Evolution é trocar o provedor ativo.
+- **Número:** pareado no WA-AKG (sessão `orca`). Conexão em Configurações > WhatsApp (WA-AKG). A Evolution foi removida do NAVI.
 - **Fluxo:** Atendimento > "Fluxo de atendimento". Salvar vale para as próximas mensagens; conversas em andamento seguem o passo em que estão (se o passo foi removido, vão para a fila Geral). "Restaurar padrão" volta ao fluxo original.
 - **Filas e avisos:** Configurações > Atendimento (destinos por fila, tempo de espera em alerta, inatividade, respostas prontas).
 - **Encerramento automático:** sem mensagem de ninguém por 24 h (configurável; 0 desliga) a conversa em fila ou em atendimento é encerrada com aviso ao cliente. Menus de retorno e perguntas aceitam "0" para voltar.

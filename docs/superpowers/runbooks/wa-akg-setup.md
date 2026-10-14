@@ -17,11 +17,11 @@ Login: `WA_AKG_ADMIN_EMAIL` / `WA_AKG_ADMIN_PASSWORD` do `.env`.
 3. Webhook da sessão `orca`: URL `http://api:8100/cliente/api/wa/webhook`, um **secret** forte, eventos `message.received` e `message.sent`.
 
 ## 4. NAVI
-Configurações > WhatsApp (WA-AKG): URL `http://wa-akg:3000`, sessão `orca`, API key, mesmo secret do webhook. Testar conexão. Manter o provedor em **Evolution** até validar.
+Configurações > WhatsApp (WA-AKG): URL `http://wa-akg:3000`, sessão `orca`, API key, mesmo secret do webhook. Testar conexão..
 
 ## 5. Trocar
 Provedor ativo = WA-AKG > Salvar > testar um alerta/aviso real. Adicionar o número novo aos grupos de aviso do NOC e das filas.
-Rollback: provedor de volta para Evolution (imediato). Manter a Evolution configurada por 1 semana.
+A Evolution foi removida do NAVI (config, código e tela). Não há mais provedor alternativo.
 
 ## 6. Depois do aumento de RAM
 `swapoff /swapfile && rm /swapfile`.

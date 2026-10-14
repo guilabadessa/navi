@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..security import require
-from ..services import wa_inbound
+from ..services import factory, wa_inbound
 from ..services.wa_akg_service import WaAkgService
 
 router = APIRouter(prefix="/wa", tags=["whatsapp"])
@@ -36,7 +36,6 @@ async def webhook(request: Request, x_webhook_signature: str = Header(default=""
 
 
 class WaSettingsIn(BaseModel):
-    provider: str = Field(pattern="^(evolution|wa_akg)$")
     url: str = Field(max_length=512)
     session: str = Field(max_length=64)
     api_key: str | None = None
@@ -45,29 +44,27 @@ class WaSettingsIn(BaseModel):
 
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db), _=Depends(require("settings.view"))):
-    return {"provider": S.get(db, "whatsapp.provider", "evolution"), "url": S.get(db, "wa_akg.url"), "session": S.get(db, "wa_akg.session"),
+    return {"url": S.get(db, "wa_akg.url"), "session": S.get(db, "wa_akg.session"),
             "api_key_set": bool(S.get(db, "wa_akg.api_key")), "webhook_secret_set": bool(S.get(db, "wa_akg.webhook_secret")),
             "webhook_path": "/cliente/api/wa/webhook"}
 
 
 @router.put("/settings")
 def put_settings(body: WaSettingsIn, request: Request, db: Session = Depends(get_db), me=Depends(require("settings.edit"))):
-    S.put(db, "whatsapp.provider", body.provider, me.email)
     S.put(db, "wa_akg.url", body.url.strip(), me.email)
     S.put(db, "wa_akg.session", body.session.strip(), me.email)
     if body.api_key:
         S.put(db, "wa_akg.api_key", body.api_key, me.email)
     if body.webhook_secret:
         S.put(db, "wa_akg.webhook_secret", body.webhook_secret, me.email)
-    audit.log(db, request, "settings_whatsapp", "settings", detail={"provedor": body.provider, "url": body.url, "sessao": body.session,
+    audit.log(db, request, "settings_whatsapp", "settings", detail={"url": body.url, "sessao": body.session,
                                                                     "key_changed": bool(body.api_key), "secret_changed": bool(body.webhook_secret)})
     db.commit()
     return {"ok": True}
 
 
 def _gateway(db: Session) -> WaAkgService:
-    """Sempre o WA-AKG (nao o provedor ativo): precisa dar para testar e parear antes de trocar o provedor."""
-    return WaAkgService(S.get(db, "wa_akg.url"), S.get(db, "wa_akg.session"), S.get(db, "wa_akg.api_key"))
+    return factory.whatsapp(db)
 
 
 @router.post("/test")

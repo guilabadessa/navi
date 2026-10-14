@@ -10,15 +10,13 @@ from .config import get_settings
 from .models import Setting
 from .security import decrypt, encrypt
 
-SECRET_KEYS = {"acronis.secret", "acronis2.secret", "ems.api_key", "ems.password", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key", "contaazul.client_secret", "contaazul.access_token", "contaazul.refresh_token", "push.vapid_private", "push.fcm_sa", "wa_akg.api_key", "wa_akg.webhook_secret"}
+SECRET_KEYS = {"acronis.secret", "acronis2.secret", "ems.api_key", "ems.password", "zabbix.token", "smtp.password", "webhook.token", "llm.api_key", "contaazul.client_secret", "contaazul.access_token", "contaazul.refresh_token", "push.vapid_private", "push.fcm_sa", "wa_akg.api_key", "wa_akg.webhook_secret"}
 
 
 def _env_default(key: str) -> str:
     s = get_settings()
     return {
         "zabbix.url": s.ZABBIX_URL, "zabbix.token": s.ZABBIX_API_TOKEN,
-        "evolution.url": s.EVOLUTION_API_URL, "evolution.instance": s.EVOLUTION_INSTANCE,
-        "evolution.api_key": s.EVOLUTION_API_KEY,
         "smtp.host": s.SMTP_HOST, "smtp.port": str(s.SMTP_PORT), "smtp.user": s.SMTP_USER,
         "smtp.password": s.SMTP_PASSWORD, "smtp.from": s.SMTP_FROM,
         "webhook.token": s.NAVI_WEBHOOK_TOKEN,

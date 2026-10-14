@@ -27,7 +27,7 @@ def deliver(db: Session, run: ReportRun, rep: Report, wa_dest: str | None = None
         commlog.record("whatsapp", "Relatório", None, "failed", run.wa_status, rep.name, cid)
     if wa:
         try:
-            factory.evolution(db).send_document(wa, data, fname, caption=(f"Segue anexo o relatório gerado automaticamente pela plataforma NAVI da Orca TI.\n\n"
+            factory.whatsapp(db).send_document(wa, data, fname, caption=(f"Segue anexo o relatório gerado automaticamente pela plataforma NAVI da Orca TI.\n\n"
                                                           f"🏢 *{cname}*\n📅 Período: {plabel}"))
             run.wa_status = "enviado"
             commlog.record("whatsapp", "Relatório", wa, "sent", None, rep.name, cid)

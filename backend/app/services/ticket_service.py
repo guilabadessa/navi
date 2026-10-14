@@ -1,5 +1,5 @@
 """Chamados (helpdesk): destinatarios (fila + observadores) e aviso por e-mail/WhatsApp.
-Reusa os mesmos canais dos alertas (mailer/evolution); nao atrapalha o motor de alertas (tabelas separadas).
+Reusa os mesmos canais dos alertas (mailer/whatsapp); nao atrapalha o motor de alertas (tabelas separadas).
 Numeracao do chamado: atribuida pelo banco (sequencia `ticket_number_seq`), nunca calculada aqui -
 evita a corrida de dois chamados simultaneos ganharem o mesmo numero (SELECT MAX+1 nao e seguro sob concorrencia)."""
 import logging
@@ -22,7 +22,7 @@ PRIORITY_LABEL = {"baixa": "Baixa", "media": "Média", "alta": "Alta", "critica"
 
 def _wa_send(db: Session, jid: str, text: str, ticket: Ticket):
     try:
-        factory.evolution(db).send_text(jid, text)
+        factory.whatsapp(db).send_text(jid, text)
     except Exception as e:  # noqa: BLE001
         log.warning("falha ao avisar WhatsApp do chamado #%s (%s): %s", ticket.number, jid, e)
 

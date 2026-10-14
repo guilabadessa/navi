@@ -55,7 +55,7 @@ const NAV = [
 ]
 
 // Integracoes: nada na barra quando tudo esta bem; so aparece a que estiver com problema (o detalhe completo fica em Configuracoes)
-const INTEGRATIONS = [['zabbix', 'Zabbix'], ['evolution', 'Evolution'], ['email', 'E-mail'], ['acronis', 'Acronis'], ['acronis_us', 'Acronis EUA'], ['ems', 'EMS'], ['cloud', 'Cloud Orca'], ['contaazul', 'Conta Azul'], ['navi', 'NAVI']]
+const INTEGRATIONS = [['zabbix', 'Zabbix'], ['whatsapp', 'WhatsApp'], ['email', 'E-mail'], ['acronis', 'Acronis'], ['acronis_us', 'Acronis EUA'], ['ems', 'EMS'], ['cloud', 'Cloud Orca'], ['contaazul', 'Conta Azul'], ['navi', 'NAVI']]
 function StatusPills() {
   const [st, setSt] = useState({})
   useEffect(() => { const f = () => get('/settings/status').then(setSt).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t) }, [])

@@ -93,13 +93,13 @@ def poll_events(db):
 @tracked("dispatch_alerts")
 def dispatch_alerts(db):
     if db.scalar(select(Dispatch.id).where(Dispatch.status == "pending", Dispatch.due_at <= datetime.now(timezone.utc)).limit(1)):
-        notification_service.process_due(db, factory.evolution(db))
+        notification_service.process_due(db, factory.whatsapp(db))
 
 
 @tracked("atendimento_tick")
 def atendimento_tick(db):
     from .services import atendimento_service
-    gw = factory.wa_akg(db)
+    gw = factory.whatsapp(db)
     n = atendimento_service.tick(db, gw)
     m = atendimento_service.close_inactive(db, gw)
     db.commit()
@@ -173,7 +173,7 @@ def ticket_escalation(db):
 @tracked("daily_digest")
 def daily_digest(db):
     if noc_service.digest_due(db):
-        res = noc_service.send_digest(db, factory.evolution(db))
+        res = noc_service.send_digest(db, factory.whatsapp(db))
         now_local = datetime.now(ZoneInfo(get_settings().NAVI_TZ))
         S.put(db, "digest.last", now_local.strftime("%Y-%m-%d"))
         S.put(db, "digest.status", f"{now_local:%d/%m %H:%M} · {res}"[:250])
@@ -221,11 +221,10 @@ def health_checks(db):
     except Exception as e:  # noqa: BLE001
         put("zabbix", False, e)
     try:
-        st = factory.evolution(db).status()
-        state = (st.get("instance") or st).get("state", "ok")
-        put("evolution", state in ("open", "ok"), f"estado: {state}")
+        state = factory.whatsapp(db).status().get("state", "close")
+        put("whatsapp", state == "open", f"estado: {state}")
     except Exception as e:  # noqa: BLE001
-        put("evolution", False, e)
+        put("whatsapp", False, e)
     try:
         factory.email(db).test()
         put("email", True, "SMTP autenticado")

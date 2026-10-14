@@ -10,7 +10,7 @@ from ..config import get_settings
 from ..models import INCIDENT_MIN_SEV, SEVERITIES, Client, Dispatch, Event, HealthCheck, JobStatus
 from . import commlog
 from .email_service import split_addrs
-from .evolution_service import normalize_target
+from .wa_common import normalize_target
 
 DEFAULTS = {
     "noc.wa": "", "noc.emails": "",

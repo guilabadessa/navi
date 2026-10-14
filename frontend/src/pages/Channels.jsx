@@ -11,14 +11,14 @@ const Dot = ({ ok }) => <i className="dot" style={{ background: ok == null ? '#b
 export function WhatsApp() {
   const me = useAuth(); const toast = useToast(); const [page, setPage] = useState(1); const [st, setSt] = useState(''); const [to, setTo] = useState(''); const [text, setText] = useState('Teste de envio — NAVI Orca TI ✅'); const [busy, setBusy] = useState(false)
   const { data, err } = useLoad(() => get(`/alerts/history?channel=whatsapp&page=${page}&size=40${st ? '&status=' + st : ''}`), [page, st], 15000)
-  const health = useLoad(() => get('/settings/status'), [], 30000); const cfg = useLoad(() => get('/settings/evolution').catch(() => null), [])
-  const evo = health.data?.evolution
+  const health = useLoad(() => get('/settings/status'), [], 30000); const cfg = useLoad(() => get('/wa/settings').catch(() => null), [])
+  const evo = health.data?.whatsapp
   const test = async () => { setBusy(true); try { const r = await post('/alerts/test-whatsapp', { to, text }); toast(r.detail, !r.ok) } catch (e) { toast(e.message, true) } finally { setBusy(false) } }
   return <>
-    <PageHead title="WhatsApp" desc="Histórico de tudo que a NAVI enviou por WhatsApp — alertas, relatórios, resumo do NOC e testes — inclusive as falhas"><Link className="btn sm" to="/configuracoes">Configurar Evolution</Link></PageHead>
+    <PageHead title="WhatsApp" desc="Histórico de tudo que a NAVI enviou por WhatsApp — alertas, relatórios, resumo do NOC e testes — inclusive as falhas"><Link className="btn sm" to="/configuracoes">Configurar WhatsApp</Link></PageHead>
     <div className="chanbar">
       <span title={evo?.detail}><Dot ok={evo ? evo.ok : null} /> {evo ? (evo.ok ? 'Conectado' : 'Com problema') : 'Verificando…'}</span>
-      {cfg.data && <span>Servidor: <b>{(cfg.data.url || '—').replace(/^https?:\/\//, '')}</b>{cfg.data.instance ? ` · instância ${cfg.data.instance}` : ''}</span>}
+      {cfg.data && <span>Servidor: <b>{(cfg.data.url || '—').replace(/^https?:\/\//, '')}</b>{cfg.data.session ? ` · sessão ${cfg.data.session}` : ''}</span>}
       <span>{data ? `${data.total} mensagem(ns)` : ''}</span>
       {can(me, 'alerts.edit') && <span className="chantest"><input placeholder="Número ou grupo para teste" value={to} onChange={e => setTo(maskTarget(e.target.value))} /><input placeholder="Mensagem" value={text} onChange={e => setText(e.target.value)} /><button className="btn sm" disabled={!to || busy} onClick={test}>{busy ? 'Enviando…' : 'Enviar teste'}</button></span>}</div>
     <div className="bar"><select value={st} onChange={e => { setSt(e.target.value); setPage(1) }}><option value="">Todos os status</option><option value="pending">Pendentes</option><option value="sent">Enviados</option><option value="failed">Falhas</option><option value="skipped">Ignorados</option></select></div>

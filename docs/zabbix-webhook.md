@@ -37,10 +37,10 @@ A consulta por API continua como rede de segurança (se o webhook falhar, o even
 4. **Action**: Alerts → Actions → Trigger actions → *Create action* `NAVI - eventos` (mesmas condições da action atual).
    - Operations: *Send message* → user `navi-webhook` → media type `NAVI Webhook`.
    - Recovery operations: o mesmo.
-   - **Crie uma action nova** e deixe a atual (Evolution) intacta: as duas coexistem.
+   - **Crie uma action nova** e deixe a atual (WA-AKG) intacta: as duas coexistem.
 5. Confira em NAVI → Eventos: os novos eventos aparecem com origem `webhook`.
 
 ## Atenção: evitar mensagem duplicada
-Enquanto a action antiga (Zabbix → Evolution) estiver ativa, mantenha **desligado** o "WhatsApp" dos clientes na NAVI.
+Enquanto a action antiga (Zabbix → WA-AKG) estiver ativa, mantenha **desligado** o "WhatsApp" dos clientes na NAVI.
 Assim o webhook só registra o incidente (dashboard, SLA, relatórios) e o WhatsApp continua saindo pelo caminho atual.
 Quando for migrar: ligue o WhatsApp do cliente na NAVI e desative a operação antiga dessa action.

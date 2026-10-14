@@ -486,7 +486,7 @@ class SyncRun(Base):
 
 class HealthCheck(Base):
     __tablename__ = "health_checks"
-    name: Mapped[str] = mapped_column(String(32), primary_key=True)  # zabbix | evolution | email | navi
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)  # zabbix | whatsapp | email | navi
     ok: Mapped[bool] = mapped_column(Boolean, default=False)
     detail: Mapped[str | None] = mapped_column(String(512))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
