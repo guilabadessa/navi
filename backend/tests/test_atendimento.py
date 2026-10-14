@@ -505,6 +505,6 @@ def test_etiquetas_so_do_catalogo_e_renomear_atualiza_conversas(monkeypatch):
         db.scalars.return_value.all.return_value = [conv]
         assert c.put("/cliente/api/atendimento/tags/1", json={"name": "VIP ouro", "color": "#222222"}).status_code == 200
         assert conv.tags == ["urgente", "VIP ouro"] and tag.name == "VIP ouro"
-        assert c.delete("/cliente/api/atendimento/tags/1").status_code == 200 and "VIP ouro" in conv.tags  # apagou a etiqueta antiga (nome ja trocado), nao a nova
+        assert c.delete("/cliente/api/atendimento/tags/1").status_code == 200 and conv.tags == ["urgente"]  # excluir remove a etiqueta das conversas
     finally:
         _done()
