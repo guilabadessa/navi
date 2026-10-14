@@ -53,6 +53,7 @@ function Bubble({ m }) {
 function Chat({ conv, me, onChange }) {
   const toast = useToast(); const act = can(me, 'atendimento.act')
   const [msgs, setMsgs] = useState([]); const [text, setText] = useState(''); const [modal, setModal] = useState(null); const [busy, setBusy] = useState(false)
+  const cfg = useLoad(() => get('/atendimento/config'), [])
   const last = useRef(0); const box = useRef(null); const file = useRef(null)
   useEffect(() => { setMsgs([]); last.current = 0 }, [conv.id])
   useEffect(() => {
@@ -87,10 +88,13 @@ function Chat({ conv, me, onChange }) {
           <button className="btn" onClick={() => setModal('transfer')}><ArrowRightLeft size={16} />Transferir</button>
           <button className="btn" onClick={() => setModal('link')}><Link2 size={16} />Cliente</button>
           <button className="btn" onClick={() => { if (confirm('Encerrar este atendimento e avisar o cliente?')) call('close', { send_closing: true }, 'Atendimento encerrado') }}><X size={16} />Encerrar</button></>}</div></div>
+    {conv.client && conv.client.tickets?.length > 0 && <div className="at-tk"><b>Chamados abertos:</b> {conv.client.tickets.map(t => <Link key={t.id} to="/chamados" title={t.subject}>#{t.number} {t.subject.slice(0, 40)}</Link>)}</div>}
     <div className="at-body" ref={box}>{msgs.map(m => <Bubble key={m.id} m={m} />)}{!msgs.length && <div className="empty">Sem mensagens.</div>}</div>
     {act && !closed && (conv.state === 'atendendo' ? <div className="at-send">
       <input type="file" ref={file} hidden onChange={e => { sendFile(e.target.files[0]); e.target.value = '' }} />
       <button className="btn" aria-label="Anexar arquivo" onClick={() => file.current.click()}><Paperclip size={16} /></button>
+      {cfg.data?.quick_replies?.length > 0 && <select aria-label="Respostas prontas" value="" onChange={e => { const r = cfg.data.quick_replies[+e.target.value]; if (r) setText(t => (t ? t + '\n' : '') + r.text) }} style={{ width: 130 }}>
+        <option value="">Respostas…</option>{cfg.data.quick_replies.map((r, i) => <option key={i} value={i}>{r.title}</option>)}</select>}
       <textarea value={text} onChange={e => setText(e.target.value)} placeholder={mine ? 'Digite a resposta…' : 'Esta conversa é de outro analista; você pode responder mesmo assim.'} rows={2}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
       <button className="btn primary" disabled={busy || !text.trim()} onClick={send}><Send size={16} />Enviar</button></div>

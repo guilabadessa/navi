@@ -334,3 +334,5 @@ select{max-width:100%}
 .bp.sel{box-shadow:0 0 0 3px rgba(30,115,248,.35)}.bp.err{border-color:#bd1723;box-shadow:0 0 0 3px rgba(189,23,35,.25)}
 .bp-h{position:absolute;right:-6px;transform:translateX(100%);font-size:10.5px;white-space:nowrap;opacity:.85;pointer-events:none;background:var(--card);padding:0 3px;border-radius:4px}
 @media(max-width:1100px){.fl-grid{grid-template-columns:1fr}}
+.at-tk{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:6px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.at-tk a{color:var(--blue);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:1px 10px}

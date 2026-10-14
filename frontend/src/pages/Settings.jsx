@@ -59,12 +59,13 @@ function WaAkgTab({ edit }) {
 const AT_Q = [['comercial', 'Comercial'], ['financeiro', 'Financeiro'], ['suporte', 'Suporte'], ['geral', 'Geral']]
 function AtendimentoTab({ edit }) {
   const toast = useToast(); const { data, reload } = useLoad(() => get('/atendimento/config'), []); const [f, setF] = useState(null)
-  useEffect(() => { if (data) setF({ ...data, queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: data.queues[q].alert_enabled, alert_to: (data.queues[q].alert_to || []).join('\n') }])) }) }, [data])
+  useEffect(() => { if (data) setF({ ...data, quick_replies: (data.quick_replies || []).map(r => r.title + ' | ' + r.text).join('\n'), queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: data.queues[q].alert_enabled, alert_to: (data.queues[q].alert_to || []).join('\n') }])) }) }, [data])
   if (!f) return <Loading />
   const setQ = (q, k, v) => setF({ ...f, queues: { ...f.queues, [q]: { ...f.queues[q], [k]: v } } })
   const save = async () => {
     try {
-      await put('/atendimento/config', { greeting: f.greeting, menu_timeout_min: +f.menu_timeout_min, wait_alert_min: +f.wait_alert_min, closing_message: f.closing_message,
+      await put('/atendimento/config', { greeting: f.greeting, menu_timeout_min: +f.menu_timeout_min, wait_alert_min: +f.wait_alert_min, closing_message: f.closing_message, inactivity_hours: +f.inactivity_hours, inactivity_message: f.inactivity_message,
+        quick_replies: f.quick_replies.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf('|'); return i < 0 ? { title: l.slice(0, 40), text: l } : { title: l.slice(0, i).trim(), text: l.slice(i + 1).trim() } }).filter(r => r.title && r.text),
         queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: f.queues[q].alert_enabled, alert_to: f.queues[q].alert_to.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean) }])) })
       toast('Salvo'); reload()
     } catch (e) { toast(e.message, true) }
@@ -73,7 +74,10 @@ function AtendimentoTab({ edit }) {
     <p className="sub" style={{ marginBottom: 12 }}>O menu, as perguntas (CNPJ), a abertura de chamado e o destino de cada opção ficam no <Link to="/atendimento/fluxo">fluxo de atendimento</Link> (diagrama editável).</p>
     <div className="row r2"><Field label="TEMPO PADRÃO SEM RESPOSTA (min)" hint="Vale para os passos do fluxo que não definem o próprio tempo."><input type="number" min="1" max="60" value={f.menu_timeout_min} onChange={e => setF({ ...f, menu_timeout_min: e.target.value })} disabled={!edit} /></Field>
       <Field label="ESPERA EM ALERTA (min)" hint="A fila fica vermelha no monitor acima deste tempo."><input type="number" min="1" max="240" value={f.wait_alert_min} onChange={e => setF({ ...f, wait_alert_min: e.target.value })} disabled={!edit} /></Field></div>
-    <Field label="MENSAGEM DE ENCERRAMENTO"><input value={f.closing_message} onChange={e => setF({ ...f, closing_message: e.target.value })} disabled={!edit} /></Field>
+    <Field label="MENSAGEM DE ENCERRAMENTO (quando o analista encerra)"><input value={f.closing_message} onChange={e => setF({ ...f, closing_message: e.target.value })} disabled={!edit} /></Field>
+    <div className="row r2"><Field label="ENCERRAR POR INATIVIDADE (horas)" hint="Sem mensagem de ninguém por esse tempo, o atendimento é encerrado. 0 desliga."><input type="number" min="0" max="720" value={f.inactivity_hours} onChange={e => setF({ ...f, inactivity_hours: e.target.value })} disabled={!edit} /></Field>
+      <Field label="MENSAGEM DE INATIVIDADE"><input value={f.inactivity_message} onChange={e => setF({ ...f, inactivity_message: e.target.value })} disabled={!edit} /></Field></div>
+    <Field label="RESPOSTAS PRONTAS DO ANALISTA" hint="Uma por linha, no formato: título | texto. Aparecem no chat para inserir com um clique."><textarea style={{ minHeight: 110 }} value={f.quick_replies} onChange={e => setF({ ...f, quick_replies: e.target.value })} disabled={!edit} /></Field>
     <h3 style={{ margin: '18px 0 8px' }}>Aviso quando alguém entra na fila</h3>
     <p className="sub" style={{ marginBottom: 10 }}>Um número ou ID de grupo por linha. Todos os analistas veem todas as filas; isto define apenas quem é avisado.</p>
     <div className="row r2">{AT_Q.map(([q, l]) => <div key={q} className="card" style={{ padding: 14 }}>

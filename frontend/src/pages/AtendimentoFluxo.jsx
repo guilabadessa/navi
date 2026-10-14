@@ -20,9 +20,9 @@ const DEFAULTS = {
   condition: { var: 'client_id', op: 'not_empty', value: '' }, create_ticket: { subject: 'Atendimento via WhatsApp - {cliente}', body: '{descricao}', priority: 'media' },
   notify: { to: [], text: 'Novo contato: {nome}' }, enqueue: { queue: 'geral' }, end: { text: 'Atendimento encerrado.' },
 }
-const outs = (t, c) => ({ start: ['next'], message: ['next'], notify: ['next'], ask: ['ok', 'invalid', 'timeout'], lookup_client: ['found', 'retry', 'not_found'], condition: ['true', 'false'],
+const outs = (t, c) => ({ start: ['next'], message: ['next'], notify: ['next'], ask: ['ok', 'invalid', 'timeout', 'back'], lookup_client: ['found', 'retry', 'not_found'], condition: ['true', 'false'],
   create_ticket: ['next', 'error'], enqueue: [], end: [], menu: [...(c.options || []).map(o => 'opt:' + o.key), 'invalid', 'timeout'] }[t] || [])
-const HL = { next: '', ok: 'ok', invalid: 'inválido', timeout: 'tempo esgotado', found: 'achou', retry: 'tentar de novo', not_found: 'não achou', true: 'sim', false: 'não', error: 'erro' }
+const HL = { next: '', ok: 'ok', invalid: 'inválido', timeout: 'tempo esgotado', back: 'voltar (0)', found: 'achou', retry: 'tentar de novo', not_found: 'não achou', true: 'sim', false: 'não', error: 'erro' }
 const hlabel = (h, c) => h.startsWith('opt:') ? `${h.slice(4)} · ${((c.options || []).find(o => 'opt:' + o.key === h) || {}).label || ''}` : (HL[h] ?? h)
 const summary = (t, c) => ({ message: c.text, menu: c.text, ask: c.text, notify: c.text, end: c.text, enqueue: 'Fila: ' + (QUEUES.find(q => q[0] === c.queue) || ['', '?'])[1],
   lookup_client: 'CNPJ em {' + (c.var || '') + '}', condition: `{${c.var || ''}} ${c.op === 'equals' ? '= ' + c.value : c.op === 'empty' ? 'vazio?' : 'preenchido?'}`, create_ticket: c.subject, start: 'Primeira mensagem do cliente' }[t] || '')
