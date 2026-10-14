@@ -169,6 +169,9 @@ def plan_problem(db: Session, ev: Event):
     Abaixo de Media (Atencao, Informacao) o evento so e registrado: nao e incidente e nunca gera alerta."""
     if (ev.severity or 0) < INCIDENT_MIN_SEV:
         return 0
+    from . import silence_service
+    if silence_service.match(db, ev):  # silenciado pela tela de Eventos
+        return 0
     client = db.get(Client, ev.client_id) if ev.client_id else None
     now = datetime.now(timezone.utc)
     if client and client.maintenance_until and client.maintenance_until > now:
@@ -214,6 +217,11 @@ def plan_problem(db: Session, ev: Event):
 
 def plan_recovery(db: Session, ev: Event):
     """Cancela envios pendentes (oscilacao) e agenda a recuperacao para cada canal ja notificado."""
+    from . import silence_service
+    if silence_service.match(db, ev):  # silenciado: sem mensagem de recuperacao tambem
+        for d in db.scalars(select(Dispatch).where(Dispatch.event_id == ev.id, Dispatch.kind == "problem", Dispatch.status == "pending")).all():
+            d.status, d.error = "skipped", "Silenciado pela tela de Eventos"
+        return 0
     client = db.get(Client, ev.client_id) if ev.client_id else None
     sent = db.scalars(select(Dispatch).where(Dispatch.event_id == ev.id, Dispatch.kind == "problem")).all()
     from . import noc_service
@@ -445,6 +453,12 @@ def explain(db: Session, ev: Event) -> dict:
 
     client = db.get(Client, ev.client_id) if ev.client_id else None
     blocked = False
+    from . import silence_service
+    sil = silence_service.match(db, ev)
+    if sil:
+        until = "para sempre" if sil.until is None else f"até {fmt_dt(sil.until)}"
+        add("Silenciado", False, f"Alertas silenciados na tela de Eventos ({until}){': ' + sil.reason if sil.reason else ''}. Reative em Eventos > Silenciados.")
+        blocked = True
     if client:
         add("Cliente", True, client.trade_name)
     else:

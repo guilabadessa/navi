@@ -81,7 +81,11 @@ def escalate(db: Session) -> int:
                                               Event.severity >= c["escalation_min_severity"], Event.started_at >= now - timedelta(hours=24))))
     done = set(db.scalars(select(Dispatch.event_id).where(Dispatch.kind == "escalation", Dispatch.event_id.in_([e.id for e in evs]))))
     n = 0
+    from . import silence_service
+    sils = silence_service.active(db, now)
     for ev in escalation_candidates(evs, done, now, c["escalation_minutes"], c["escalation_min_severity"]):
+        if silence_service.match(db, ev, sils):
+            continue
         cl = db.get(Client, ev.client_id)
         if (cl and cl.maintenance_until and cl.maintenance_until > now) or maintenance_service.active(db, ev.client_id, now):
             continue
@@ -160,8 +164,10 @@ def digest_data(db: Session) -> dict:
     from . import maintenance_service
     now = datetime.now(timezone.utc)
     clients_all = {c.id: c for c in db.scalars(select(Client))}
-    evs = list(db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV)
-                          .order_by(Event.severity.desc(), Event.started_at)))
+    from . import silence_service
+    sils = silence_service.active(db, now)
+    evs = [e for e in db.scalars(select(Event).where(Event.status == "PROBLEM", Event.severity >= INCIDENT_MIN_SEV)
+                                 .order_by(Event.severity.desc(), Event.started_at)) if not silence_service.match(db, e, sils)]
     maint, quiet = [], {}
 
     def in_maint(cid) -> bool:

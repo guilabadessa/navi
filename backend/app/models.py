@@ -492,6 +492,22 @@ class HealthCheck(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class EventSilence(Base):
+    """Silencia alertas de eventos (host, problema ou os dois), para sempre ou por um tempo. O evento continua registrado."""
+    __tablename__ = "event_silences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(16))  # host | problem_host | problem
+    kind: Mapped[str | None] = mapped_column(String(12))
+    host: Mapped[str | None] = mapped_column(String(255), index=True)
+    triggerid: Mapped[str | None] = mapped_column(String(64))
+    trigger_name: Mapped[str | None] = mapped_column(String(1024))
+    until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)  # vazio = permanente
+    reason: Mapped[str | None] = mapped_column(String(255))
+    asset_id: Mapped[int | None] = mapped_column(Integer)  # maquina de Backup/Endpoints marcada como ignorada junto (silencio permanente do host)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class FinDoc(Base):
     """Espelho (somente leitura) do financeiro do cliente no Conta Azul: titulos a receber e notas fiscais."""
     __tablename__ = "fin_docs"
