@@ -22,6 +22,11 @@ DEFAULT_CFG = {
     "menu_timeout_min": 2,
     "wait_alert_min": 5,
     "closing_message": "Atendimento encerrado. Obrigado pelo contato com a Orca TI!",
+    "inactivity_hours": 24,  # sem mensagens de ninguem por tanto tempo, o atendimento e encerrado (0 desliga)
+    "inactivity_message": "Encerramos este atendimento por falta de interação. Se precisar, é só enviar uma nova mensagem. 👋",
+    "quick_replies": [{"title": "Vou verificar", "text": "Olá! Vou verificar isso para você e já retorno."},
+                      {"title": "Pedir print", "text": "Pode nos enviar um print ou foto da tela com o erro, por favor?"},
+                      {"title": "Aguarde um instante", "text": "Só um instante, estou analisando."}],
     "queues": {q: {"alert_enabled": False, "alert_to": []} for q in QUEUES},
 }
 
@@ -206,6 +211,22 @@ def tick(db: Session, gw) -> int:
         _apply(db, conv, state, E.timeout(flow, state, RealHost(db, conv, gw)), gw)
         n += 1
     return n
+
+
+def close_inactive(db: Session, gw) -> int:
+    """Encerra conversas em fila ou em atendimento sem nenhuma mensagem (de ninguem) ha `inactivity_hours`."""
+    c = cfg(db)
+    horas = int(c.get("inactivity_hours") or 0)
+    if horas <= 0:
+        return 0
+    limite = now() - timedelta(hours=horas)
+    rows = db.scalars(select(WaConversation).where(WaConversation.state.in_(("aguardando", "atendendo")),
+                                                   func.coalesce(WaConversation.last_message_at, WaConversation.created_at) < limite)).all()
+    for conv in rows:
+        conv.state, conv.closed_at, conv.closed_by, conv.unread, conv.flow_node = "encerrada", now(), None, 0, None
+        if c.get("inactivity_message"):
+            _say(db, conv, gw, c["inactivity_message"])
+    return len(rows)
 
 
 def assume(db: Session, conv_id: int, user_id: int) -> bool:

@@ -99,10 +99,12 @@ def dispatch_alerts(db):
 @tracked("atendimento_tick")
 def atendimento_tick(db):
     from .services import atendimento_service
-    n = atendimento_service.tick(db, factory.wa_akg(db))
+    gw = factory.wa_akg(db)
+    n = atendimento_service.tick(db, gw)
+    m = atendimento_service.close_inactive(db, gw)
     db.commit()
-    if n:
-        log.info("atendimento: %s conversa(s) do menu foram para a fila geral", n)
+    if n or m:
+        log.info("atendimento: %s conversa(s) seguiram o tempo do fluxo, %s encerrada(s) por inatividade", n, m)
 
 
 @tracked("sync_acronis")

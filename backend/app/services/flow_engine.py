@@ -156,6 +156,8 @@ def answer(flow: Flow, state: State, text: str, host: Host) -> Outcome:
             host.say(render(d.get("text", ""), state.vars))
             return Outcome("waiting", timeout_min=d.get("timeout_min"), prompted=True)
         return run(flow, state, host, flow.go(nid, "invalid"))
+    if text.lower() in ("0", "voltar", "menu") and flow.go(nid, "back"):  # saida opcional: o cliente desiste e volta
+        return run(flow, state, host, flow.go(nid, "back"))
     kind = d.get("validate", "any")
     ok = cnpj_valid(text) if kind == "cnpj" else len(text) >= int(d.get("min_len") or 1)
     if ok:

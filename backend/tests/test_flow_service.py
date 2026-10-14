@@ -71,9 +71,32 @@ def test_padrao_financeiro_cnpj_invalido_duas_vezes_vai_ao_comercial():
     assert _sim(["2", "123", "abc"])["outcome"]["queue"] == "comercial"
 
 
-def test_padrao_suporte_abre_chamado():
-    r = _sim(["3", "11222333000181", "2", "Estamos sem internet no escritório"], {"11222333000181": {"id": 5, "name": "Echoes"}})
-    assert r["outcome"]["kind"] == "end" and any("SIM-1" in x["text"] or "#SIM-1" in x["text"] for x in r["transcript"])
+CL = {"11222333000181": {"id": 5, "name": "Echoes"}}
+
+
+def test_padrao_suporte_abre_chamado_e_pergunta_se_pode_encerrar():
+    r = _sim(["3", "11222333000181", "2", "Estamos sem internet no escritório"], CL)
+    assert r["outcome"]["kind"] == "waiting" and any("#SIM-1" in x["text"] for x in r["transcript"])
+    assert "mais alguma coisa" in r["transcript"][-1]["text"]
+    assert _sim(["3", "11222333000181", "2", "Estamos sem internet no escritório", "2"], CL)["outcome"]["kind"] == "end"
+
+
+def test_padrao_depois_do_chamado_pode_voltar_ao_menu_principal():
+    r = _sim(["3", "11222333000181", "2", "Estamos sem internet no escritório", "1"], CL)
+    assert r["outcome"]["kind"] == "waiting" and r["transcript"][-1]["text"] == "Menu"  # reenvia o menu principal
+
+
+def test_padrao_voltar_ao_menu_nas_perguntas_e_no_submenu():
+    for ins in (["2", "0"], ["3", "0"], ["3", "11222333000181", "0"]):
+        r = _sim(ins, CL)
+        assert r["outcome"]["kind"] == "waiting" and r["transcript"][-1]["text"] == "Menu", ins
+    r = _sim(["3", "11222333000181", "2", "0"], CL)  # da descricao volta ao submenu do suporte
+    assert "Voltar ao menu principal" in r["transcript"][-1]["text"]
+
+
+def test_padrao_depois_do_chamado_sem_resposta_ou_invalida_encerra():
+    base = ["3", "11222333000181", "2", "Estamos sem internet no escritório"]
+    assert _sim(base + ["x", "y"], CL)["outcome"]["kind"] == "end"
 
 
 def test_padrao_suporte_analista_e_descricao_curta():

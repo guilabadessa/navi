@@ -9,7 +9,7 @@ from . import flow_engine as E
 
 QUEUES = ("comercial", "financeiro", "suporte", "geral")
 NODE_TYPES = ("start", "message", "menu", "ask", "lookup_client", "condition", "create_ticket", "notify", "enqueue", "end")
-FIXED = {"start": ["next"], "message": ["next"], "notify": ["next"], "ask": ["ok", "invalid", "timeout"], "lookup_client": ["found", "retry", "not_found"],
+FIXED = {"start": ["next"], "message": ["next"], "notify": ["next"], "ask": ["ok", "invalid", "timeout", "back"], "lookup_client": ["found", "retry", "not_found"],
          "condition": ["true", "false"], "create_ticket": ["next", "error"], "enqueue": [], "end": []}
 REQUIRED = {"start": ["next"], "message": ["next"], "notify": ["next"], "ask": ["ok"], "lookup_client": ["found", "not_found"],
             "condition": ["true", "false"], "create_ticket": ["next"]}
@@ -30,23 +30,27 @@ def default_flow(greeting: str, timeout_min: int = 2) -> dict:
         _n("menu", "menu", 200, 240, text=greeting, options=[{"key": "1", "label": "Comercial", "aliases": "um"}, {"key": "2", "label": "Financeiro", "aliases": "dois"},
                                                             {"key": "3", "label": "Suporte", "aliases": "tres,três"}], timeout_min=timeout_min, max_invalid=1),
         _n("q_com", "enqueue", 520, 0, queue="comercial"),
-        _n("fin_ask", "ask", 520, 150, text="Para o financeiro, informe o CNPJ da sua empresa (somente números).", var="cnpj", validate="cnpj", max_attempts=2),
+        _n("fin_ask", "ask", 520, 150, text="Para o financeiro, informe o CNPJ da sua empresa (somente números).\nPara voltar ao menu, digite 0.", var="cnpj", validate="cnpj", max_attempts=2),
         _n("fin_lookup", "lookup_client", 800, 150, var="cnpj", max_tries=2),
         _n("fin_retry", "message", 800, 300, text="Não localizei esse CNPJ no nosso cadastro. Vamos tentar mais uma vez."),
         _n("fin_hello", "message", 1080, 130, text="Olá, {cliente}! Vou te encaminhar ao financeiro."),
         _n("q_fin", "enqueue", 1340, 130, queue="financeiro"),
         _n("no_cnpj", "message", 1080, 420, text="Não consegui identificar o seu cadastro. Vou te encaminhar ao comercial."),
-        _n("sup_ask", "ask", 520, 560, text="Para o suporte, informe o CNPJ da sua empresa (somente números).", var="cnpj", validate="cnpj", max_attempts=2),
+        _n("sup_ask", "ask", 520, 560, text="Para o suporte, informe o CNPJ da sua empresa (somente números).\nPara voltar ao menu, digite 0.", var="cnpj", validate="cnpj", max_attempts=2),
         _n("sup_lookup", "lookup_client", 800, 560, var="cnpj", max_tries=2),
         _n("sup_retry", "message", 800, 710, text="Não localizei esse CNPJ no nosso cadastro. Vamos tentar mais uma vez."),
-        _n("sup_menu", "menu", 1080, 540, text="Olá, {cliente}! Como podemos ajudar?\n1 - Falar com um analista\n2 - Abrir um chamado",
-           options=[{"key": "1", "label": "Falar com analista", "aliases": "um,analista"}, {"key": "2", "label": "Abrir chamado", "aliases": "dois,chamado"}], timeout_min=3, max_invalid=1),
+        _n("sup_menu", "menu", 1080, 540, text="Olá, {cliente}! Como podemos ajudar?\n1 - Falar com um analista\n2 - Abrir um chamado\n0 - Voltar ao menu principal",
+           options=[{"key": "1", "label": "Falar com analista", "aliases": "um,analista"}, {"key": "2", "label": "Abrir chamado", "aliases": "dois,chamado"},
+                    {"key": "0", "label": "Voltar ao menu", "aliases": "voltar,menu"}], timeout_min=3, max_invalid=1),
         _n("q_sup", "enqueue", 1380, 540, queue="suporte"),
-        _n("tk_ask", "ask", 1380, 680, text="Descreva o problema ou a solicitação:", var="descricao", validate="text", min_len=10, max_attempts=2,
+        _n("tk_ask", "ask", 1380, 680, text="Descreva o problema ou a solicitação (ou digite 0 para voltar):", var="descricao", validate="text", min_len=10, max_attempts=2,
            retry_text="Preciso de um pouco mais de detalhes. Descreva o problema ou a solicitação:"),
         _n("tk_create", "create_ticket", 1660, 680, subject="Suporte via WhatsApp - {cliente}", body="{descricao}\n\nAberto por {nome} ({telefone}) pelo atendimento do WhatsApp.", priority="media"),
-        _n("tk_end", "end", 1940, 680, text="Chamado #{chamado} aberto! Nossa equipe vai retornar por aqui. Obrigado!"),
-        _n("tk_err", "message", 1940, 820, text="Não consegui abrir o chamado agora. Vou te passar para um analista."),
+        _n("tk_done", "message", 1940, 680, text="Chamado #{chamado} aberto! Nossa equipe vai retornar por aqui."),
+        _n("tk_after", "menu", 2220, 660, text="Posso ajudar em mais alguma coisa?\n1 - Voltar ao menu principal\n2 - Encerrar o atendimento",
+           options=[{"key": "1", "label": "Voltar ao menu", "aliases": "voltar,menu,sim"}, {"key": "2", "label": "Encerrar", "aliases": "encerrar,nao,não"}], timeout_min=3, max_invalid=1),
+        _n("bye", "end", 2520, 700, text="Atendimento encerrado. Obrigado pelo contato com a Orca TI!"),
+        _n("tk_err", "message", 1940, 840, text="Não consegui abrir o chamado agora. Vou te passar para um analista."),
     ]
     edges = [
         _e("start", "menu"), _e("menu", "q_com", "opt:1"), _e("menu", "fin_ask", "opt:2"), _e("menu", "sup_ask", "opt:3"),
@@ -54,7 +58,9 @@ def default_flow(greeting: str, timeout_min: int = 2) -> dict:
         _e("fin_retry", "fin_ask"), _e("fin_lookup", "no_cnpj", "not_found"), _e("fin_hello", "q_fin"), _e("no_cnpj", "q_com"),
         _e("sup_ask", "sup_lookup", "ok"), _e("sup_ask", "no_cnpj", "invalid"), _e("sup_lookup", "sup_menu", "found"), _e("sup_lookup", "sup_retry", "retry"),
         _e("sup_retry", "sup_ask"), _e("sup_lookup", "no_cnpj", "not_found"), _e("sup_menu", "q_sup", "opt:1"), _e("sup_menu", "tk_ask", "opt:2"),
-        _e("tk_ask", "tk_create", "ok"), _e("tk_ask", "q_sup", "invalid"), _e("tk_create", "tk_end"), _e("tk_create", "tk_err", "error"), _e("tk_err", "q_sup"),
+        _e("tk_ask", "tk_create", "ok"), _e("tk_ask", "q_sup", "invalid"), _e("tk_create", "tk_done"), _e("tk_create", "tk_err", "error"), _e("tk_err", "q_sup"),
+        _e("tk_done", "tk_after"), _e("tk_after", "menu", "opt:1"), _e("tk_after", "bye", "opt:2"), _e("tk_after", "bye", "timeout"), _e("tk_after", "bye", "invalid"),
+        _e("fin_ask", "menu", "back"), _e("sup_ask", "menu", "back"), _e("tk_ask", "sup_menu", "back"), _e("sup_menu", "menu", "opt:0"),
     ]
     return {"nodes": nodes, "edges": edges}
 

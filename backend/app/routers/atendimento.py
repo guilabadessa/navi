@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import Client, User, WaConversation, WaMessage
+from ..models import TICKET_OPEN_STATUSES, Client, Ticket, User, WaConversation, WaMessage
 from ..security import require
 from ..services import atendimento_service as A, factory, flow_service as FS
 from ..services.wa_akg_service import WaAkgError
@@ -29,6 +29,11 @@ def _out(db: Session, rows: list[WaConversation]) -> list[dict]:
     ids = [c.id for c in rows]
     users = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_([c.assigned_to for c in rows if c.assigned_to] or [0]))).all()}
     clients = {c.id: c for c in db.scalars(select(Client).where(Client.id.in_([c.client_id for c in rows if c.client_id] or [0]))).all()}
+    open_t: dict[int, list] = {}
+    for t in db.scalars(select(Ticket).where(Ticket.client_id.in_(list(clients) or [0]), Ticket.status.in_(TICKET_OPEN_STATUSES), Ticket.internal.is_(False))
+                        .order_by(Ticket.id.desc()).limit(200)).all():
+        if len(open_t.setdefault(t.client_id, [])) < 3:
+            open_t[t.client_id].append({"id": t.id, "number": t.number, "subject": t.subject, "status": t.status})
     last = {}
     if ids:
         mx = db.execute(select(func.max(WaMessage.id)).where(WaMessage.conversation_id.in_(ids)).group_by(WaMessage.conversation_id)).scalars().all()
@@ -36,7 +41,7 @@ def _out(db: Session, rows: list[WaConversation]) -> list[dict]:
             last[m[0]] = m[1] or f"[{(m[2] or '').lower()}]"
     return [{"id": c.id, "jid": c.jid, "number": c.jid.split("@")[0], "name": c.push_name, "queue": c.queue, "state": c.state,
              "assigned_to": c.assigned_to, "assigned_name": users.get(c.assigned_to), "unread": c.unread or 0,
-             "client": ({"id": clients[c.client_id].id, "name": clients[c.client_id].trade_name, "cnpj": clients[c.client_id].cnpj}
+             "client": ({"id": clients[c.client_id].id, "name": clients[c.client_id].trade_name, "cnpj": clients[c.client_id].cnpj, "tickets": open_t.get(c.client_id, [])}
                         if c.client_id in clients else None),
              "queued_at": c.queued_at, "wait_seconds": _wait(c), "last_message_at": c.last_message_at, "last_text": last.get(c.id, "")} for c in rows]
 
@@ -225,11 +230,19 @@ class QueueCfg(BaseModel):
     alert_to: list[str] = Field(default_factory=list, max_length=10)
 
 
+class QuickReply(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+    text: str = Field(min_length=1, max_length=1000)
+
+
 class CfgIn(BaseModel):
     greeting: str = Field(min_length=1, max_length=1000)
     menu_timeout_min: int = Field(ge=1, le=60)
     wait_alert_min: int = Field(ge=1, le=240)
     closing_message: str = Field(max_length=500)
+    inactivity_hours: int = Field(default=24, ge=0, le=720)
+    inactivity_message: str = Field(default="", max_length=500)
+    quick_replies: list[QuickReply] = Field(default_factory=list, max_length=20)
     queues: dict[str, QueueCfg]
 
 

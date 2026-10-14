@@ -290,13 +290,17 @@ def test_cnpj_achado_vincula_o_cliente_e_mostra_o_menu_do_suporte(monkeypatch):
     assert conv.client_id == 9 and conv.flow_node == "sup_menu" and "Echoes" in gw.send_text.call_args.args[1]
 
 
-def test_chamado_pelo_fluxo_encerra_a_conversa_e_responde_o_codigo(monkeypatch):
+def test_chamado_pelo_fluxo_responde_o_codigo_e_pergunta_se_pode_encerrar(monkeypatch):
     monkeypatch.setattr(A, "cfg", lambda d: A.DEFAULT_CFG)
     monkeypatch.setattr(A.TS, "create_from_whatsapp", lambda *a, **k: MagicMock(number=1042))
     conv, gw = _conv(), MagicMock()
     conv.flow_node, conv.client_id, conv.flow_vars = "tk_ask", 9, {"cliente": "Echoes", "nome": "Joao", "telefone": "5514999999999", "cnpj": "x"}
     A.handle_inbound(_db(conv), _msg("Estamos sem internet no escritorio"), gw)
-    assert conv.state == "encerrada" and "#1042" in gw.send_text.call_args.args[1]
+    textos = [c.args[1] for c in gw.send_text.call_args_list]
+    assert any("#1042" in t for t in textos) and "mais alguma coisa" in textos[-1]
+    assert conv.state == "menu" and conv.flow_node == "tk_after"  # pergunta se pode encerrar ou voltar ao menu
+    A.handle_inbound(_db(conv), _msg("2"), gw)
+    assert conv.state == "encerrada"
 
 
 def test_flow_com_no_removido_manda_para_fila_geral(monkeypatch):
@@ -327,3 +331,19 @@ def test_api_fluxo_valida_salva_e_simula(monkeypatch):
         assert c2.post("/cliente/api/atendimento/flow/reset").status_code == 403
     finally:
         _done()
+
+
+def test_inatividade_encerra_conversa_em_fila_ou_atendimento(monkeypatch):
+    monkeypatch.setattr(A, "cfg", lambda d: A.DEFAULT_CFG)
+    conv, gw = _conv("atendendo"), MagicMock()
+    conv.assigned_to = 7
+    db = _db(None)
+    db.scalars.return_value.all.return_value = [conv]
+    assert A.close_inactive(db, gw) == 1 and conv.state == "encerrada" and conv.closed_by is None
+    assert "falta de interação" in gw.send_text.call_args.args[1]
+
+
+def test_inatividade_desligada_nao_faz_nada(monkeypatch):
+    monkeypatch.setattr(A, "cfg", lambda d: {**A.DEFAULT_CFG, "inactivity_hours": 0})
+    db = _db(None)
+    assert A.close_inactive(db, MagicMock()) == 0 and not db.scalars.called
