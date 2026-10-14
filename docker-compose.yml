@@ -33,3 +33,40 @@ services:
     command: ["worker"]
     mem_limit: 900m
     depends_on: [api]
+
+  wa-akg:
+    build:
+      context: ./wa-akg
+    image: wa-akg:1.6.3
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://wa_akg:${WA_AKG_DB_PASSWORD}@172.16.31.208:5432/wa_akg?schema=public&sslmode=require
+      AUTH_SECRET: ${WA_AKG_AUTH_SECRET}
+      BASE_URL: http://127.0.0.1:3100
+      NEXTAUTH_URL: http://127.0.0.1:3100
+      AUTH_TRUST_HOST: "true"
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3100/api
+      BAILEYS_LOG_LEVEL: error
+      NEXT_PUBLIC_SWAGGER_ENABLED: "false"
+      NEXT_PUBLIC_SWAGGER_PASSWORD: ${WA_AKG_SWAGGER_PASSWORD}
+      TZ: America/Sao_Paulo
+      ADMIN_EMAIL: ${WA_AKG_ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${WA_AKG_ADMIN_PASSWORD}
+      NODE_OPTIONS: --max-old-space-size=450
+    ports:
+      - "127.0.0.1:3100:3000"
+    volumes:
+      - wa_akg_data:/app/data
+      - wa_akg_uploads:/app/uploads
+    mem_limit: 700m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  wa_akg_data:
+  wa_akg_uploads:
