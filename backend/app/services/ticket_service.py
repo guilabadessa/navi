@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..models import Client, Ticket, TicketMessage, TicketQueue, TicketWatcher
 from . import factory, mailer
 
@@ -86,3 +87,25 @@ def check_escalations(db: Session, limit: int = 50) -> int:
     if n == limit:
         log.warning("escalonamento de chamados: atingiu o limite de %d nesta execucao, pode haver mais chamados vencidos", limit)
     return n
+
+
+def create_from_whatsapp(db: Session, client_id: int, subject: str, body: str, phone: str | None, name: str | None,
+                         priority: str = "media", queue_id: int | None = None) -> Ticket:
+    """Chamado aberto pelo fluxo de atendimento do WhatsApp: fica aguardando a Orca TI e avisa a fila como qualquer chamado novo."""
+    if priority not in ("baixa", "media", "alta", "critica"):
+        priority = "media"
+    if queue_id and not db.get(TicketQueue, queue_id):
+        queue_id = None
+    autor = (name or "").strip() or "WhatsApp"
+    t = Ticket(client_id=client_id, queue_id=queue_id, subject=subject.strip()[:255] or "Atendimento via WhatsApp", priority=priority,
+               origin="whatsapp", created_by_name=autor, contact_phone=(phone or None), status="aguardando_orca")
+    db.add(t)
+    db.flush()
+    msg = TicketMessage(ticket_id=t.id, author_name=autor, origin="whatsapp", body=body.strip() or "(sem descrição)", notified=True)
+    db.add(msg)
+    db.flush()
+    db.refresh(t)
+    audit.log(db, None, "ticket_create", "ticket", t.id, detail={"numero": t.number, "cliente_id": client_id, "origem": "whatsapp"})
+    db.commit()
+    notify(db, t, "aberto", msg)
+    return t

@@ -1,4 +1,5 @@
 """Atendimento por WhatsApp: menu, filas por setor e acoes do analista. Envio sempre pelo gateway (WA-AKG)."""
+import copy
 import json
 import logging
 import re
@@ -10,12 +11,12 @@ from sqlalchemy.orm import Session
 
 from .. import settings_store as S
 from ..models import Client, WaConversation, WaMessage
+from . import flow_engine as E, flow_service as FS, ticket_service as TS
 from .wa_akg_service import WaAkgError, WaAkgService
 
 log = logging.getLogger("navi.atendimento")
 QUEUES = ("comercial", "financeiro", "suporte", "geral")
 LABEL = {"comercial": "Comercial", "financeiro": "Financeiro", "suporte": "Suporte", "geral": "Atendimento geral"}
-OPTIONS = {"1": "comercial", "um": "comercial", "2": "financeiro", "dois": "financeiro", "3": "suporte", "tres": "suporte", "três": "suporte"}
 DEFAULT_CFG = {
     "greeting": "Bem-vindo à Orca TI.\nPara falar com o comercial, digite 1.\nPara o financeiro, digite 2.\nPara o suporte, digite 3.\nOu aguarde para ser atendido.",
     "menu_timeout_min": 2,
@@ -38,10 +39,6 @@ def cfg(db: Session) -> dict:
     out = {**DEFAULT_CFG, **{k: v for k, v in saved.items() if k in DEFAULT_CFG and k != "queues"}}
     out["queues"] = {q: {**DEFAULT_CFG["queues"][q], **((saved.get("queues") or {}).get(q) or {})} for q in QUEUES}
     return out
-
-
-def parse_option(text: str) -> str | None:
-    return OPTIONS.get((text or "").strip().lower())
 
 
 def is_individual(jid: str) -> bool:
@@ -113,6 +110,60 @@ def _enqueue(db: Session, conv: WaConversation, queue: str, gw) -> None:
     _alert(db, conv, gw)
 
 
+class RealHost(E.Host):
+    """Efeitos reais do fluxo: responde pelo WhatsApp, acha o cliente, abre o chamado e avisa."""
+    def __init__(self, db: Session, conv: WaConversation, gw):
+        self.db, self.conv, self.gw = db, conv, gw
+
+    def say(self, text):
+        if text.strip():
+            _say(self.db, self.conv, self.gw, text)
+
+    def find_client(self, digits):
+        return FS.cnpj_client(self.db, digits)
+
+    def link_client(self, client):
+        self.conv.client_id = client["id"]
+
+    def create_ticket(self, subject, body, priority, queue_id):
+        if not self.conv.client_id:
+            return None
+        try:
+            t = TS.create_from_whatsapp(self.db, self.conv.client_id, subject, body, self.conv.jid.split("@")[0], self.conv.push_name, priority, queue_id)
+            return {"number": t.number}
+        except Exception:  # noqa: BLE001
+            self.db.rollback()
+            log.exception("atendimento: falha ao abrir chamado pelo fluxo")
+            return None
+
+    def notify(self, dests, text):
+        for d in dests:
+            try:
+                self.gw.send_text(d, text)
+            except Exception as e:  # noqa: BLE001
+                log.warning("atendimento: falha no aviso para %s: %s", d, e)
+
+
+def _apply(db: Session, conv: WaConversation, state: E.State, out: E.Outcome, gw) -> None:
+    """Grava no estado da conversa o resultado da execucao do fluxo."""
+    if out.kind == "waiting":
+        conv.state, conv.flow_node = "menu", state.node
+        state.vars["_t"] = out.timeout_min
+        if out.prompted:
+            conv.menu_sent_at = now()
+    elif out.kind == "enqueue":
+        conv.flow_node = None
+        _enqueue(db, conv, out.queue if out.queue in QUEUES else "geral", gw)
+    else:  # end: atendimento resolvido pelo proprio fluxo (ex.: chamado aberto)
+        conv.state, conv.flow_node, conv.closed_at, conv.unread = "encerrada", None, now(), 0
+    conv.flow_vars = copy.deepcopy(state.vars)
+
+
+def _flow(db: Session) -> E.Flow:
+    c = cfg(db)
+    return E.Flow(FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]))[0])
+
+
 def handle_inbound(db: Session, msg: WaMessage, gw) -> WaConversation | None:
     """Decide o que fazer com uma mensagem gravada. Saidas e grupos nunca abrem conversa."""
     if not is_individual(msg.jid):
@@ -123,24 +174,17 @@ def handle_inbound(db: Session, msg: WaMessage, gw) -> WaConversation | None:
             msg.conversation_id = conv.id
             conv.last_message_at = now()
         return None
-    c = cfg(db)
     if conv is None:
         client = match_client(db, msg.jid)
         conv = WaConversation(jid=msg.jid, push_name=msg.push_name, client_id=client.id if client else None, state="menu",
                               queue="geral", menu_sent_at=now(), menu_tries=0, unread=0)
         db.add(conv)
         db.flush()
-        _say(db, conv, gw, c["greeting"])
+        state = E.State(vars={"nome": msg.push_name or "", "telefone": conv.jid.split("@")[0], **({"cliente": client.trade_name, "client_id": client.id} if client else {})})
+        _apply(db, conv, state, E.start(_flow(db), state, RealHost(db, conv, gw)), gw)
     elif conv.state == "menu":
-        opt = parse_option(msg.text)
-        if opt:
-            _enqueue(db, conv, opt, gw)
-        else:
-            conv.menu_tries = (conv.menu_tries or 0) + 1
-            if conv.menu_tries >= 2:
-                _enqueue(db, conv, "geral", gw)
-            else:
-                _say(db, conv, gw, c["greeting"])
+        state = E.State(node=conv.flow_node, vars=copy.deepcopy(conv.flow_vars or {}))
+        _apply(db, conv, state, E.answer(_flow(db), state, msg.text, RealHost(db, conv, gw)), gw)
     else:
         conv.unread = (conv.unread or 0) + 1
     msg.conversation_id = conv.id
@@ -151,12 +195,17 @@ def handle_inbound(db: Session, msg: WaMessage, gw) -> WaConversation | None:
 
 
 def tick(db: Session, gw) -> int:
-    """Menu sem resposta ha mais que `menu_timeout_min`: vai para a fila geral."""
-    limite = now() - timedelta(minutes=int(cfg(db)["menu_timeout_min"]))
-    vencidas = db.scalars(select(WaConversation).where(WaConversation.state == "menu", WaConversation.menu_sent_at < limite)).all()
-    for conv in vencidas:
-        _enqueue(db, conv, "geral", gw)
-    return len(vencidas)
+    """Conversa esperando resposta no fluxo ha mais que o tempo do passo (padrao `menu_timeout_min`): segue a saida de timeout."""
+    padrao = int(cfg(db)["menu_timeout_min"])
+    flow, n = _flow(db), 0
+    for conv in db.scalars(select(WaConversation).where(WaConversation.state == "menu")).all():
+        state = E.State(node=conv.flow_node, vars=copy.deepcopy(conv.flow_vars or {}))
+        limite = now() - timedelta(minutes=int(state.vars.get("_t") or padrao))
+        if conv.menu_sent_at is None or conv.menu_sent_at >= limite:
+            continue
+        _apply(db, conv, state, E.timeout(flow, state, RealHost(db, conv, gw)), gw)
+        n += 1
+    return n
 
 
 def assume(db: Session, conv_id: int, user_id: int) -> bool:
