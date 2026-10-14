@@ -41,7 +41,7 @@ function LinkClient({ conv, onClose, onDone }) {
   </Modal>
 }
 
-function Bubble({ m }) {
+export function Bubble({ m }) {
   const out = m.direction === 'out'
   return <div className={'at-msg ' + (out ? 'out' : 'in') + (m.failed ? ' failed' : '')}>
     {m.has_media && (m.type === 'IMAGE' ? <img alt="Imagem recebida" src={`/cliente/api/atendimento/messages/${m.id}/media`} style={{ maxWidth: 240, borderRadius: 8, display: 'block', marginBottom: 4 }} />

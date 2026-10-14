@@ -1,8 +1,11 @@
 """Atendimento por WhatsApp: monitor das filas e chat do analista. Todos os analistas veem e tratam todas as filas."""
+import csv
+import io
 import json
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -416,3 +419,117 @@ def reset_flow(request: Request, db: Session = Depends(get_db), user: User = Dep
 def simulate_flow(body: SimIn, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
     """Roda o fluxo com respostas de teste. Consulta o cliente de verdade; nada e enviado e nenhum chamado e criado."""
     return FS.simulate(db, body.definition, [x[:500] for x in body.inputs], _active_slugs(db))
+
+
+# ---- Historico e indicadores ----
+BRT = ZoneInfo("America/Sao_Paulo")
+REASONS = {"analista": "Encerrado pelo analista", "inatividade": "Inatividade", "fluxo": "Resolvido pelo fluxo"}
+
+
+def _period(date_from: str, date_to: str):
+    """Datas (YYYY-MM-DD, horario de Brasilia) -> intervalo [inicio, fim) em UTC."""
+    try:
+        a = datetime.fromisoformat(date_from).replace(tzinfo=BRT) if date_from else None
+        b = (datetime.fromisoformat(date_to).replace(tzinfo=BRT) + timedelta(days=1)) if date_to else None
+    except ValueError:
+        raise HTTPException(422, "Data inválida (use AAAA-MM-DD)")
+    if a and b and a >= b:
+        raise HTTPException(422, "Período inválido: a data inicial é depois da final")
+    return a, b
+
+
+def _history_stmt(q: str, queue: str, agent_id: int | None, reason: str, client_id: int | None, date_from: str, date_to: str):
+    a, b = _period(date_from, date_to)
+    stmt = select(WaConversation).outerjoin(Client, Client.id == WaConversation.client_id).where(WaConversation.state == "encerrada")
+    if q.strip():
+        like_ = f"%{q.strip().replace('%', '').replace('_', '')}%"
+        stmt = stmt.where(WaConversation.push_name.ilike(like_) | WaConversation.contact_name.ilike(like_) | WaConversation.jid.ilike(like_) | Client.trade_name.ilike(like_))
+    if queue:
+        stmt = stmt.where(WaConversation.queue == queue)
+    if agent_id:
+        stmt = stmt.where(WaConversation.assigned_to == agent_id)
+    if reason in REASONS:
+        stmt = stmt.where(WaConversation.closed_reason == reason)
+    if client_id:
+        stmt = stmt.where(WaConversation.client_id == client_id)
+    if a:
+        stmt = stmt.where(WaConversation.closed_at >= a)
+    if b:
+        stmt = stmt.where(WaConversation.closed_at < b)
+    return stmt
+
+
+def _secs(a, b):
+    return max(0, int((b - a).total_seconds())) if a and b else None
+
+
+def _times(c: WaConversation) -> dict:
+    return {"wait_s": _secs(c.queued_at, c.assumed_at), "first_response_s": _secs(c.queued_at or c.created_at, c.first_response_at),
+            "duration_s": _secs(c.assumed_at or c.created_at, c.closed_at)}
+
+
+def _history_out(db: Session, rows: list[WaConversation]) -> list[dict]:
+    base = {o["id"]: o for o in _out(db, rows)}
+    ids = [c.id for c in rows] or [0]
+    counts = dict(db.execute(select(WaMessage.conversation_id, func.count()).where(WaMessage.conversation_id.in_(ids), WaMessage.direction.in_(("in", "out")))
+                             .group_by(WaMessage.conversation_id)).all())
+    closers = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_([c.closed_by for c in rows if c.closed_by] or [0]))).all()}
+    return [{**base[c.id], "created_at": c.created_at, "closed_at": c.closed_at, "closed_reason": c.closed_reason, "closed_reason_label": REASONS.get(c.closed_reason or "", "—"),
+             "closed_by_name": closers.get(c.closed_by), "messages": counts.get(c.id, 0), **_times(c)} for c in rows]
+
+
+@router.get("/history")
+def history(q: str = "", queue: str = "", agent_id: int | None = None, reason: str = "", client_id: int | None = None, date_from: str = "", date_to: str = "",
+            page: int = 1, size: int = 25, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    size = max(1, min(size, 100))
+    stmt = _history_stmt(q, queue, agent_id, reason, client_id, date_from, date_to)
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+    rows = db.scalars(stmt.order_by(WaConversation.closed_at.desc(), WaConversation.id.desc()).offset((max(page, 1) - 1) * size).limit(size)).all()
+    return {"total": total, "page": page, "size": size, "items": _history_out(db, list(rows))}
+
+
+def _safe(v) -> str:
+    t = "" if v is None else str(v)
+    return "'" + t if t[:1] in ("=", "+", "-", "@") else t  # planilha: nunca interpretar texto do cliente como formula
+
+
+@router.get("/history/export")
+def history_export(q: str = "", queue: str = "", agent_id: int | None = None, reason: str = "", client_id: int | None = None, date_from: str = "", date_to: str = "",
+                   db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    rows = db.scalars(_history_stmt(q, queue, agent_id, reason, client_id, date_from, date_to).order_by(WaConversation.closed_at.desc()).limit(5000)).all()
+    buf = io.StringIO()
+    buf.write("﻿")
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Protocolo", "Encerrado em (Brasília)", "Número", "Contato", "Cliente", "Fila", "Analista", "Motivo", "Espera (min)", "1ª resposta (min)", "Duração (min)", "Mensagens"])
+    mins = lambda s: "" if s is None else round(s / 60, 1)  # noqa: E731
+    for o in _history_out(db, list(rows)):
+        w.writerow([o["id"], o["closed_at"].astimezone(BRT).strftime("%d/%m/%Y %H:%M") if o["closed_at"] else "", _safe(o["number"]), _safe(o["name"]),
+                    _safe((o["client"] or {}).get("name")), _safe(o["queue_name"]), _safe(o["assigned_name"]), o["closed_reason_label"],
+                    mins(o["wait_s"]), mins(o["first_response_s"]), mins(o["duration_s"]), o["messages"]])
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="atendimentos.csv"'})
+
+
+def _avg(v: list[int]) -> int | None:
+    v = [x for x in v if x is not None]
+    return int(sum(v) / len(v)) if v else None
+
+
+@router.get("/stats")
+def stats(queue: str = "", agent_id: int | None = None, date_from: str = "", date_to: str = "", db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    rows = list(db.scalars(_history_stmt("", queue, agent_id, "", None, date_from, date_to).limit(20000)).all())
+    t = [(_times(c), c) for c in rows]
+    qm = A.queue_map(db)
+    users = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_([c.assigned_to for c in rows if c.assigned_to] or [0]))).all()}
+
+    def group(key, label):
+        out: dict = {}
+        for tm, c in t:
+            out.setdefault(key(c), []).append(tm)
+        return [{"key": k, "label": label(k), "count": len(v), "avg_wait_s": _avg([x["wait_s"] for x in v]), "avg_first_response_s": _avg([x["first_response_s"] for x in v]),
+                 "avg_duration_s": _avg([x["duration_s"] for x in v])} for k, v in sorted(out.items(), key=lambda kv: -len(kv[1]))]
+
+    return {"total": len(rows), "avg_wait_s": _avg([x[0]["wait_s"] for x in t]), "avg_first_response_s": _avg([x[0]["first_response_s"] for x in t]),
+            "avg_duration_s": _avg([x[0]["duration_s"] for x in t]),
+            "by_queue": [{**g, "color": qm[g["key"]].color if g["key"] in qm else "#6b7a99"} for g in group(lambda c: c.queue, lambda k: qm[k].name if k in qm else k)],
+            "by_agent": group(lambda c: c.assigned_to, lambda k: users.get(k, "Sem analista")),
+            "by_reason": group(lambda c: c.closed_reason or "—", lambda k: REASONS.get(k, k))}

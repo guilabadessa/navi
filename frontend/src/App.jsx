@@ -27,6 +27,7 @@ import Tickets from './pages/Tickets'
 import Atendimento from './pages/Atendimento'
 import AtendimentoFluxo from './pages/AtendimentoFluxo'
 import AtendimentoConfig from './pages/AtendimentoConfig'
+import AtendimentoHistorico from './pages/AtendimentoHistorico'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
@@ -100,6 +101,7 @@ function Shell({ me, onLogout, reloadMe }) {
           <Route path="/protecao" element={<Protection />} />
           <Route path="/portal" element={<PortalSwitch />} />
           <Route path="/atendimento" element={<Atendimento />} />
+          <Route path="/atendimento/historico" element={<AtendimentoHistorico />} />
           <Route path="/atendimento/fluxo" element={<AtendimentoFluxo />} />
           <Route path="/atendimento/configuracoes" element={<AtendimentoConfig />} />
           <Route path="/chamados" element={<Tickets />} />

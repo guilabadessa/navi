@@ -419,3 +419,48 @@ def test_fila_pedida_inativa_ou_inexistente_cai_na_geral(monkeypatch):
     m["suporte"].active = False
     monkeypatch.setattr(A, "queue_map", lambda d: m)
     assert A.queue_ok(None, "suporte") == "geral" and A.queue_ok(None, "nao_existe") == "geral" and A.queue_ok(None, "comercial") == "comercial"
+
+
+# ---- Historico e indicadores ----
+def _enc(**kw):
+    t0 = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+    base = dict(id=1, queue="suporte", assigned_to=7, created_at=t0, queued_at=t0, assumed_at=t0 + timedelta(minutes=2), first_response_at=t0 + timedelta(minutes=3),
+                closed_at=t0 + timedelta(minutes=12), closed_reason="analista", client_id=None, push_name="Joao", contact_name=None, jid="5514@s.whatsapp.net")
+    return NS(**{**base, **kw})
+
+
+def test_periodo_converte_datas_de_brasilia_e_recusa_invertido():
+    from fastapi import HTTPException
+    from app.routers import atendimento as R
+    a, b = R._period("2026-10-14", "2026-10-14")
+    assert (b - a) == timedelta(days=1) and a.utcoffset() == timedelta(hours=-3)
+    assert R._period("", "") == (None, None)
+    for bad in (("2026-10-15", "2026-10-14"), ("xx", ""), ("", "2026-13-40")):
+        with pytest.raises(HTTPException):
+            R._period(*bad)
+
+
+def test_tempos_da_conversa_e_planilha_segura():
+    from app.routers import atendimento as R
+    t = R._times(_enc())
+    assert t == {"wait_s": 120, "first_response_s": 180, "duration_s": 600}
+    assert R._times(_enc(assumed_at=None, first_response_at=None))["wait_s"] is None
+    assert R._safe("=HYPERLINK(\"x\")").startswith("'=") and R._safe(None) == "" and R._safe("Joao") == "Joao"
+
+
+def test_estatisticas_por_fila_analista_e_motivo(monkeypatch):
+    from app.routers import atendimento as R
+    rows = [_enc(id=1), _enc(id=2, queue="comercial", assigned_to=None, assumed_at=None, first_response_at=None, closed_reason="inatividade"), _enc(id=3)]
+    users = [NS(id=7, name="Ana")]
+    c, db = _api("ANALISTA_NOC")
+    db.scalars.side_effect = [NS(all=lambda: rows), NS(all=lambda: users)]
+    try:
+        r = c.get("/cliente/api/atendimento/stats").json()
+        assert r["total"] == 3 and r["avg_wait_s"] == 120 and r["avg_first_response_s"] == 180
+        sup = next(x for x in r["by_queue"] if x["key"] == "suporte")
+        assert sup["count"] == 2 and sup["avg_duration_s"] == 600
+        assert {x["key"] for x in r["by_reason"]} == {"analista", "inatividade"}
+        assert next(x for x in r["by_agent"] if x["key"] == 7)["label"] == "Ana"
+        assert c.get("/cliente/api/atendimento/stats?date_from=2026-10-15&date_to=2026-10-14").status_code == 422
+    finally:
+        _done()
