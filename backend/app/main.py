@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import engine
-from .routers import (alerts, audit_r, auth, clients, cloud, dashboard, events, finance, navi_r, ops, portal, protection, push, reports, routines, settings_r, tickets,
+from .routers import (alerts, audit_r, auth, clients, cloud, dashboard, events, finance, navi_r, ops, portal, protection, push, reports, routines, settings_r, tickets, whatsapp_r,
                       users, webhook, zabbix_r)
 from .security import api_limiter, client_ip
 
@@ -26,7 +26,7 @@ CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inlin
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    if request.url.path.startswith(f"{BASE}/api/") and not request.url.path.endswith("/webhook/zabbix"):
+    if request.url.path.startswith(f"{BASE}/api/") and not request.url.path.endswith(("/webhook/zabbix", "/wa/webhook")):
         key = "api|" + client_ip(request)
         if api_limiter.blocked(key):
             return JSONResponse({"detail": "Limite de requisições excedido"}, status_code=429)
@@ -46,7 +46,7 @@ async def security_headers(request: Request, call_next):
 
 
 for r in (auth, users, clients, zabbix_r, events, alerts, reports, routines, dashboard, settings_r, navi_r, audit_r, webhook, ops, portal, protection, finance, cloud, push,
-         tickets):
+         tickets, whatsapp_r):
     app.include_router(r.router, prefix=f"{BASE}/api")
 
 

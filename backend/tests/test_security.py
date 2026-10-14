@@ -10,7 +10,7 @@ from app.util import titlecase
 
 PUBLICAS = {  # unicas rotas que podem funcionar sem sessao
     ("POST", "/auth/login"), ("POST", "/auth/logout"), ("GET", "/auth/invite/{token}"), ("POST", "/auth/accept-invite"), ("POST", "/auth/forgot"),
-    ("POST", "/webhook/zabbix"), ("GET", "/finance/callback"), ("GET", "/health"),
+    ("POST", "/webhook/zabbix"), ("POST", "/wa/webhook"), ("GET", "/finance/callback"), ("GET", "/health"),
 }
 
 
@@ -53,7 +53,7 @@ def test_escrita_nunca_depende_so_de_permissao_de_leitura_na_equipe_exceto_previ
             perms = [c.__closure__[0].cell_contents for c in _deps(r.dependant, []) if getattr(c, "__name__", "") == "dep" and c.__closure__]
             perms = [p for p in perms if isinstance(p, str)]
             path = full.removeprefix(f"{BASE}/api")
-            if path in PUBLICAS or path in previas or path.startswith("/auth/") or path == "/webhook/zabbix":
+            if path in PUBLICAS or path in previas or path.startswith("/auth/") or path in ("/webhook/zabbix", "/wa/webhook"):
                 continue
             assert perms and not all(p.endswith(".view") for p in perms), f"escrita sem permissao de edicao: {path}"
 

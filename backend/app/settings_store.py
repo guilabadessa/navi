@@ -10,7 +10,7 @@ from .config import get_settings
 from .models import Setting
 from .security import decrypt, encrypt
 
-SECRET_KEYS = {"acronis.secret", "acronis2.secret", "ems.api_key", "ems.password", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key", "contaazul.client_secret", "contaazul.access_token", "contaazul.refresh_token", "push.vapid_private", "push.fcm_sa"}
+SECRET_KEYS = {"acronis.secret", "acronis2.secret", "ems.api_key", "ems.password", "zabbix.token", "evolution.api_key", "smtp.password", "webhook.token", "llm.api_key", "contaazul.client_secret", "contaazul.access_token", "contaazul.refresh_token", "push.vapid_private", "push.fcm_sa", "wa_akg.api_key", "wa_akg.webhook_secret"}
 
 
 def _env_default(key: str) -> str:

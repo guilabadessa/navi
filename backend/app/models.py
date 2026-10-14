@@ -650,3 +650,18 @@ class TicketAttachment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
     message: Mapped["TicketMessage"] = relationship(back_populates="attachment")
+
+
+class WaMessage(Base):
+    """Mensagem de WhatsApp recebida/enviada pelo gateway (base das conversas e da fila de atendimento)."""
+    __tablename__ = "wa_messages"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(128), unique=True)
+    session: Mapped[str] = mapped_column(String(64))
+    jid: Mapped[str] = mapped_column(String(128), index=True)
+    direction: Mapped[str] = mapped_column(String(3))  # in | out
+    type: Mapped[str] = mapped_column(String(24), default="TEXT")
+    text: Mapped[str] = mapped_column(Text, default="")
+    media_ref: Mapped[str | None] = mapped_column(String(512))
+    push_name: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
