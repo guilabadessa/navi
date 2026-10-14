@@ -44,5 +44,12 @@ def store_inbound(db: Session, parsed: dict) -> WaMessage | None:
 
 
 def on_inbound(db: Session, msg: WaMessage) -> None:
-    """Gancho para o atendimento (fila) e o motor de fluxo (sub-projetos B e C). Por ora so registra."""
+    """Entrega a mensagem ao atendimento (menu/fila). Erro ali nunca derruba o webhook: o gateway reentregaria."""
     log.info("whatsapp %s %s (%s)", msg.direction, msg.jid, msg.type)
+    try:
+        from . import atendimento_service, factory
+        atendimento_service.handle_inbound(db, msg, factory.wa_akg(db))
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("atendimento: falha ao tratar mensagem de %s", msg.jid)

@@ -140,3 +140,22 @@ def test_send_grava_falha_e_relevanta():
 def test_phone_match_ignora_formatacao_e_55():
     assert A.phone_key("5514999991234@s.whatsapp.net") == A.phone_key("(14) 99999-1234") == "1499991234"
     assert A.phone_key("1203@g.us") is None
+
+
+def test_on_inbound_chama_atendimento_e_engole_erro(monkeypatch):
+    from app.services import wa_inbound
+    chamado = {}
+    monkeypatch.setattr("app.services.atendimento_service.handle_inbound", lambda db, m, gw: chamado.setdefault("ok", True))
+    monkeypatch.setattr("app.services.factory.wa_akg", lambda db: MagicMock())
+    db = MagicMock()
+    wa_inbound.on_inbound(db, _msg("oi"))
+    assert chamado["ok"] and db.commit.called
+    monkeypatch.setattr("app.services.atendimento_service.handle_inbound", lambda db, m, gw: 1 / 0)
+    db2 = MagicMock()
+    wa_inbound.on_inbound(db2, _msg("oi"))  # nao levanta
+    assert db2.rollback.called
+
+
+def test_job_registrado():
+    from app import jobs
+    assert "atendimento_tick" in jobs.JOBS and callable(jobs.atendimento_tick)
