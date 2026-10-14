@@ -91,7 +91,23 @@ function GeneralSection({ edit }) {
   </Card>
 }
 
-const SECTIONS = [['filas', 'Filas', QueuesSection], ['respostas', 'Respostas prontas', RepliesSection], ['geral', 'Geral', GeneralSection]]
+function TagsSection({ edit }) {
+  const toast = useToast(); const { data, reload } = useLoad(() => get('/atendimento/tags'), []); const [ed, setEd] = useState(null)
+  if (!data) return <Loading />
+  const save = async () => { try { ed.id ? await put('/atendimento/tags/' + ed.id, { name: ed.name, color: ed.color }) : await post('/atendimento/tags', { name: ed.name, color: ed.color }); setEd(null); reload() } catch (e) { toast(e.message, true) } }
+  const remove = async (t) => { if (!confirm(`Excluir a etiqueta “${t.name}”? Ela será removida das conversas.`)) return; try { await del('/atendimento/tags/' + t.id); reload() } catch (e) { toast(e.message, true) } }
+  return <Card title="Etiquetas" actions={edit && <button className="btn primary" onClick={() => setEd({ name: '', color: '#1e73f8' })}><Plus size={15} />Nova etiqueta</button>} pad={false}>
+    <p className="sub" style={{ padding: '12px 14px' }}>Marcadores coloridos para organizar as conversas (ex.: VIP, urgente, cobrança). Os analistas aplicam no chat e filtram na lista.</p>
+    {data.map(t => <div key={t.id} className="cfg-row"><i className="cfg-dot" style={{ background: t.color }} /><div className="grow"><b>{t.name}</b></div>
+      {edit && <><button className="btn" onClick={() => setEd(t)}><Pencil size={14} />Editar</button><button className="btn" aria-label="Excluir" onClick={() => remove(t)}><Trash2 size={14} /></button></>}</div>)}
+    {!data.length && <div className="empty">Nenhuma etiqueta.</div>}
+    {ed && <Modal title={ed.id ? 'Editar etiqueta' : 'Nova etiqueta'} onClose={() => setEd(null)} footer={<><button className="btn" onClick={() => setEd(null)}>Cancelar</button><button className="btn primary" disabled={!ed.name.trim()} onClick={save}>Salvar</button></>}>
+      <Field label="NOME"><input autoFocus value={ed.name} maxLength={40} onChange={e => setEd({ ...ed, name: e.target.value })} /></Field>
+      <Field label="COR"><ColorPick value={ed.color} onChange={c => setEd({ ...ed, color: c })} /></Field></Modal>}
+  </Card>
+}
+
+const SECTIONS = [['filas', 'Filas', QueuesSection], ['etiquetas', 'Etiquetas', TagsSection], ['respostas', 'Respostas prontas', RepliesSection], ['geral', 'Geral', GeneralSection]]
 
 export default function AtendimentoConfig() {
   const me = useAuth(); const edit = can(me, 'settings.edit'); const [sec, setSec] = useState('filas')

@@ -348,3 +348,14 @@ select{max-width:100%}
 @media(max-width:860px){.cfg-grid{grid-template-columns:1fr}.cfg-side{flex-direction:row;overflow-x:auto;position:static}}
 .at-hfilters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
 .at-hfilters input[type=text],.at-hfilters input:not([type]){min-width:220px}
+.at-sys{align-self:center;font-size:11.5px;opacity:.7;background:rgba(127,140,170,.14);border-radius:999px;padding:2px 12px}
+.at-msg.note{align-self:center;max-width:90%;background:rgba(245,176,0,.18);border:1px dashed rgba(245,176,0,.7)}
+.at-notelabel{display:flex;align-items:center;gap:4px;font-size:11px;color:#a16207}
+.at-tag{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600}.at-tag button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.at-modes{display:flex;gap:4px;padding:6px 14px 0;border-top:1px solid var(--line)}
+.at-modes button{border:0;background:transparent;color:var(--navy);font-weight:600;padding:5px 10px;border-radius:8px 8px 0 0;cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+.at-modes button.on{background:rgba(30,115,248,.12);color:var(--blue)}
+.at-send.note{background:rgba(245,176,0,.1)}
+.at-tabs{display:flex;border-bottom:1px solid var(--line);overflow-x:auto}
+.at-tabs button{flex:1;border:0;background:transparent;color:var(--navy);padding:10px 8px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.at-tabs button.on{color:var(--blue);border-bottom-color:var(--blue)}.at-tabs span{margin-left:6px;background:rgba(30,115,248,.15);border-radius:999px;padding:0 7px;font-size:12px}
