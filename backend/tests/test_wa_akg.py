@@ -225,3 +225,16 @@ def test_webhook_valido_grava_e_evento_irrelevante_da_200_sem_gravar():
         assert c.post("/cliente/api/wa/webhook", content=lixo, headers={"X-Webhook-Signature": sign("seg", lixo)}).status_code == 200
     finally:
         p.stop(); app.dependency_overrides.clear()
+
+
+def test_teste_e_qr_usam_o_wa_akg_mesmo_com_evolution_ativa():
+    from app.routers import whatsapp_r as R
+    cfg = {"wa_akg.url": "http://wa:3000", "wa_akg.session": "orca", "wa_akg.api_key": "wag_x", "whatsapp.provider": "evolution"}
+    with patch.object(R.S, "get", side_effect=_cfg(cfg)):
+        g = R._gateway(None)
+    assert isinstance(g, WaAkgService) and g.session == "orca"
+
+
+def test_qr_no_topo_da_resposta_como_a_v163_devolve():
+    s = svc(lambda r: httpx.Response(200, json={"success": True, "qr": "2@xyz", "base64": "data:image/png;base64,yy"}))
+    assert s.qr() == {"qr": "2@xyz", "base64": "data:image/png;base64,yy"}

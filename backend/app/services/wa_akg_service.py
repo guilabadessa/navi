@@ -90,7 +90,8 @@ class WaAkgService:
 
     def qr(self) -> dict:
         try:
-            d = self._req("GET", f"/sessions/{quote(self.session, safe='')}/qr").get("data") or {}
+            body = self._req("GET", f"/sessions/{quote(self.session, safe='')}/qr")
         except WaAkgError:
             return {"qr": None, "base64": None}
+        d = {**(body.get("data") or {}), **{k: v for k, v in body.items() if k in ("qr", "base64")}}  # v1.6.3 devolve no topo; a doc diz dentro de data
         return {"qr": d.get("qr"), "base64": d.get("base64")}

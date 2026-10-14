@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from .. import audit, settings_store as S
 from ..db import get_db
 from ..security import require
-from ..services import factory, wa_inbound
+from ..services import wa_inbound
+from ..services.wa_akg_service import WaAkgService
 
 router = APIRouter(prefix="/wa", tags=["whatsapp"])
 
@@ -64,10 +65,15 @@ def put_settings(body: WaSettingsIn, request: Request, db: Session = Depends(get
     return {"ok": True}
 
 
+def _gateway(db: Session) -> WaAkgService:
+    """Sempre o WA-AKG (nao o provedor ativo): precisa dar para testar e parear antes de trocar o provedor."""
+    return WaAkgService(S.get(db, "wa_akg.url"), S.get(db, "wa_akg.session"), S.get(db, "wa_akg.api_key"))
+
+
 @router.post("/test")
 def test(request: Request, db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
     try:
-        st = factory.whatsapp(db).status()
+        st = _gateway(db).status()
         res = {"ok": True, "detail": f"Conectado: {json.dumps(st)[:200]}"}
     except Exception as e:  # noqa: BLE001
         res = {"ok": False, "detail": str(e)}
@@ -78,7 +84,4 @@ def test(request: Request, db: Session = Depends(get_db), _=Depends(require("set
 
 @router.get("/qr")
 def qr(db: Session = Depends(get_db), _=Depends(require("settings.edit"))):
-    svc = factory.whatsapp(db)
-    if not hasattr(svc, "qr"):
-        raise HTTPException(422, "O provedor ativo não usa QR code por aqui.")
-    return svc.qr()
+    return _gateway(db).qr()
