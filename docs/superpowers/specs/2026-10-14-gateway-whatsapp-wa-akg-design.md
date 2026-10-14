@@ -34,9 +34,9 @@ Descartadas: reescrever todos os chamadores sobre uma nova abstração (risco al
 
 ### 1. Container `wa-akg`
 - Serviço novo no `docker-compose.yml`, na mesma rede do `api`.
-- Imagem construída a partir do repositório em **versão/tag fixada** (nunca `main`). O build do Next.js é pesado: fazê-lo aqui apenas depois do aumento de RAM (ou com swap temporário), e nunca durante horário de pico do NOC.
+- Imagem construída a partir do repositório na **tag `v1.6.3`** (nunca `main`), via `build.context` apontando para o Git. O build do Next.js é pesado: como a RAM só sobe depois, o build roda aqui com um swapfile temporário de 3 GB, fora do horário de pico.
 - `mem_limit` inicial ~600 MB; porta publicada apenas em `127.0.0.1`; `restart: unless-stopped`; logs com rotação como os demais.
-- Banco: database `waakg` e usuário próprios no Postgres existente, sem acesso ao banco do NAVI.
+- Banco: o WA-AKG v1.6.3 usa Prisma com provider `mysql` (não roda em Postgres). O Postgres do NAVI é remoto e não é usado. Sobe um container `wa-akg-db` (MariaDB 10.11 com buffer pool de 64 MB, `mem_limit` 256 MB), exclusivo do gateway e sem porta publicada. *(Correção feita durante o planejamento.)*
 - Volume persistente para as sessões do Baileys (perder o volume exige novo pareamento por QR).
 - Variáveis (`DATABASE_URL`, `AUTH_SECRET`, `BASE_URL`, senha do Swagger etc.) em `secrets/`/`.env`, fora do git. `/docs` (Swagger) desabilitado ou com senha trocada (padrão do projeto é `admin/admin123`).
 - Painel do WA-AKG acessível só por túnel/Apache restrito; não exposto à internet.
@@ -60,7 +60,7 @@ Tabela `wa_messages`: `id`, `external_id` (único), `session`, `jid`, `direction
 Em Configurações > WhatsApp: provedor ativo, URL e chave do WA-AKG (segredo criptografado como as demais), nome da sessão, secret do webhook, estado da sessão, QR code para parear e botão de teste de envio. Alterações auditadas.
 
 ### 6. Monitoramento
-Alerta de "sessão WhatsApp desconectada" (verificação periódica do `status()`), para os avisos não pararem em silêncio — hoje uma falha só vira log.
+Estado da sessão WhatsApp na verificação de saúde já existente (`health_checks`, chave `evolution` mantida para não quebrar a tela), para os avisos não pararem em silêncio — hoje uma falha só vira log.
 
 ## Plano de migração
 1. Subir o WA-AKG e parear o número novo (QR).
