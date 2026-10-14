@@ -4,6 +4,7 @@ import io
 import json
 import re
 import unicodedata
+import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -41,7 +42,7 @@ def _out(db: Session, rows: list[WaConversation]) -> list[dict]:
             open_t[t.client_id].append({"id": t.id, "number": t.number, "subject": t.subject, "status": t.status})
     last = {}
     if ids:
-        mx = db.execute(select(func.max(WaMessage.id)).where(WaMessage.conversation_id.in_(ids)).group_by(WaMessage.conversation_id)).scalars().all()
+        mx = db.execute(select(func.max(WaMessage.id)).where(WaMessage.conversation_id.in_(ids), WaMessage.direction.in_(("in", "out"))).group_by(WaMessage.conversation_id)).scalars().all()
         for m in db.execute(select(WaMessage.conversation_id, WaMessage.text, WaMessage.type).where(WaMessage.id.in_(mx or [0]))).all():
             last[m[0]] = m[1] or f"[{(m[2] or '').lower()}]"
     qm = A.queue_map(db)
@@ -233,6 +234,7 @@ def assume(conv_id: int, request: Request, db: Session = Depends(get_db), user: 
     c = _conv(db, conv_id)
     if not A.assume(db, conv_id, user.id):
         raise HTTPException(409, "Esta conversa já foi assumida ou encerrada")
+    A.event(db, c, f"{user.name} assumiu a conversa")
     audit.log(db, request, "atendimento_assumir", "whatsapp", resource_id=c.jid)
     db.commit()
     db.refresh(c)
@@ -249,6 +251,7 @@ def transfer(conv_id: int, body: TransferIn, request: Request, db: Session = Dep
     c = _conv(db, conv_id)
     if c.state == "encerrada":
         raise HTTPException(409, "Conversa encerrada")
+    dest = None
     if body.user_id:
         dest = db.get(User, body.user_id)
         if not dest or not dest.active or dest.role == "CLIENTE":
@@ -258,6 +261,8 @@ def transfer(conv_id: int, body: TransferIn, request: Request, db: Session = Dep
     if body.queue and (body.queue not in A.queue_map(db) or not A.queue_map(db)[body.queue].active):
         raise HTTPException(422, "Setor inválido")
     A.transfer(db, c, body.user_id, body.queue, factory.whatsapp(db))
+    A.event(db, c, f"{user.name} transferiu a conversa para {dest.name}" + (f" (fila {A.qname(db, c.queue)})" if body.queue else "") if dest
+            else f"{user.name} devolveu a conversa à fila {A.qname(db, c.queue)}")
     audit.log(db, request, "atendimento_transferir", "whatsapp", resource_id=c.jid, detail={"user_id": body.user_id, "queue": body.queue})
     db.commit()
     return _out(db, [c])[0]
@@ -288,6 +293,8 @@ def link_client(conv_id: int, body: LinkIn, request: Request, db: Session = Depe
     if body.client_id and not db.get(Client, body.client_id):
         raise HTTPException(422, "Cliente inválido")
     c.client_id = body.client_id
+    cl = db.get(Client, body.client_id) if body.client_id else None
+    A.event(db, c, f"{user.name} vinculou o cliente {cl.trade_name}" if cl else f"{user.name} removeu o vínculo com o cliente")
     audit.log(db, request, "atendimento_vincular", "whatsapp", resource_id=c.jid, detail={"client_id": body.client_id})
     db.commit()
     return _out(db, [c])[0]
@@ -338,6 +345,101 @@ async def send_media(conv_id: int, caption: str = Form(default="", max_length=10
 class QueueCfg(BaseModel):
     alert_enabled: bool = False
     alert_to: list[str] = Field(default_factory=list, max_length=10)
+
+
+class NoteIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/conversations/{conv_id}/note")
+def add_note(conv_id: int, body: NoteIn, db: Session = Depends(get_db), user: User = Depends(require("atendimento.act"))):
+    """Nota interna: aparece no chat so para a equipe e nunca e enviada ao cliente."""
+    c = _conv(db, conv_id)
+    m = WaMessage(external_id="note-" + uuid.uuid4().hex, session="", jid=c.jid, direction="note", type="NOTE", text=body.text.strip(), sent_by=user.id, conversation_id=c.id)
+    db.add(m)
+    db.commit()
+    return {"id": m.id}
+
+
+class ConvEdit(BaseModel):
+    contact_name: str | None = Field(default=None, max_length=255)
+    tags: list[str] | None = Field(default=None, max_length=20)
+
+
+@router.put("/conversations/{conv_id}")
+def edit_conversation(conv_id: int, body: ConvEdit, request: Request, db: Session = Depends(get_db), user: User = Depends(require("atendimento.act"))):
+    c = _conv(db, conv_id)
+    if "contact_name" in body.model_fields_set:
+        c.contact_name = (body.contact_name or "").strip() or None
+    if body.tags is not None:
+        known = set(db.scalars(select(WaTag.name)).all())
+        wanted = list(dict.fromkeys(t for t in body.tags if t))
+        if any(t not in known for t in wanted):
+            raise HTTPException(422, "Etiqueta inexistente")
+        added = [t for t in wanted if t not in (c.tags or [])]
+        c.tags = wanted
+        if added:
+            A.event(db, c, f"{user.name} adicionou a etiqueta: {', '.join(added)}")
+    audit.log(db, request, "atendimento_editar", "whatsapp", resource_id=c.jid)
+    db.commit()
+    return _out(db, [c])[0]
+
+
+class TagIn(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    color: str = Field(default="#6b7a99", pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+@router.get("/tags")
+def tags(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    return [{"id": t.id, "name": t.name, "color": t.color} for t in db.scalars(select(WaTag).order_by(WaTag.name)).all()]
+
+
+def _retag(db: Session, old: str, new: str | None) -> None:
+    """Renomeia (ou remove, new=None) a etiqueta nas conversas que a usam."""
+    for c in db.scalars(select(WaConversation).where(WaConversation.tags.is_not(None)).limit(20000)).all():
+        if old in (c.tags or []):
+            c.tags = [t for t in (c.tags or []) if t != old] + ([new] if new and new not in (c.tags or []) else [])
+
+
+@router.post("/tags")
+def tag_create(body: TagIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    name = body.name.strip()
+    if db.scalar(select(WaTag.id).where(func.lower(WaTag.name) == name.lower())):
+        raise HTTPException(409, "Já existe uma etiqueta com esse nome")
+    t = WaTag(name=name, color=body.color)
+    db.add(t)
+    audit.log(db, request, "atendimento_etiqueta_criar", "whatsapp", resource_id=name)
+    db.commit()
+    return {"id": t.id, "name": t.name, "color": t.color}
+
+
+@router.put("/tags/{tid}")
+def tag_update(tid: int, body: TagIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    t = db.get(WaTag, tid)
+    if not t:
+        raise HTTPException(404, "Etiqueta não encontrada")
+    name = body.name.strip()
+    if name.lower() != t.name.lower() and db.scalar(select(WaTag.id).where(func.lower(WaTag.name) == name.lower())):
+        raise HTTPException(409, "Já existe uma etiqueta com esse nome")
+    if name != t.name:
+        _retag(db, t.name, name)
+    t.name, t.color = name, body.color
+    audit.log(db, request, "atendimento_etiqueta_editar", "whatsapp", resource_id=name)
+    db.commit()
+    return {"id": t.id, "name": t.name, "color": t.color}
+
+
+@router.delete("/tags/{tid}")
+def tag_delete(tid: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    t = db.get(WaTag, tid)
+    if not t:
+        raise HTTPException(404, "Etiqueta não encontrada")
+    _retag(db, t.name, None)
+    audit.log(db, request, "atendimento_etiqueta_excluir", "whatsapp", resource_id=t.name)
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
 
 
 class QuickReply(BaseModel):

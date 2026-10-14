@@ -464,3 +464,47 @@ def test_estatisticas_por_fila_analista_e_motivo(monkeypatch):
         assert c.get("/cliente/api/atendimento/stats?date_from=2026-10-15&date_to=2026-10-14").status_code == 422
     finally:
         _done()
+
+
+# ---- Notas, eventos e etiquetas ----
+def test_nota_interna_nunca_vai_ao_gateway(monkeypatch):
+    c, db = _api()
+    db.get.return_value = _conv("atendendo")
+    gw = MagicMock()
+    monkeypatch.setattr("app.services.factory.whatsapp", lambda d: gw)
+    try:
+        assert c.post("/cliente/api/atendimento/conversations/1/note", json={"text": "cliente pediu desconto"}).status_code == 200
+        m = db.add.call_args.args[0]
+        assert m.direction == "note" and m.type == "NOTE" and m.sent_by == 7 and not gw.send_text.called
+        assert c.post("/cliente/api/atendimento/conversations/1/note", json={"text": ""}).status_code == 422
+    finally:
+        _done()
+
+
+def test_evento_da_linha_do_tempo_e_mensagem_de_sistema():
+    db = MagicMock()
+    A.event(db, _conv("atendendo"), "Maria assumiu")
+    m = db.add.call_args.args[0]
+    assert m.direction == "sys" and m.type == "EVENT" and m.text == "Maria assumiu" and m.conversation_id == 1
+
+
+def test_etiquetas_so_do_catalogo_e_renomear_atualiza_conversas(monkeypatch):
+    monkeypatch.setattr("app.routers.atendimento._out", lambda db, rows: [{"id": 1}])
+    c, db = _api("ADMIN")
+    conv = _conv("atendendo")
+    conv.tags = ["vip"]
+    db.get.return_value = conv
+    db.scalars.return_value.all.return_value = ["vip", "urgente"]
+    try:
+        assert c.put("/cliente/api/atendimento/conversations/1", json={"tags": ["vip", "inexistente"]}).status_code == 422
+        r = c.put("/cliente/api/atendimento/conversations/1", json={"tags": ["vip", "urgente"], "contact_name": "  Sr. João "})
+        assert r.status_code == 200 and conv.tags == ["vip", "urgente"] and conv.contact_name == "Sr. João"
+        tag = NS(id=1, name="vip", color="#111111")
+        db.get.return_value = tag
+        db.scalar.return_value = None
+        db.scalars.return_value.all.return_value = [conv]
+        assert c.put("/cliente/api/atendimento/tags/1", json={"name": "VIP ouro", "color": "#222222"}).status_code == 200
+        assert conv.tags == ["urgente", "VIP ouro"] and tag.name == "VIP ouro"
+        assert c.delete("/cliente/api/atendimento/tags/1").status_code == 200 and "VIP ouro" in conv.tags  # apagou a etiqueta antiga (nome ja trocado), nao a nova
+    finally:
+        _done()

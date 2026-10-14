@@ -209,7 +209,7 @@ def test_webhook_valido_grava_e_evento_irrelevante_da_200_sem_gravar():
         body = json.dumps(MSG).encode()
         r = c.post("/cliente/api/wa/webhook", content=body, headers={"X-Webhook-Signature": sign("seg", body)})
         assert r.status_code == 200 and r.json() == {"ok": True, "stored": True}
-        assert len([x for x in db.add.call_args_list if x.args[0].__class__.__name__ == "WaMessage"]) == 1  # a conversa do atendimento tambem usa db.add
+        assert len([x for x in db.add.call_args_list if x.args[0].__class__.__name__ == "WaMessage" and x.args[0].external_id == "AB12"]) == 1  # o atendimento tambem grava eventos
         db.reset_mock()
         outro = json.dumps({"event": "connection.update", "data": {}}).encode()
         r = c.post("/cliente/api/wa/webhook", content=outro, headers={"X-Webhook-Signature": sign("seg", outro)})

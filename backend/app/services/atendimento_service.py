@@ -91,6 +91,11 @@ def open_conversation(db: Session, jid: str) -> WaConversation | None:
                      .order_by(WaConversation.id.desc()).limit(1))
 
 
+def event(db: Session, conv: WaConversation, text: str) -> None:
+    """Linha do tempo da conversa (assumiu, transferiu, entrou na fila...). Nunca vai ao cliente nem conta como nao lida."""
+    db.add(WaMessage(external_id="ev-" + uuid.uuid4().hex, session="", jid=conv.jid, direction="sys", type="EVENT", text=text, conversation_id=conv.id))
+
+
 def _record_out(db: Session, conv: WaConversation, text: str, resp: dict | None, user_id: int | None = None,
                 failed: bool = False, mtype: str = "TEXT") -> WaMessage:
     ext = (WaAkgService.message_id(resp) if resp else None) or "navi-" + uuid.uuid4().hex
@@ -130,6 +135,7 @@ def _alert(db: Session, conv: WaConversation, gw) -> None:
 def _enqueue(db: Session, conv: WaConversation, queue: str, gw) -> None:
     queue = queue_ok(db, queue)
     conv.state, conv.queue, conv.queued_at = "aguardando", queue, now()
+    event(db, conv, f"Entrou na fila {qname(db, queue)}")
     _say(db, conv, gw, f"Você está na fila do {qname(db, queue)}. Em instantes um analista vai te atender.")
     _alert(db, conv, gw)
 
@@ -180,6 +186,7 @@ def _apply(db: Session, conv: WaConversation, state: E.State, out: E.Outcome, gw
         _enqueue(db, conv, out.queue, gw)
     else:  # end: atendimento resolvido pelo proprio fluxo (ex.: chamado aberto)
         conv.state, conv.flow_node, conv.closed_at, conv.unread, conv.closed_reason = "encerrada", None, now(), 0, "fluxo"
+        event(db, conv, "Atendimento resolvido pelo fluxo")
     conv.flow_vars = copy.deepcopy(state.vars)
 
 
@@ -204,6 +211,7 @@ def handle_inbound(db: Session, msg: WaMessage, gw) -> WaConversation | None:
                               queue="geral", menu_sent_at=now(), menu_tries=0, unread=0)
         db.add(conv)
         db.flush()
+        event(db, conv, "Conversa iniciada")
         state = E.State(vars={"nome": msg.push_name or "", "telefone": conv.jid.split("@")[0], **({"cliente": client.trade_name, "client_id": client.id} if client else {})})
         _apply(db, conv, state, E.start(_flow(db), state, RealHost(db, conv, gw)), gw)
     elif conv.state == "menu":
@@ -244,6 +252,7 @@ def close_inactive(db: Session, gw) -> int:
     for conv in rows:
         conv.state, conv.closed_at, conv.closed_by, conv.unread, conv.flow_node = "encerrada", now(), None, 0, None
         conv.closed_reason = "inatividade"
+        event(db, conv, f"Encerrado por inatividade (sem mensagens há {horas} h)")
         if c.get("inactivity_message"):
             _say(db, conv, gw, c["inactivity_message"])
     return len(rows)
@@ -269,6 +278,7 @@ def transfer(db: Session, conv: WaConversation, user_id: int | None, queue: str 
 
 def close(db: Session, conv: WaConversation, user_id: int, send_closing: bool, gw) -> None:
     conv.state, conv.closed_at, conv.closed_by, conv.unread, conv.closed_reason = "encerrada", now(), user_id, 0, "analista"
+    event(db, conv, "Atendimento encerrado pelo analista")
     if send_closing:
         _say(db, conv, gw, cfg(db)["closing_message"])
 
