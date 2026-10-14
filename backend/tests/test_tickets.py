@@ -8,9 +8,9 @@ def q(name="SOC", emails="soc@orcati.com.br", wa="120@g.us", active=True):
     return NS(name=name, notify_emails=emails, notify_wa_jid=wa, active=active)
 
 
-def ticket(queue=None, watchers=None, client_id=1, number=1042, status="aberto", priority="media", subject="Sem internet"):
+def ticket(queue=None, watchers=None, client_id=1, number=1042, status="aberto", priority="media", subject="Sem internet", internal=False, unit=None):
     return NS(number=number, client_id=client_id, queue_id=1 if queue else None, subject=subject, status=status, priority=priority,
-             watchers=watchers or [])
+             watchers=watchers or [], internal=internal, unit=unit)
 
 
 def test_notify_usa_fila_e_observadores_sem_duplicar():
@@ -54,3 +54,21 @@ def test_notify_lembrete_de_escalonamento_nao_quebra():
     t = ticket(status="aguardando_orca")
     with patch.object(TS, "_mail_send"), patch.object(TS, "_wa_send"):
         TS.notify(db, t, "lembrete", extra_text="sem resposta ha 24h")  # kind usado pelo job de escalonamento
+
+
+def test_notify_chamado_interno_nunca_avisa_ninguem():
+    db = MagicMock()
+    t = ticket(queue=q(), watchers=[NS(kind="email", target="x@ex.com.br", label=None)], internal=True)
+    with patch.object(TS, "_mail_send") as mail, patch.object(TS, "_wa_send") as wa:
+        TS.notify(db, t, "aberto")
+        mail.assert_not_called()
+        wa.assert_not_called()
+
+
+def test_notify_inclui_unidade():
+    db = MagicMock()
+    db.get.return_value = NS(trade_name="X")
+    t = ticket(unit="Filial Bauru", watchers=[NS(kind="email", target="a@ex.com.br", label=None)])
+    with patch.object(TS, "_mail_send") as mail, patch.object(TS, "_wa_send"):
+        TS.notify(db, t, "aberto")
+        assert "Unidade: Filial Bauru" in mail.call_args.args[3]

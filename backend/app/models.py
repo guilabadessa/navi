@@ -594,6 +594,8 @@ class Ticket(Base):
     created_by_id: Mapped[int | None] = mapped_column(Integer)
     created_by_name: Mapped[str | None] = mapped_column(String(255))
     contact_phone: Mapped[str | None] = mapped_column(String(32))  # telefone para contato sobre este chamado (opcional)
+    unit: Mapped[str | None] = mapped_column(String(120))  # unidade/filial do cliente a que o chamado se refere (opcional)
+    internal: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), index=True)  # chamado interno: so a equipe ve; nunca aparece no portal nem avisa ninguem
     assigned_to_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

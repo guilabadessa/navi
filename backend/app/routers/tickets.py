@@ -111,7 +111,7 @@ def _ticket_out(t: Ticket, portal: bool = False, names: dict | None = None) -> d
     return {"id": t.id, "number": t.number, "client_id": t.client_id, "client": t.client.trade_name if t.client else None,
             "queue_id": t.queue_id, "queue": t.queue.name if t.queue else None, "subject": t.subject, "status": t.status,
             "status_label": TS.STATUS_LABEL.get(t.status, t.status), "priority": t.priority, "priority_label": TS.PRIORITY_LABEL.get(t.priority, t.priority),
-            "origin": t.origin, "created_by_name": t.created_by_name, "contact_phone": t.contact_phone,
+            "origin": t.origin, "created_by_name": t.created_by_name, "contact_phone": t.contact_phone, "unit": t.unit, "internal": t.internal,
             "assigned_to_id": t.assigned_to_id, "assigned_to_name": (names or {}).get(t.assigned_to_id),
             "created_at": t.created_at.isoformat(), "updated_at": t.updated_at.isoformat(),
             "closed_at": t.closed_at.isoformat() if t.closed_at else None,
@@ -138,6 +138,8 @@ class TicketIn(BaseModel):
     priority: str = Field(default="media")
     body: str = Field(min_length=1, max_length=8000)
     contact_phone: str | None = Field(default=None, max_length=32)
+    unit: str | None = Field(default=None, max_length=120)
+    internal: bool = False  # chamado interno: registro so da equipe (nao aparece no portal, nao avisa cliente/fila/CC)
     watchers: list[WatcherIn] = Field(default_factory=list)
 
 
@@ -147,6 +149,7 @@ class TicketPortalIn(BaseModel):
     priority: str = Field(default="media")
     body: str = Field(min_length=1, max_length=8000)
     contact_phone: str | None = Field(default=None, max_length=32)
+    unit: str | None = Field(default=None, max_length=120)
 
 
 class MessageIn(BaseModel):
@@ -162,10 +165,12 @@ class TicketFieldsIn(BaseModel):
     queue_id: int | None = None
     priority: str | None = None
     assigned_to_id: int | None = None
+    unit: str | None = Field(default=None, max_length=120)
 
 
 def _create(db: Session, request: Request, client_id: int, queue_id: int | None, subject: str, priority: str, body: str,
-           watchers: list[WatcherIn], user: User, origin: str, contact_phone: str | None = None) -> Ticket:
+           watchers: list[WatcherIn], user: User, origin: str, contact_phone: str | None = None,
+           unit: str | None = None, internal: bool = False) -> Ticket:
     if priority not in TICKET_PRIORITIES:
         raise HTTPException(422, "Prioridade inválida")
     if queue_id and not db.get(TicketQueue, queue_id):
@@ -175,13 +180,16 @@ def _create(db: Session, request: Request, client_id: int, queue_id: int | None,
         raise HTTPException(404, "Cliente não encontrado")
     t = Ticket(client_id=client_id, queue_id=queue_id, subject=subject.strip(), priority=priority,  # numero: o banco atribui (sequencia), evita corrida
               origin=origin, created_by_id=user.id, created_by_name=user.name, contact_phone=(contact_phone or None),
-              status="aguardando_cliente" if origin == "staff" else "aguardando_orca")
+              unit=(unit or "").strip() or None, internal=internal,
+              status="aberto" if internal else "aguardando_cliente" if origin == "staff" else "aguardando_orca")
     db.add(t)
     db.flush()
-    for w in watchers:
+    for w in ([] if internal else watchers):  # chamado interno nunca tem observadores (CC)
         db.add(TicketWatcher(ticket_id=t.id, kind=w.kind, target=w.target.strip(), label=titlecase(w.label)))
     has_email_watcher = any(w.kind == "email" for w in watchers)
-    if origin == "portal" and user.email and not any(w.kind == "email" and w.target.strip().lower() == user.email.lower() for w in watchers):
+    if internal:
+        pass
+    elif origin == "portal" and user.email and not any(w.kind == "email" and w.target.strip().lower() == user.email.lower() for w in watchers):
         db.add(TicketWatcher(ticket_id=t.id, kind="email", target=user.email, label=user.name))  # quem abriu pelo portal recebe copia por padrao
     elif origin == "staff" and client.email and not has_email_watcher:
         db.add(TicketWatcher(ticket_id=t.id, kind="email", target=client.email, label=client.trade_name))  # chamado aberto pela equipe: cliente tambem recebe copia por padrao
@@ -189,16 +197,19 @@ def _create(db: Session, request: Request, client_id: int, queue_id: int | None,
     db.add(msg)
     db.flush()
     db.refresh(t)
-    audit.log(db, request, "ticket_create", "ticket", t.id, detail={"numero": t.number, "cliente_id": client_id, "origem": origin})
+    audit.log(db, request, "ticket_create", "ticket", t.id, detail={"numero": t.number, "cliente_id": client_id, "origem": origin, "interno": internal})
     db.commit()
-    TS.notify(db, t, "aberto", msg)
+    if not internal:
+        TS.notify(db, t, "aberto", msg)
     return t
 
 
 @router.get("/tickets")
 def list_tickets(client_id: int | None = None, queue_id: int | None = None, status: str | None = None, assigned_to_id: int | None = None,
-                 open_only: bool = False, db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
+                 open_only: bool = False, internal: bool | None = None, db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
     q = select(Ticket)
+    if internal is not None:
+        q = q.where(Ticket.internal.is_(internal))
     if client_id:
         q = q.where(Ticket.client_id == client_id)
     if queue_id:
@@ -223,7 +234,7 @@ def list_staff(db: Session = Depends(get_db), _=Depends(require("tickets.view"))
 
 @router.post("/tickets")
 def create_ticket(body: TicketIn, request: Request, db: Session = Depends(get_db), user=Depends(require("tickets.edit"))):
-    t = _create(db, request, body.client_id, body.queue_id, body.subject, body.priority, body.body, body.watchers, user, "staff", body.contact_phone)
+    t = _create(db, request, body.client_id, body.queue_id, body.subject, body.priority, body.body, body.watchers, user, "staff", body.contact_phone, body.unit, body.internal)
     return _ticket_out(t)
 
 
@@ -249,18 +260,20 @@ def add_message(tid: int, body: MessageIn, request: Request, db: Session = Depen
             raise HTTPException(422, "Situação inválida")
         status_change = body.status
     internal = body.internal and not status_change  # mudanca de situacao e sempre visivel ao cliente, nunca so nota interna
+    if t.internal:
+        internal = True  # chamado interno: tudo e restrito a equipe
     m = TicketMessage(ticket_id=tid, author_id=user.id, author_name=user.name, origin="staff", internal=internal,
                       body=body.body.strip(), notified=(body.notify or bool(status_change)) and not internal, status_change=status_change)
     db.add(m)
     if status_change:
         t.status, t.escalated_at = status_change, None  # mudanca manual explicita, acompanhada do comentario (nunca sem explicacao)
         t.closed_at = datetime.now(timezone.utc) if status_change in ("resolvido", "fechado") else None
-    elif not internal and t.status not in ("resolvido", "fechado"):
+    elif not internal and not t.internal and t.status not in ("resolvido", "fechado"):
         t.status, t.escalated_at = "aguardando_cliente", None  # gatilho automatico: equipe respondeu, agora e a vez do cliente (pode ser alterado manualmente)
     t.updated_at = datetime.now(timezone.utc)
     audit.log(db, request, "ticket_message", "ticket", tid, detail={"numero": t.number, "interna": internal, "situacao": status_change})
     db.commit()
-    if (body.notify or status_change) and not internal:
+    if (body.notify or status_change) and not internal and not t.internal:
         TS.notify(db, t, "encerrado" if status_change in ("resolvido", "fechado") else "atualizado", m)
     return _msg_out(m)
 
@@ -271,12 +284,15 @@ async def add_attachment(tid: int, request: Request, file: UploadFile = File(...
     if not t:
         raise HTTPException(404)
     m = await _save_attachment(db, t, file, user.id, user.name, "staff")
-    if t.status not in ("resolvido", "fechado"):
+    if t.internal:
+        m.internal = True
+    elif t.status not in ("resolvido", "fechado"):
         t.status, t.escalated_at = "aguardando_cliente", None
     t.updated_at = datetime.now(timezone.utc)
     audit.log(db, request, "ticket_attachment", "ticket", tid, detail={"numero": t.number, "arquivo": m.attachment.filename})
     db.commit()
-    TS.notify(db, t, "atualizado", m)
+    if not t.internal:
+        TS.notify(db, t, "atualizado", m)
     return _msg_out(m)
 
 
@@ -299,6 +315,8 @@ def update_ticket(tid: int, body: TicketFieldsIn, request: Request, db: Session 
         t.queue_id = body.queue_id or None
     if body.priority:
         t.priority = body.priority
+    if body.unit is not None:
+        t.unit = body.unit.strip() or None
     if body.assigned_to_id is not None:
         if body.assigned_to_id and not db.get(User, body.assigned_to_id):
             raise HTTPException(422, "Responsável inválido")
@@ -315,6 +333,8 @@ def add_watcher(tid: int, body: WatcherIn, request: Request, db: Session = Depen
     t = db.get(Ticket, tid)
     if not t:
         raise HTTPException(404)
+    if t.internal:
+        raise HTTPException(422, "Chamado interno não tem observadores (CC): ele não avisa ninguém.")
     w = TicketWatcher(ticket_id=tid, kind=body.kind, target=body.target.strip(), label=titlecase(body.label))
     db.add(w)
     audit.log(db, request, "ticket_watcher_add", "ticket", tid, detail={"tipo": body.kind, "destino": body.target})
@@ -341,7 +361,7 @@ def portal_queues(db: Session = Depends(get_db), _=Depends(require("portal.ticke
 @router.get("/portal/tickets")
 def portal_list(client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
-    rows = list(db.scalars(select(Ticket).where(Ticket.client_id == c.id).order_by(Ticket.created_at.desc()).limit(200)))
+    rows = list(db.scalars(select(Ticket).where(Ticket.client_id == c.id, Ticket.internal.is_(False)).order_by(Ticket.created_at.desc()).limit(200)))
     return [_ticket_out(t, portal=True) for t in rows]
 
 
@@ -349,7 +369,7 @@ def portal_list(client_id: int | None = None, db: Session = Depends(get_db), use
 def portal_create(body: TicketPortalIn, request: Request, client_id: int | None = None, db: Session = Depends(get_db),
                   user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
-    t = _create(db, request, c.id, body.queue_id, body.subject, body.priority, body.body, [], user, "portal", body.contact_phone)
+    t = _create(db, request, c.id, body.queue_id, body.subject, body.priority, body.body, [], user, "portal", body.contact_phone, body.unit)
     return _ticket_out(t, portal=True)
 
 
@@ -357,7 +377,7 @@ def portal_create(body: TicketPortalIn, request: Request, client_id: int | None 
 def portal_get(tid: int, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
     t = db.get(Ticket, tid)
-    if not t or t.client_id != c.id:
+    if not t or t.client_id != c.id or t.internal:
         raise HTTPException(404)
     out = _ticket_out(t, portal=True)
     out["messages"] = [_msg_out(m) for m in _messages_q(db, tid, True)]
@@ -369,7 +389,7 @@ def portal_add_message(tid: int, body: MessageIn, request: Request, client_id: i
                        user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
     t = db.get(Ticket, tid)
-    if not t or t.client_id != c.id:
+    if not t or t.client_id != c.id or t.internal:
         raise HTTPException(404)
     if t.status in ("resolvido", "fechado"):
         raise HTTPException(409, "Este chamado já foi encerrado. Abra um novo chamado se o problema persistir.")
@@ -395,7 +415,7 @@ async def portal_add_attachment(tid: int, request: Request, file: UploadFile = F
                                 user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
     t = db.get(Ticket, tid)
-    if not t or t.client_id != c.id:
+    if not t or t.client_id != c.id or t.internal:
         raise HTTPException(404)
     if t.status in ("resolvido", "fechado"):
         raise HTTPException(409, "Este chamado já foi encerrado. Abra um novo chamado se o problema persistir.")
@@ -412,7 +432,7 @@ async def portal_add_attachment(tid: int, request: Request, file: UploadFile = F
 def portal_get_attachment(tid: int, aid: int, client_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require("portal.tickets"))):
     c = _client_for(db, user, client_id)
     t = db.get(Ticket, tid)
-    if not t or t.client_id != c.id:
+    if not t or t.client_id != c.id or t.internal:
         raise HTTPException(404)
     a = db.get(TicketAttachment, aid)
     if not a or a.ticket_id != tid:

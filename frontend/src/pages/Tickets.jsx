@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ListPlus, MessageSquareText, Paperclip, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
+import { ListPlus, Lock, MessageSquareText, Paperclip, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
 import { get, post, put, del, upload, download } from '../api'
 import { Card, Field, Loading, Modal, PageHead, Pill, Table, Tabs, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
@@ -43,24 +43,28 @@ function QueuesTab() {
 }
 
 function NewTicketForm({ clients, queues, onClose, onSaved }) {
-  const [x, setX] = useState({ client_id: clients[0]?.id || '', queue_id: queues[0]?.id || '', subject: '', priority: 'media', body: '', contact_phone: '' })
+  const [x, setX] = useState({ client_id: clients[0]?.id || '', queue_id: queues[0]?.id || '', subject: '', priority: 'media', body: '', contact_phone: '', unit: '', internal: false })
   const [watchers, setWatchers] = useState([]); const [wk, setWk] = useState('email'); const [wt, setWt] = useState(''); const [wl, setWl] = useState('')
   const toast = useToast()
   const addWatcher = () => { if (!wt.trim()) return; setWatchers([...watchers, { kind: wk, target: wk === 'whatsapp' ? maskTarget(wt) : wt.trim(), label: wl.trim() || null }]); setWt(''); setWl('') }
   const save = async () => {
     if (!x.client_id || !x.subject.trim() || !x.body.trim()) { toast('Preencha cliente, assunto e descrição', true); return }
-    try { await post('/tickets', { ...x, queue_id: x.queue_id || null, contact_phone: x.contact_phone || null, watchers }); toast('Chamado aberto'); onSaved() } catch (e) { toast(e.message, true) }
+    try { await post('/tickets', { ...x, queue_id: x.queue_id || null, contact_phone: x.contact_phone || null, unit: x.unit.trim() || null, watchers: x.internal ? [] : watchers }); toast(x.internal ? 'Chamado interno registrado' : 'Chamado aberto'); onSaved() } catch (e) { toast(e.message, true) }
   }
-  return <Modal wide title="Novo chamado" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}><Send size={15} />Abrir chamado</button></>}>
+  return <Modal wide title={x.internal ? 'Novo chamado interno' : 'Novo chamado'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}><Send size={15} />{x.internal ? 'Registrar chamado interno' : 'Abrir chamado'}</button></>}>
+    <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, padding: '8px 12px', borderRadius: 10, background: x.internal ? '#fff7e0' : undefined, border: '1px solid var(--line)' }}><input type="checkbox" checked={x.internal} onChange={e => setX({ ...x, internal: e.target.checked })} /> <Lock size={14} /> <b>Chamado interno</b> <span className="sub">— registro só da equipe: não aparece no portal do cliente e não envia aviso a ninguém</span></label>
     <div className="row r2">
       <Field label="CLIENTE *"><select value={x.client_id} onChange={e => setX({ ...x, client_id: +e.target.value })}>{clients.map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select></Field>
       <Field label="FILA" hint="Define quem recebe o aviso por tecnologia."><select value={x.queue_id} onChange={e => setX({ ...x, queue_id: +e.target.value || '' })}><option value="">Sem fila</option>{queues.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></Field></div>
-    <div className="row r3">
+    <div className="row r2">
+      <Field label="UNIDADE (opcional)" hint="Para clientes com várias unidades/filiais."><input value={x.unit} onChange={e => setX({ ...x, unit: e.target.value })} placeholder="Ex.: Matriz, Filial Bauru" /></Field>
+      <Field label="TELEFONE DE CONTATO (opcional)"><input value={x.contact_phone} onChange={e => setX({ ...x, contact_phone: maskTarget(e.target.value) })} placeholder="(14) 99999-9999" /></Field></div>
+    <div className="row r2">
       <Field label="ASSUNTO *"><input value={x.subject} onChange={e => setX({ ...x, subject: e.target.value })} placeholder="Ex.: Lentidão no acesso remoto" /></Field>
       <Field label="PRIORIDADE"><select value={x.priority} onChange={e => setX({ ...x, priority: e.target.value })}>{PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
-      <Field label="TELEFONE DE CONTATO (opcional)"><input value={x.contact_phone} onChange={e => setX({ ...x, contact_phone: maskTarget(e.target.value) })} placeholder="(14) 99999-9999" /></Field></div>
+    </div>
     <Field label="DESCRIÇÃO *"><textarea style={{ minHeight: 120 }} value={x.body} onChange={e => setX({ ...x, body: e.target.value })} placeholder="O que o cliente reportou, horário, impacto..." /></Field>
-    <Field label="RECEBER CÓPIA (CC) — e-mail, grupo ou celular, pode adicionar vários">
+    {!x.internal && <Field label="RECEBER CÓPIA (CC) — e-mail, grupo ou celular, pode adicionar vários">
       <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <select value={wk} onChange={e => setWk(e.target.value)} style={{ width: 130 }}><option value="email">E-mail</option><option value="whatsapp">WhatsApp</option></select>
         <input value={wt} onChange={e => setWt(e.target.value)} placeholder={wk === 'email' ? 'pessoa@cliente.com.br' : '(14) 99999-9999 ou grupo@g.us'} style={{ flex: 1, minWidth: 180 }} />
@@ -68,7 +72,7 @@ function NewTicketForm({ clients, queues, onClose, onSaved }) {
         <button type="button" className="btn sm" onClick={addWatcher}><ListPlus size={15} />Adicionar</button></div>
       {watchers.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{watchers.map((w, i) => <span key={i} className="chip">{w.label ? `${w.label} · ` : ''}{w.target} ({w.kind === 'email' ? 'e-mail' : 'WhatsApp'})
         <X size={12} style={{ cursor: 'pointer', marginLeft: 4 }} onClick={() => setWatchers(watchers.filter((_, j) => j !== i))} /></span>)}</div>}
-    </Field>
+    </Field>}
   </Modal>
 }
 
@@ -98,9 +102,10 @@ function TicketDetail({ id, queues, staff, canEdit, onClose, onChanged }) {
   const d = t.data; const curStatus = pendStatus ?? d.status; const changingStatus = pendStatus && pendStatus !== d.status
   return <Modal wide title={`#${d.number} · ${d.subject}`} onClose={onClose}>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-      <Pill tone={STATUS_TONE[d.status]}>{d.status_label}</Pill><Pill tone={PRIORITY_TONE[d.priority]}>{d.priority_label}</Pill>
-      <span className="sub">Cliente: <b>{d.client}</b> · Fila: {d.queue || 'sem fila'}{d.contact_phone ? ` · Tel.: ${d.contact_phone}` : ''} · Aberto {fmt(d.created_at)} por {d.created_by_name}{d.origin === 'portal' ? ' (portal)' : ''}</span></div>
-    {canEdit && <div className="row r3" style={{ marginBottom: 14 }}>
+      {d.internal && <Pill tone="warn"><Lock size={11} /> Interno</Pill>}<Pill tone={STATUS_TONE[d.status]}>{d.status_label}</Pill><Pill tone={PRIORITY_TONE[d.priority]}>{d.priority_label}</Pill>
+      <span className="sub">Cliente: <b>{d.client}</b> · Fila: {d.queue || 'sem fila'}{d.unit ? ` · Unidade: ${d.unit}` : ''}{d.contact_phone ? ` · Tel.: ${d.contact_phone}` : ''} · Aberto {fmt(d.created_at)} por {d.created_by_name}{d.origin === 'portal' ? ' (portal)' : ''}</span></div>
+    {canEdit && <div className="row r4" style={{ marginBottom: 14 }}>
+      <Field label="UNIDADE"><input defaultValue={d.unit || ''} key={d.unit || ''} onBlur={e => { if (e.target.value.trim() !== (d.unit || '')) setField('unit', e.target.value.trim()) }} placeholder="Sem unidade" /></Field>
       <Field label="PRIORIDADE"><select value={d.priority} onChange={e => setField('priority', e.target.value)}>{PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
       <Field label="FILA"><select value={d.queue_id || ''} onChange={e => setField('queue_id', +e.target.value || null)}><option value="">Sem fila</option>{queues.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></Field>
       <Field label="RESPONSÁVEL"><select value={d.assigned_to_id || ''} onChange={e => setField('assigned_to_id', +e.target.value || null)}><option value="">Sem responsável</option>{(staff || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field></div>}
@@ -112,16 +117,17 @@ function TicketDetail({ id, queues, staff, canEdit, onClose, onChanged }) {
         {m.attachment && <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => getAttachment(m)}><Paperclip size={14} />{m.attachment.filename} ({Math.ceil(m.attachment.size_bytes / 1024)} KB)</button>}</div>)}
     </div>
     {canEdit && <>
+      {d.internal && <p className="hint">Chamado interno: tudo o que for escrito aqui fica só com a equipe (não aparece no portal e não avisa ninguém).</p>}
       <Field label="SITUAÇÃO" hint={changingStatus ? 'Escreva o comentário abaixo explicando a mudança — a situação só muda ao enviar.' : 'Para mudar, selecione e escreva o comentário antes de enviar.'}>
         <select value={curStatus} onChange={e => setPendStatus(e.target.value)}>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
       <Field label={changingStatus ? 'COMENTÁRIO (obrigatório para mudar a situação) *' : 'RESPONDER'}>
         <textarea style={{ minHeight: 80, borderColor: changingStatus && !reply.trim() ? 'var(--crit)' : undefined }} value={reply} onChange={e => setReply(e.target.value)} placeholder={changingStatus ? 'Explique a mudança de situação antes de enviar...' : 'Mensagem para o cliente (ou nota interna)...'} /></Field>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={internal} disabled={changingStatus} onChange={e => setInternal(e.target.checked)} /> Nota interna (não avisa o cliente/fila)</label>
+        {!d.internal && <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={internal} disabled={changingStatus} onChange={e => setInternal(e.target.checked)} /> Nota interna (não avisa o cliente/fila)</label>}
         <button className="btn primary" disabled={changingStatus && !reply.trim()} title={changingStatus && !reply.trim() ? 'Escreva o comentário para poder enviar' : ''} onClick={send}><MessageSquareText size={15} />{changingStatus ? `Enviar e mudar para "${STATUSES.find(s => s[0] === pendStatus)?.[1]}"` : 'Enviar'}</button>
         <label className="btn sm" style={{ cursor: sending ? 'wait' : 'pointer' }}><Paperclip size={15} />{sending ? 'Enviando…' : 'Anexar arquivo'}<input type="file" style={{ display: 'none' }} disabled={sending} onChange={sendFile} /></label>
         <span className="sub">Até 15 MB · imagens, PDF, TXT, CSV, ZIP, 7z, backups (.bak)</span></div>
-      <Field label="OBSERVADORES (CC) DESTE CHAMADO">
+      {!d.internal && <Field label="OBSERVADORES (CC) DESTE CHAMADO">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>{d.watchers.map(w => <span key={w.id} className="chip">{w.label ? `${w.label} · ` : ''}{w.target}
           <X size={12} style={{ cursor: 'pointer', marginLeft: 4 }} onClick={async () => { await del(`/tickets/${id}/watchers/${w.id}`); t.reload() }} /></span>)}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -129,15 +135,15 @@ function TicketDetail({ id, queues, staff, canEdit, onClose, onChanged }) {
           <input value={wt} onChange={e => setWt(e.target.value)} placeholder={wk === 'email' ? 'pessoa@cliente.com.br' : '(14) 99999-9999 ou grupo@g.us'} style={{ flex: 1, minWidth: 180 }} />
           <input value={wl} onChange={e => setWl(e.target.value)} placeholder="nome (opcional)" style={{ width: 160 }} />
           <button type="button" className="btn sm" onClick={addWatcher}><ListPlus size={15} />Adicionar</button></div>
-      </Field></>}
+      </Field>}</>}
   </Modal>
 }
 
 function TicketsTab() {
   const me = useAuth(); const edit = can(me, 'tickets.edit')
-  const [status, setStatus] = useState(''); const [clientId, setClientId] = useState(''); const [queueId, setQueueId] = useState(''); const [assignee, setAssignee] = useState('')
+  const [status, setStatus] = useState(''); const [clientId, setClientId] = useState(''); const [queueId, setQueueId] = useState(''); const [assignee, setAssignee] = useState(''); const [kind, setKind] = useState('')
   const [openId, setOpenId] = useState(null); const [newT, setNewT] = useState(false)
-  const qs = [status && `status=${status}`, clientId && `client_id=${clientId}`, queueId && `queue_id=${queueId}`, assignee && `assigned_to_id=${assignee}`].filter(Boolean).join('&')
+  const qs = [status && `status=${status}`, clientId && `client_id=${clientId}`, queueId && `queue_id=${queueId}`, assignee && `assigned_to_id=${assignee}`, kind && `internal=${kind === 'internal'}`].filter(Boolean).join('&')
   const list = useLoad(() => get('/tickets' + (qs ? `?${qs}` : '')), [qs], 15000)
   const clients = useLoad(() => get('/clients'), []); const queues = useLoad(() => get('/tickets/queues'), [])
   const staff = useLoad(() => get('/tickets/staff'), [])
@@ -147,10 +153,11 @@ function TicketsTab() {
         <select value={status} onChange={e => setStatus(e.target.value)} style={{ width: 180 }}><option value="">Todas as situações</option>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         <select value={clientId} onChange={e => setClientId(e.target.value)} style={{ width: 200 }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
         <select value={queueId} onChange={e => setQueueId(e.target.value)} style={{ width: 160 }}><option value="">Todas as filas</option>{(queues.data || []).map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select>
-        <select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ width: 180 }}><option value="">Todos os responsáveis</option>{(staff.data || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+        <select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ width: 180 }}><option value="">Todos os responsáveis</option>{(staff.data || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        <select value={kind} onChange={e => setKind(e.target.value)} style={{ width: 170 }}><option value="">Todos os tipos</option><option value="internal">Só internos</option><option value="client">Só de cliente</option></select></div>
       {edit && <button className="btn primary" onClick={() => setNewT(true)}><Plus />Novo chamado</button>}</div>
     <Card pad={false}>{list.data ? <Table rows={list.data} onRow={r => setOpenId(r.id)} empty="Nenhum chamado encontrado com esses filtros." cols={[
-      { h: '#', r: r => <b>{r.number}</b> }, { h: 'Cliente', r: r => r.client }, { h: 'Assunto', r: r => <div className="trunc" style={{ maxWidth: 260 }}>{r.subject}</div> },
+      { h: '#', r: r => <b>{r.number}</b> }, { h: 'Cliente', r: r => <>{r.client}{r.unit && <div className="sub">{r.unit}</div>}</> }, { h: 'Assunto', r: r => <div className="trunc" style={{ maxWidth: 260 }}>{r.internal && <Pill tone="warn">Interno</Pill>} {r.subject}</div> },
       { h: 'Fila', r: r => r.queue || '—' }, { h: 'Responsável', r: r => r.assigned_to_name || <span className="sub">—</span> }, { h: 'Prioridade', r: r => <Pill tone={PRIORITY_TONE[r.priority]}>{r.priority_label}</Pill> },
       { h: 'Situação', r: r => <Pill tone={STATUS_TONE[r.status]}>{r.status_label}</Pill> }, { h: 'Atualizado', r: r => fmt(r.updated_at) }]} /> : <Loading />}</Card>
     {openId && <TicketDetail id={openId} queues={queues.data || []} staff={staff.data || []} canEdit={edit} onClose={() => setOpenId(null)} onChanged={list.reload} />}

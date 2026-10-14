@@ -38,13 +38,15 @@ def _mail_send(db: Session, to: list[str], subject: str, body_lines: list[str], 
 
 def notify(db: Session, ticket: Ticket, kind: str, message: TicketMessage | None = None, extra_text: str | None = None):
     """Avisa a fila (se configurada) e os observadores (CC) do chamado. kind: 'aberto' | 'atualizado' | 'encerrado'."""
+    if ticket.internal:
+        return  # chamado interno e so registro da equipe: nunca avisa fila, observadores nem cliente
     client = db.get(Client, ticket.client_id)
     queue = db.get(TicketQueue, ticket.queue_id) if ticket.queue_id else None
     cliente = client.trade_name if client else "—"
     header = {"aberto": f"Novo chamado #{ticket.number} · {cliente}", "atualizado": f"Atualização no chamado #{ticket.number} · {cliente}",
              "encerrado": f"Chamado #{ticket.number} encerrado · {cliente}",
              "lembrete": f"⏰ Chamado #{ticket.number} sem resposta há mais de {ESCALATION_HOURS}h · {cliente}"}[kind]
-    lines = [f"Cliente: {cliente}", f"Assunto: {ticket.subject}", f"Fila: {queue.name if queue else 'Sem fila'}",
+    lines = [f"Cliente: {cliente}"] + ([f"Unidade: {ticket.unit}"] if ticket.unit else []) + [f"Assunto: {ticket.subject}", f"Fila: {queue.name if queue else 'Sem fila'}",
              f"Prioridade: {PRIORITY_LABEL.get(ticket.priority, ticket.priority)}", f"Situação: {STATUS_LABEL.get(ticket.status, ticket.status)}"]
     if message and message.body:
         lines.append(f"{'Nota interna' if message.internal else 'Mensagem'} de {message.author_name or 'NAVI'}: {message.body}")
@@ -71,7 +73,7 @@ def notify(db: Session, ticket: Ticket, kind: str, message: TicketMessage | None
 def check_escalations(db: Session, limit: int = 50) -> int:
     """Chamado aguardando a Orca TI ha mais de ESCALATION_HOURS sem um novo lembrete recente: reenvia aviso a fila/observadores."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=ESCALATION_HOURS)
-    rows = db.scalars(select(Ticket).where(Ticket.status == "aguardando_orca", Ticket.updated_at <= cutoff,
+    rows = db.scalars(select(Ticket).where(Ticket.status == "aguardando_orca", Ticket.internal.is_(False), Ticket.updated_at <= cutoff,
                                            (Ticket.escalated_at.is_(None)) | (Ticket.escalated_at <= cutoff)).limit(limit)).all()
     n = 0
     for t in rows:
