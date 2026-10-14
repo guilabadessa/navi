@@ -664,4 +664,28 @@ class WaMessage(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     media_ref: Mapped[str | None] = mapped_column(String(512))
     push_name: Mapped[str | None] = mapped_column(String(255))
+    conversation_id: Mapped[int | None] = mapped_column(ForeignKey("wa_conversations.id", ondelete="SET NULL"), index=True)
+    sent_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))  # analista que enviou (saida)
+    failed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class WaConversation(Base):
+    """Atendimento por WhatsApp: menu -> aguardando (fila do setor) -> atendendo -> encerrada."""
+    __tablename__ = "wa_conversations"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    jid: Mapped[str] = mapped_column(String(128), index=True)
+    push_name: Mapped[str | None] = mapped_column(String(255))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    queue: Mapped[str] = mapped_column(String(16), default="geral")  # comercial | financeiro | suporte | geral
+    state: Mapped[str] = mapped_column(String(16), default="menu", index=True)  # menu | aguardando | atendendo | encerrada
+    assigned_to: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    menu_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    menu_tries: Mapped[int] = mapped_column(Integer, default=0)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    unread: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
