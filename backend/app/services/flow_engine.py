@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 MAX_STEPS = 40
 WAITING = ("menu", "ask")
-AUTO = ("start", "message", "notify", "lookup_client", "condition", "create_ticket")
+AUTO = ("start", "message", "notify", "lookup_client", "condition", "create_ticket", "hours", "set_var", "tag")
 TERMINAL = ("enqueue", "end")
 FALLBACK_QUEUE = "geral"
 _VAR = re.compile(r"\{(\w+)\}")
@@ -38,6 +38,8 @@ class Host:
     def link_client(self, client: dict) -> None: ...
     def create_ticket(self, subject: str, body: str, priority: str, queue_id: int | None) -> dict | None: return None  # {"number"}
     def notify(self, dests: list[str], text: str) -> None: ...
+    def is_open(self) -> bool: return True  # dentro do horario de atendimento?
+    def add_tag(self, tag: str) -> None: ...
 
 
 @dataclass
@@ -105,6 +107,16 @@ def run(flow: Flow, state: State, host: Host, node_id: str | None) -> Outcome:
             nxt = flow.go(node["id"], "next")
         elif t == "notify":
             host.notify([x for x in d.get("to", []) if x], render(d.get("text", ""), state.vars))
+            nxt = flow.go(node["id"], "next")
+        elif t == "hours":
+            nxt = flow.go(node["id"], "open" if host.is_open() else "closed")
+        elif t == "set_var":
+            if d.get("var"):
+                state.vars[d["var"]] = render(str(d.get("value", "")), state.vars)
+            nxt = flow.go(node["id"], "next")
+        elif t == "tag":
+            if d.get("tag"):
+                host.add_tag(render(d["tag"], state.vars))
             nxt = flow.go(node["id"], "next")
         elif t == "condition":
             v = str(state.vars.get(d.get("var", ""), "") or "")

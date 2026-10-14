@@ -6,12 +6,13 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import settings_store as S
-from ..models import Client, WaConversation, WaMessage, WaQueue
+from ..models import Client, WaConversation, WaMessage, WaQueue, WaTag
 from . import flow_engine as E, flow_service as FS, ticket_service as TS
 from .wa_akg_service import WaAkgError, WaAkgService
 
@@ -25,6 +26,7 @@ DEFAULT_CFG = {
     "closing_message": "Atendimento encerrado. Obrigado pelo contato com a Orca TI!",
     "inactivity_hours": 24,  # sem mensagens de ninguem por tanto tempo, o atendimento e encerrado (0 desliga)
     "inactivity_message": "Encerramos este atendimento por falta de interação. Se precisar, é só enviar uma nova mensagem. 👋",
+    "hours": {"mon": ["08:00", "18:00"], "tue": ["08:00", "18:00"], "wed": ["08:00", "18:00"], "thu": ["08:00", "18:00"], "fri": ["08:00", "18:00"], "sat": None, "sun": None},
     "quick_replies": [{"title": "Vou verificar", "text": "Olá! Vou verificar isso para você e já retorno."},
                       {"title": "Pedir print", "text": "Pode nos enviar um print ou foto da tela com o erro, por favor?"},
                       {"title": "Aguarde um instante", "text": "Só um instante, estou analisando."}],
@@ -42,6 +44,19 @@ def cfg(db: Session) -> dict:
     except ValueError:
         saved = {}
     return {**DEFAULT_CFG, **{k: v for k, v in saved.items() if k in DEFAULT_CFG}}
+
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+BRT = ZoneInfo("America/Sao_Paulo")
+
+
+def is_open(c: dict, at: datetime | None = None) -> bool:
+    """Dentro do horario de atendimento (horario de Brasilia)? Dia sem janela = fechado."""
+    t = (at or now()).astimezone(BRT)
+    win = (c.get("hours") or {}).get(DAYS[t.weekday()])
+    if not win:
+        return False
+    return win[0] <= t.strftime("%H:%M") < win[1]
 
 
 def queue_map(db: Session) -> dict:
@@ -165,6 +180,18 @@ class RealHost(E.Host):
             self.db.rollback()
             log.exception("atendimento: falha ao abrir chamado pelo fluxo")
             return None
+
+    def is_open(self):
+        return is_open(cfg(self.db))
+
+    def add_tag(self, tag):
+        found = self.db.scalar(select(WaTag.name).where(func.lower(WaTag.name) == tag.strip().lower()))
+        if found is None:
+            log.warning("atendimento: etiqueta %r do fluxo nao existe no catalogo", tag)
+            return
+        if found not in (self.conv.tags or []):
+            self.conv.tags = [*(self.conv.tags or []), found]
+            event(self.db, self.conv, f"Etiqueta aplicada pelo fluxo: {found}")
 
     def notify(self, dests, text):
         for d in dests:

@@ -108,3 +108,41 @@ def test_padrao_suporte_analista_e_descricao_curta():
 def test_simulador_nao_roda_fluxo_invalido():
     r = F.simulate(MagicMock(), {"nodes": [], "edges": []}, [])
     assert r["errors"] and r["transcript"] == []
+
+
+def test_validador_dos_novos_passos():
+    d = D()
+    d["nodes"] += [{"id": "h", "type": "hours", "x": 0, "y": 0, "data": {}}, {"id": "v", "type": "set_var", "x": 0, "y": 0, "data": {"var": "1x"}}, {"id": "t", "type": "tag", "x": 0, "y": 0, "data": {}}]
+    msgs = " | ".join(f"{x['node']}:{x['msg']}" for x in F.validate_flow(d))
+    assert "h:Falta ligar a saída “open”" in msgs and "h:Falta ligar a saída “closed”" in msgs
+    assert "v:Informe o nome da variável" in msgs and "t:Escolha a etiqueta" in msgs
+
+
+def test_horario_de_atendimento_em_brasilia():
+    from datetime import datetime, timezone
+    from app.services import atendimento_service as A
+    c = A.DEFAULT_CFG
+    seg_10h = datetime(2026, 10, 12, 13, 0, tzinfo=timezone.utc)   # segunda 10:00 BRT
+    seg_19h = datetime(2026, 10, 12, 22, 0, tzinfo=timezone.utc)   # segunda 19:00 BRT
+    sab_10h = datetime(2026, 10, 17, 13, 0, tzinfo=timezone.utc)
+    assert A.is_open(c, seg_10h) and not A.is_open(c, seg_19h) and not A.is_open(c, sab_10h)
+
+
+def test_simulador_fora_do_horario():
+    d = {"nodes": [{"id": "s", "type": "start", "x": 0, "y": 0, "data": {}}, {"id": "h", "type": "hours", "x": 0, "y": 0, "data": {}},
+                   {"id": "a", "type": "enqueue", "x": 0, "y": 0, "data": {"queue": "comercial"}}, {"id": "m", "type": "message", "x": 0, "y": 0, "data": {"text": "Fora do horário"}},
+                   {"id": "g", "type": "enqueue", "x": 0, "y": 0, "data": {"queue": "geral"}}],
+         "edges": [{"source": "s", "target": "h", "handle": "next"}, {"source": "h", "target": "a", "handle": "open"}, {"source": "h", "target": "m", "handle": "closed"}, {"source": "m", "target": "g", "handle": "next"}]}
+    assert F.simulate(MagicMock(), d, [])["outcome"]["queue"] == "comercial"
+    assert F.simulate(MagicMock(), d, [], open_now=False)["outcome"]["queue"] == "geral"
+
+
+def test_salvar_fluxo_guarda_versao_e_poda_as_antigas():
+    db = MagicMock()
+    db.scalars.side_effect = [MagicMock(all=lambda: [3, 2]), MagicMock(first=lambda: None)]
+    db.scalar.return_value = None
+    db.get.side_effect = lambda model, i: MagicMock(id=i)
+    F.save_flow(db, D(), "a@x.com")
+    adds = [c.args[0].__class__.__name__ for c in db.add.call_args_list]
+    assert adds[0] == "WaFlowVersion" and "WaFlow" in adds
+    assert db.delete.call_count == 2  # passou do limite de versoes

@@ -138,3 +138,18 @@ def test_no_ausente_laco_e_estado_invalido_caem_na_fila_geral():
     assert E.answer(_menu_flow(), E.State(node="sumiu"), "1", FakeHost()).queue == "geral"
     semsaida = flow([n("s", "start")], [])
     assert E.start(semsaida, E.State(), FakeHost()).queue == "geral"
+
+
+def test_horario_set_var_e_etiqueta():
+    f = flow([n("s", "start"), n("h", "hours"), n("v", "set_var", var="origem", value="whats {nome}"), n("t", "tag", tag="VIP"), n("a", "enqueue", queue="comercial"), n("f", "message", text="Fechado"), n("q", "enqueue", queue="geral")],
+             [e("s", "h"), e("h", "v", "open"), e("h", "f", "closed"), e("v", "t"), e("t", "a"), e("f", "q")])
+
+    class H(FakeHost):
+        def __init__(self, aberto): super().__init__(); self.aberto, self.tags = aberto, []
+        def is_open(self): return self.aberto
+        def add_tag(self, tag): self.tags.append(tag)
+
+    h, st = H(True), E.State(vars={"nome": "Ana"})
+    assert E.start(f, st, h).queue == "comercial" and st.vars["origem"] == "whats Ana" and h.tags == ["VIP"]
+    h2 = H(False)
+    assert E.start(f, E.State(), h2).queue == "geral" and h2.said == ["Fechado"] and h2.tags == []

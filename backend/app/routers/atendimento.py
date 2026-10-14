@@ -10,13 +10,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import TICKET_OPEN_STATUSES, Client, Ticket, User, WaConversation, WaMessage, WaQueue, WaTag
+from ..models import TICKET_OPEN_STATUSES, Client, Ticket, User, WaConversation, WaFlowVersion, WaMessage, WaQueue, WaTag
 from ..security import require
 from ..services import atendimento_service as A, factory, flow_service as FS
 from ..services.wa_akg_service import WaAkgError
@@ -455,6 +455,17 @@ class CfgIn(BaseModel):
     inactivity_hours: int = Field(default=24, ge=0, le=720)
     inactivity_message: str = Field(default="", max_length=500)
     quick_replies: list[QuickReply] = Field(default_factory=list, max_length=50)
+    hours: dict[str, list[str] | None] = Field(default_factory=dict)
+
+    @field_validator("hours")
+    @classmethod
+    def _hours(cls, v):
+        for day, win in v.items():
+            if day not in A.DAYS:
+                raise ValueError("Dia inválido")
+            if win is not None and (len(win) != 2 or not all(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", x) for x in win) or win[0] >= win[1]):
+                raise ValueError("Horário inválido: use HH:MM e abertura antes do fechamento")
+        return v
 
 
 @router.get("/config")
@@ -478,6 +489,7 @@ class FlowIn(BaseModel):
 class SimIn(BaseModel):
     definition: dict
     inputs: list[str] = Field(default_factory=list, max_length=30)
+    outside_hours: bool = False
 
 
 def _active_slugs(db: Session) -> list[str]:
@@ -508,6 +520,20 @@ def put_flow(body: FlowIn, request: Request, db: Session = Depends(get_db), user
     return {"ok": True}
 
 
+@router.get("/flow/versions")
+def flow_versions(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    rows = db.scalars(select(WaFlowVersion).order_by(WaFlowVersion.id.desc()).limit(FS.KEEP_VERSIONS)).all()
+    return [{"id": v.id, "saved_by": v.saved_by, "saved_at": v.saved_at, "nodes": len((v.definition or {}).get("nodes", []))} for v in rows]
+
+
+@router.get("/flow/versions/{vid}")
+def flow_version(vid: int, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    v = db.get(WaFlowVersion, vid)
+    if not v:
+        raise HTTPException(404, "Versão não encontrada")
+    return {"id": v.id, "definition": v.definition, "saved_at": v.saved_at, "saved_by": v.saved_by}
+
+
 @router.post("/flow/reset")
 def reset_flow(request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
     FS.reset_flow(db)
@@ -520,7 +546,7 @@ def reset_flow(request: Request, db: Session = Depends(get_db), user: User = Dep
 @router.post("/flow/simulate")
 def simulate_flow(body: SimIn, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
     """Roda o fluxo com respostas de teste. Consulta o cliente de verdade; nada e enviado e nenhum chamado e criado."""
-    return FS.simulate(db, body.definition, [x[:500] for x in body.inputs], _active_slugs(db))
+    return FS.simulate(db, body.definition, [x[:500] for x in body.inputs], _active_slugs(db), open_now=not body.outside_hours)
 
 
 # ---- Historico e indicadores ----

@@ -1,18 +1,19 @@
 """Fluxo de atendimento: fluxo padrao, validacao ao salvar, persistencia e simulador."""
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Client, WaFlow
+from ..models import Client, WaFlow, WaFlowVersion
 from . import flow_engine as E
 
 QUEUES = ("comercial", "financeiro", "suporte", "geral")
-NODE_TYPES = ("start", "message", "menu", "ask", "lookup_client", "condition", "create_ticket", "notify", "enqueue", "end")
+NODE_TYPES = ("start", "message", "menu", "ask", "lookup_client", "condition", "create_ticket", "notify", "hours", "set_var", "tag", "enqueue", "end")
 FIXED = {"start": ["next"], "message": ["next"], "notify": ["next"], "ask": ["ok", "invalid", "timeout", "back"], "lookup_client": ["found", "retry", "not_found"],
-         "condition": ["true", "false"], "create_ticket": ["next", "error"], "enqueue": [], "end": []}
+         "condition": ["true", "false"], "create_ticket": ["next", "error"], "hours": ["open", "closed"], "set_var": ["next"], "tag": ["next"], "enqueue": [], "end": []}
 REQUIRED = {"start": ["next"], "message": ["next"], "notify": ["next"], "ask": ["ok"], "lookup_client": ["found", "not_found"],
-            "condition": ["true", "false"], "create_ticket": ["next"]}
+            "condition": ["true", "false"], "create_ticket": ["next"], "hours": ["open", "closed"], "set_var": ["next"], "tag": ["next"]}
 MAX_NODES = 100
 
 
@@ -127,6 +128,10 @@ def validate_flow(defn: dict, queues=None) -> list[dict]:
             err(i, "Escolha a condição.")
         if t == "create_ticket" and not str(d.get("subject", "")).strip():
             err(i, "O assunto do chamado é obrigatório.")
+        if t == "set_var" and not re.fullmatch(r"[A-Za-z_]\w{0,30}", str(d.get("var", ""))):
+            err(i, "Informe o nome da variável (letras, números e _).")
+        if t == "tag" and not str(d.get("tag", "")).strip():
+            err(i, "Escolha a etiqueta.")
     # laco infinito: ciclo formado so por passos automaticos (sem esperar o cliente)
     auto = {i for i, n in by.items() if n.get("type") in E.AUTO}
     graph: dict[str, list[str]] = {i: [] for i in auto}
@@ -165,7 +170,17 @@ def load_flow(db: Session, greeting: str, timeout_min: int = 2, queues=None) -> 
     return default_flow(greeting, timeout_min), True
 
 
+KEEP_VERSIONS = 20
+
+
 def save_flow(db: Session, defn: dict, user: str | None) -> None:
+    db.add(WaFlowVersion(definition=defn, saved_by=user))
+    db.flush()
+    old = db.scalars(select(WaFlowVersion.id).order_by(WaFlowVersion.id.desc()).offset(KEEP_VERSIONS)).all()
+    for vid in old:
+        v = db.get(WaFlowVersion, vid)
+        if v is not None:
+            db.delete(v)
     row = db.scalar(select(WaFlow).order_by(WaFlow.id.desc()).limit(1))
     if row is None:
         db.add(WaFlow(definition=defn, updated_by=user))
@@ -180,8 +195,12 @@ def reset_flow(db: Session) -> None:
 
 class SimHost(E.Host):
     """Simulador: consulta o cliente de verdade (leitura), mas chamado e avisos sao so descritos."""
-    def __init__(self, db: Session, transcript: list):
-        self.db, self.t = db, transcript
+    def __init__(self, db: Session, transcript: list, open_now: bool = True):
+        self.db, self.t, self.open_now = db, transcript, open_now
+
+    def is_open(self): return self.open_now
+
+    def add_tag(self, tag): self.t.append({"from": "sistema", "text": f"[simulação] Etiqueta aplicada: {tag}"})
 
     def say(self, text): self.t.append({"from": "bot", "text": text})
     def find_client(self, digits): return cnpj_client(self.db, digits)
@@ -194,12 +213,12 @@ class SimHost(E.Host):
     def notify(self, dests, text): self.t.append({"from": "sistema", "text": f"[simulação] Aviso para {', '.join(dests) or '—'}: {text}"})
 
 
-def simulate(db: Session, defn: dict, inputs: list[str], queues=None) -> dict:
+def simulate(db: Session, defn: dict, inputs: list[str], queues=None, open_now: bool = True) -> dict:
     errs = validate_flow(defn, queues)
     if errs:
         return {"errors": errs, "transcript": [], "outcome": None}
     t: list[dict] = []
-    host, flow, st = SimHost(db, t), E.Flow(defn), E.State(vars={"nome": "Contato Teste", "telefone": "5514999990000"})
+    host, flow, st = SimHost(db, t, open_now), E.Flow(defn), E.State(vars={"nome": "Contato Teste", "telefone": "5514999990000"})
     out = E.start(flow, st, host)
     for text in inputs:
         if out.kind != "waiting":
