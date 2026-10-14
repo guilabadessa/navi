@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { get, post, put, del, upload, fmtDT } from '../api'
 import { Card, Check, Field, Loading, PageHead, Pill, Tabs, useLoad, useToast } from '../ui'
+import { Link } from 'react-router-dom'
 import { useAuth, can } from '../App'
 import { maskCNPJ, maskPhone, cnpjHint } from '../mask'
 import ProtectionConfig from './ProtectionConfig'
@@ -69,8 +70,8 @@ function AtendimentoTab({ edit }) {
     } catch (e) { toast(e.message, true) }
   }
   return <Card title="Atendimento por WhatsApp (menu e filas)">
-    <Field label="SAUDAÇÃO / MENU" hint="Enviada quando o cliente escreve. Use as opções 1 (comercial), 2 (financeiro) e 3 (suporte)."><textarea style={{ minHeight: 130 }} value={f.greeting} onChange={e => setF({ ...f, greeting: e.target.value })} disabled={!edit} /></Field>
-    <div className="row r2"><Field label="SEM RESPOSTA NO MENU (min)" hint="Depois disso o cliente vai para a fila geral."><input type="number" min="1" max="60" value={f.menu_timeout_min} onChange={e => setF({ ...f, menu_timeout_min: e.target.value })} disabled={!edit} /></Field>
+    <p className="sub" style={{ marginBottom: 12 }}>O menu, as perguntas (CNPJ), a abertura de chamado e o destino de cada opção ficam no <Link to="/atendimento/fluxo">fluxo de atendimento</Link> (diagrama editável).</p>
+    <div className="row r2"><Field label="TEMPO PADRÃO SEM RESPOSTA (min)" hint="Vale para os passos do fluxo que não definem o próprio tempo."><input type="number" min="1" max="60" value={f.menu_timeout_min} onChange={e => setF({ ...f, menu_timeout_min: e.target.value })} disabled={!edit} /></Field>
       <Field label="ESPERA EM ALERTA (min)" hint="A fila fica vermelha no monitor acima deste tempo."><input type="number" min="1" max="240" value={f.wait_alert_min} onChange={e => setF({ ...f, wait_alert_min: e.target.value })} disabled={!edit} /></Field></div>
     <Field label="MENSAGEM DE ENCERRAMENTO"><input value={f.closing_message} onChange={e => setF({ ...f, closing_message: e.target.value })} disabled={!edit} /></Field>
     <h3 style={{ margin: '18px 0 8px' }}>Aviso quando alguém entra na fila</h3>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Link2, Paperclip, Send, UserCheck, X, ArrowRightLeft } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Link2, Paperclip, Workflow, Send, UserCheck, X, ArrowRightLeft } from 'lucide-react'
 import { get, post, uploadForm } from '../api'
 import { Card, Field, Modal, PageHead, Pill, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
@@ -107,7 +108,7 @@ export default function Atendimento() {
   const waiting = (q.data?.queues || []).reduce((n, x) => n + x.waiting, 0)
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + 'NAVI' ; return () => { document.title = 'NAVI' } }, [waiting])
   return <>
-    <PageHead title="Atendimento" desc="Clientes de WhatsApp aguardando e em atendimento" />
+    <PageHead title="Atendimento" desc="Clientes de WhatsApp aguardando e em atendimento"><Link className="btn" to="/atendimento/fluxo"><Workflow size={15} />Fluxo de atendimento</Link></PageHead>
     {q.data && <Monitor q={q.data} sel={queue} onSel={setQueue} />}
     <div className="at-grid">
       <Card pad={false} title={undefined}>

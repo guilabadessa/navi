@@ -25,6 +25,7 @@ import NaviGuide, { STAFF_ASKS, STAFF_TIPS } from './pages/NaviGuide'
 import Protection from './pages/Protection'
 import Tickets from './pages/Tickets'
 import Atendimento from './pages/Atendimento'
+import AtendimentoFluxo from './pages/AtendimentoFluxo'
 import AcceptInvite from './pages/AcceptInvite'
 import { getTheme, toggleTheme, getTv, tvMode } from './theme'
 
@@ -98,6 +99,7 @@ function Shell({ me, onLogout, reloadMe }) {
           <Route path="/protecao" element={<Protection />} />
           <Route path="/portal" element={<PortalSwitch />} />
           <Route path="/atendimento" element={<Atendimento />} />
+          <Route path="/atendimento/fluxo" element={<AtendimentoFluxo />} />
           <Route path="/chamados" element={<Tickets />} />
           <Route path="/alertas" element={<Alerts />} />
           <Route path="/relatorios" element={<Reports />} />
