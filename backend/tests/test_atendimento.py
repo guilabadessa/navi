@@ -305,3 +305,25 @@ def test_flow_com_no_removido_manda_para_fila_geral(monkeypatch):
     conv.flow_node = "no_que_sumiu"
     A.handle_inbound(_db(conv), _msg("1"), gw)
     assert conv.state == "aguardando" and conv.queue == "geral"
+
+
+def test_api_fluxo_valida_salva_e_simula(monkeypatch):
+    from app.services import flow_service as FS
+    saved = {}
+    monkeypatch.setattr(FS, "save_flow", lambda db, d, u: saved.setdefault("d", d))
+    monkeypatch.setattr(FS, "cnpj_client", lambda db, d: None)
+    d = FS.default_flow("Menu")
+    c, db = _api("ADMIN")
+    try:
+        assert c.post("/cliente/api/atendimento/flow/validate", json={"definition": d}).json() == {"errors": []}
+        assert c.put("/cliente/api/atendimento/flow", json={"definition": d}).status_code == 200 and saved["d"] == d
+        ruim = {"nodes": [], "edges": []}
+        r = c.put("/cliente/api/atendimento/flow", json={"definition": ruim})
+        assert r.status_code == 422 and "início" in r.json()["detail"]
+        r = c.post("/cliente/api/atendimento/flow/simulate", json={"definition": d, "inputs": ["1"]}).json()
+        assert r["outcome"] == {"kind": "enqueue", "queue": "comercial"}
+        c2, _ = _api("ANALISTA_NOC")
+        assert c2.put("/cliente/api/atendimento/flow", json={"definition": d}).status_code == 403
+        assert c2.post("/cliente/api/atendimento/flow/reset").status_code == 403
+    finally:
+        _done()

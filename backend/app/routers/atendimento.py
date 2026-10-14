@@ -12,7 +12,7 @@ from .. import audit, settings_store as S
 from ..db import get_db
 from ..models import Client, User, WaConversation, WaMessage
 from ..security import require
-from ..services import atendimento_service as A, factory
+from ..services import atendimento_service as A, factory, flow_service as FS
 from ..services.wa_akg_service import WaAkgError
 
 router = APIRouter(prefix="/atendimento", tags=["atendimento"])
@@ -247,3 +247,51 @@ def put_config(body: CfgIn, request: Request, db: Session = Depends(get_db), use
     audit.log(db, request, "atendimento_config", "whatsapp")
     db.commit()
     return A.cfg(db)
+
+
+# ---- Fluxo (diagrama BPMN editavel) ----
+class FlowIn(BaseModel):
+    definition: dict
+
+
+class SimIn(BaseModel):
+    definition: dict
+    inputs: list[str] = Field(default_factory=list, max_length=30)
+
+
+@router.get("/flow")
+def get_flow(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    c = A.cfg(db)
+    definition, is_default = FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]))
+    return {"definition": definition, "is_default": is_default, "queues": list(A.QUEUES)}
+
+
+@router.post("/flow/validate")
+def validate_flow(body: FlowIn, _=Depends(require("atendimento.view"))):
+    return {"errors": FS.validate_flow(body.definition)}
+
+
+@router.put("/flow")
+def put_flow(body: FlowIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    errs = FS.validate_flow(body.definition)
+    if errs:
+        raise HTTPException(422, "Fluxo inválido: " + "; ".join(e["msg"] for e in errs[:5]))
+    FS.save_flow(db, body.definition, user.email)
+    audit.log(db, request, "atendimento_fluxo", "whatsapp", detail={"passos": len(body.definition.get("nodes", []))})
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/flow/reset")
+def reset_flow(request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    FS.reset_flow(db)
+    audit.log(db, request, "atendimento_fluxo_padrao", "whatsapp")
+    db.commit()
+    c = A.cfg(db)
+    return {"definition": FS.default_flow(c["greeting"], int(c["menu_timeout_min"]))}
+
+
+@router.post("/flow/simulate")
+def simulate_flow(body: SimIn, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    """Roda o fluxo com respostas de teste. Consulta o cliente de verdade; nada e enviado e nenhum chamado e criado."""
+    return FS.simulate(db, body.definition, [x[:500] for x in body.inputs])
