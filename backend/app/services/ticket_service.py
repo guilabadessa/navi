@@ -1,9 +1,11 @@
-"""Chamados (helpdesk): numeracao, destinatarios (fila + observadores) e aviso por e-mail/WhatsApp.
-Reusa os mesmos canais dos alertas (mailer/evolution); nao atrapalha o motor de alertas (tabelas separadas)."""
+"""Chamados (helpdesk): destinatarios (fila + observadores) e aviso por e-mail/WhatsApp.
+Reusa os mesmos canais dos alertas (mailer/evolution); nao atrapalha o motor de alertas (tabelas separadas).
+Numeracao do chamado: atribuida pelo banco (sequencia `ticket_number_seq`), nunca calculada aqui -
+evita a corrida de dois chamados simultaneos ganharem o mesmo numero (SELECT MAX+1 nao e seguro sob concorrencia)."""
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Client, Ticket, TicketMessage, TicketQueue, TicketWatcher
@@ -15,11 +17,6 @@ ESCALATION_HOURS = 24  # chamado aguardando a Orca TI sem resposta por mais temp
 STATUS_LABEL = {"aberto": "Aberto", "andamento": "Em andamento", "aguardando_cliente": "Aguardando cliente",
                 "aguardando_orca": "Aguardando Orca TI", "resolvido": "Resolvido", "fechado": "Fechado"}
 PRIORITY_LABEL = {"baixa": "Baixa", "media": "Média", "alta": "Alta", "critica": "Crítica"}
-
-
-def next_number(db: Session) -> int:
-    n = db.scalar(select(func.max(Ticket.number)))
-    return (n or 1000) + 1
 
 
 def _wa_send(db: Session, jid: str, text: str, ticket: Ticket):
@@ -84,4 +81,6 @@ def check_escalations(db: Session, limit: int = 50) -> int:
         n += 1
     if n:
         db.commit()
+    if n == limit:
+        log.warning("escalonamento de chamados: atingiu o limite de %d nesta execucao, pode haver mais chamados vencidos", limit)
     return n

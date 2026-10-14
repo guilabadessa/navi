@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text,
-                        UniqueConstraint)
+                        UniqueConstraint, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -583,15 +583,17 @@ class TicketQueue(Base):
 class Ticket(Base):
     __tablename__ = "tickets"
     id: Mapped[int] = mapped_column(primary_key=True)
-    number: Mapped[int] = mapped_column(Integer, unique=True, index=True)  # numero exibido ao usuario (#1024)
+    # numero exibido ao usuario (#1024): atribuido pelo banco (sequencia), nunca calculado em Python (evita corrida com dois chamados simultaneos)
+    number: Mapped[int] = mapped_column(Integer, unique=True, index=True, server_default=text("nextval('ticket_number_seq')"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
-    queue_id: Mapped[int | None] = mapped_column(ForeignKey("ticket_queues.id"))
+    queue_id: Mapped[int | None] = mapped_column(ForeignKey("ticket_queues.id", ondelete="SET NULL"))
     subject: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(24), default="aberto", index=True)
     priority: Mapped[str] = mapped_column(String(16), default="media")
     origin: Mapped[str] = mapped_column(String(16), default="staff")  # staff | portal
     created_by_id: Mapped[int | None] = mapped_column(Integer)
     created_by_name: Mapped[str | None] = mapped_column(String(255))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))  # telefone para contato sobre este chamado (opcional)
     assigned_to_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -623,6 +625,7 @@ class TicketMessage(Base):
     internal: Mapped[bool] = mapped_column(Boolean, default=False)  # nota interna: nao aparece no portal nem notifica
     body: Mapped[str] = mapped_column(Text)
     notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    status_change: Mapped[str | None] = mapped_column(String(24))  # preenchido quando esta mensagem tambem mudou a situacao do chamado
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
     attachment: Mapped["TicketAttachment"] = relationship(uselist=False, back_populates="message", lazy="joined")

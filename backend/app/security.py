@@ -32,7 +32,7 @@ PERMS = {
                      "whatsapp.view", "email.view", "navi.use", "protection.run", "cloud.run",
                      "tickets.view", "tickets.edit", "portal.tickets"},
     "VISUALIZADOR": {"dashboard.view", "clients.view", "monitoring.view", "events.view", "alerts.view",
-                     "reports.view", "routines.view", "navi.use", "tickets.view", "portal.tickets"},
+                     "reports.view", "routines.view", "navi.use", "tickets.view"},  # so leitura: sem tickets.edit nem portal.tickets (nao pode agir como cliente)
     "CLIENTE": {"portal.view", "portal.run", "cloud.run", "portal.tickets"},  # ve somente os dados do proprio cliente, pelo portal
 }
 
