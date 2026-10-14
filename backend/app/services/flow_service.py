@@ -71,8 +71,9 @@ def _outputs(node: dict) -> list[str]:
     return FIXED.get(node.get("type"), [])
 
 
-def validate_flow(defn: dict) -> list[dict]:
+def validate_flow(defn: dict, queues=None) -> list[dict]:
     """Lista de erros `{node, msg}`; vazia = valido."""
+    valid_queues = tuple(queues) if queues is not None else QUEUES
     errs: list[dict] = []
     err = lambda node, msg: errs.append({"node": node, "msg": msg})  # noqa: E731
     nodes, edges = (defn or {}).get("nodes"), (defn or {}).get("edges")
@@ -120,8 +121,8 @@ def validate_flow(defn: dict) -> list[dict]:
             err(i, "Informe o nome da variável que guarda a resposta.")
         if t == "lookup_client" and not str(d.get("var", "")).strip():
             err(i, "Informe a variável que contém o CNPJ.")
-        if t == "enqueue" and d.get("queue") not in QUEUES:
-            err(i, "Escolha a fila.")
+        if t == "enqueue" and d.get("queue") not in valid_queues:
+            err(i, "Escolha uma fila existente e ativa.")
         if t == "condition" and d.get("op") not in ("empty", "not_empty", "equals"):
             err(i, "Escolha a condição.")
         if t == "create_ticket" and not str(d.get("subject", "")).strip():
@@ -156,10 +157,10 @@ def cnpj_client(db: Session, digits: str) -> dict | None:
     return {"id": c.id, "name": c.trade_name} if c else None
 
 
-def load_flow(db: Session, greeting: str, timeout_min: int = 2) -> tuple[dict, bool]:
+def load_flow(db: Session, greeting: str, timeout_min: int = 2, queues=None) -> tuple[dict, bool]:
     """(definicao, e_padrao). Fluxo salvo invalido nunca e usado: cai no padrao."""
     row = db.scalar(select(WaFlow).order_by(WaFlow.id.desc()).limit(1))
-    if row is not None and not validate_flow(row.definition):
+    if row is not None and not validate_flow(row.definition, queues):
         return row.definition, False
     return default_flow(greeting, timeout_min), True
 
@@ -193,8 +194,8 @@ class SimHost(E.Host):
     def notify(self, dests, text): self.t.append({"from": "sistema", "text": f"[simulação] Aviso para {', '.join(dests) or '—'}: {text}"})
 
 
-def simulate(db: Session, defn: dict, inputs: list[str]) -> dict:
-    errs = validate_flow(defn)
+def simulate(db: Session, defn: dict, inputs: list[str], queues=None) -> dict:
+    errs = validate_flow(defn, queues)
     if errs:
         return {"errors": errs, "transcript": [], "outcome": None}
     t: list[dict] = []

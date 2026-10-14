@@ -688,9 +688,45 @@ class WaConversation(Base):
     closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     unread: Mapped[int] = mapped_column(Integer, default=0)
+    closed_reason: Mapped[str | None] = mapped_column(String(16))  # analista | inatividade | fluxo
+    first_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # primeira resposta de um analista
+    tags: Mapped[list | None] = mapped_column(JSON)  # nomes de etiquetas (catalogo wa_tags)
+    contact_name: Mapped[str | None] = mapped_column(String(255))  # nome definido pelo analista (vence o nome do WhatsApp)
     flow_node: Mapped[str | None] = mapped_column(String(64))  # no do fluxo em que a conversa espera a resposta do cliente
     flow_vars: Mapped[dict | None] = mapped_column(JSON)  # variaveis e contadores do fluxo
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WaQueue(Base):
+    """Fila de atendimento (setor), editavel pelo front. `geral` e do sistema: fallback do fluxo, nao se exclui nem desativa."""
+    __tablename__ = "wa_queues"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(40), unique=True, index=True)  # estavel: conversas e fluxo guardam o slug
+    name: Mapped[str] = mapped_column(String(80))
+    color: Mapped[str] = mapped_column(String(9), default="#1e73f8")
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    system: Mapped[bool] = mapped_column(Boolean, default=False)
+    alert_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    alert_to: Mapped[list | None] = mapped_column(JSON)
+    wait_alert_min: Mapped[int | None] = mapped_column(Integer)  # espera em alerta desta fila (vazio = padrao geral)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WaTag(Base):
+    __tablename__ = "wa_tags"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), unique=True)
+    color: Mapped[str] = mapped_column(String(9), default="#6b7a99")
+
+
+class WaFlowVersion(Base):
+    """Historico do fluxo: uma linha por salvamento (mantem as ultimas 20)."""
+    __tablename__ = "wa_flow_versions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    definition: Mapped[dict] = mapped_column(JSON)
+    saved_by: Mapped[str | None] = mapped_column(String(255))
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
 class WaFlow(Base):

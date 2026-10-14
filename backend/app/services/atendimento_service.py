@@ -5,18 +5,19 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import settings_store as S
-from ..models import Client, WaConversation, WaMessage
+from ..models import Client, WaConversation, WaMessage, WaQueue
 from . import flow_engine as E, flow_service as FS, ticket_service as TS
 from .wa_akg_service import WaAkgError, WaAkgService
 
 log = logging.getLogger("navi.atendimento")
-QUEUES = ("comercial", "financeiro", "suporte", "geral")
-LABEL = {"comercial": "Comercial", "financeiro": "Financeiro", "suporte": "Suporte", "geral": "Atendimento geral"}
+FALLBACK = "geral"  # fila do sistema: nunca some (destino quando a fila pedida nao existe mais)
+SEED_QUEUES = (("comercial", "Comercial", "#1e73f8"), ("financeiro", "Financeiro", "#0f8b8d"), ("suporte", "Suporte", "#7b3fe4"), ("geral", "Geral", "#6b7a99"))
 DEFAULT_CFG = {
     "greeting": "Bem-vindo à Orca TI.\nPara falar com o comercial, digite 1.\nPara o financeiro, digite 2.\nPara o suporte, digite 3.\nOu aguarde para ser atendido.",
     "menu_timeout_min": 2,
@@ -27,7 +28,6 @@ DEFAULT_CFG = {
     "quick_replies": [{"title": "Vou verificar", "text": "Olá! Vou verificar isso para você e já retorno."},
                       {"title": "Pedir print", "text": "Pode nos enviar um print ou foto da tela com o erro, por favor?"},
                       {"title": "Aguarde um instante", "text": "Só um instante, estou analisando."}],
-    "queues": {q: {"alert_enabled": False, "alert_to": []} for q in QUEUES},
 }
 
 
@@ -36,14 +36,32 @@ def now():
 
 
 def cfg(db: Session) -> dict:
-    """Configuracao salva sobre o padrao (campo a campo, inclusive por fila)."""
+    """Configuracao salva sobre o padrao (campo a campo)."""
     try:
         saved = json.loads(S.get(db, "atendimento.config") or "{}")
     except ValueError:
         saved = {}
-    out = {**DEFAULT_CFG, **{k: v for k, v in saved.items() if k in DEFAULT_CFG and k != "queues"}}
-    out["queues"] = {q: {**DEFAULT_CFG["queues"][q], **((saved.get("queues") or {}).get(q) or {})} for q in QUEUES}
-    return out
+    return {**DEFAULT_CFG, **{k: v for k, v in saved.items() if k in DEFAULT_CFG}}
+
+
+def queue_map(db: Session) -> dict:
+    """slug -> fila (linhas de `wa_queues`, em ordem). Sem linhas (banco novo/testes), valem as filas padrao sem avisos."""
+    rows = list(db.scalars(select(WaQueue).order_by(WaQueue.sort, WaQueue.id)).all())
+    if rows:
+        return {q.slug: q for q in rows}
+    return {s: SimpleNamespace(slug=s, name=n, color=c, active=True, system=s == FALLBACK, alert_enabled=False, alert_to=[], wait_alert_min=None)
+            for s, n, c in SEED_QUEUES}
+
+
+def queue_ok(db: Session, slug: str | None) -> str:
+    """Slug utilizavel (existe e esta ativa) ou a fila geral."""
+    q = queue_map(db).get(slug or "")
+    return slug if q is not None and q.active else FALLBACK
+
+
+def qname(db: Session, slug: str) -> str:
+    q = queue_map(db).get(slug)
+    return q.name if q is not None else slug
 
 
 def is_individual(jid: str) -> bool:
@@ -95,14 +113,14 @@ def _say(db: Session, conv: WaConversation, gw, text: str) -> None:
 
 
 def _alert(db: Session, conv: WaConversation, gw) -> None:
-    q = cfg(db)["queues"].get(conv.queue) or {}
-    if not q.get("alert_enabled") or not q.get("alert_to"):
+    q = queue_map(db).get(conv.queue)
+    if q is None or not q.alert_enabled or not q.alert_to:
         return
     n = db.scalar(select(func.count()).select_from(WaConversation).where(WaConversation.state == "aguardando", WaConversation.queue == conv.queue)) or 0
     client = db.get(Client, conv.client_id) if conv.client_id else None
-    who = (conv.push_name or conv.jid.split("@")[0]) + (f" ({client.trade_name})" if client else "")
-    text = f"🔔 Fila {LABEL[conv.queue]}: {who} aguardando atendimento · {n} na fila"
-    for dest in q["alert_to"]:
+    who = (conv.contact_name or conv.push_name or conv.jid.split("@")[0]) + (f" ({client.trade_name})" if client else "")
+    text = f"🔔 Fila {q.name}: {who} aguardando atendimento · {n} na fila"
+    for dest in q.alert_to:
         try:
             gw.send_text(dest, text)
         except Exception as e:  # noqa: BLE001
@@ -110,8 +128,9 @@ def _alert(db: Session, conv: WaConversation, gw) -> None:
 
 
 def _enqueue(db: Session, conv: WaConversation, queue: str, gw) -> None:
+    queue = queue_ok(db, queue)
     conv.state, conv.queue, conv.queued_at = "aguardando", queue, now()
-    _say(db, conv, gw, f"Você está na fila do {LABEL[queue]}. Em instantes um analista vai te atender.")
+    _say(db, conv, gw, f"Você está na fila do {qname(db, queue)}. Em instantes um analista vai te atender.")
     _alert(db, conv, gw)
 
 
@@ -158,15 +177,15 @@ def _apply(db: Session, conv: WaConversation, state: E.State, out: E.Outcome, gw
             conv.menu_sent_at = now()
     elif out.kind == "enqueue":
         conv.flow_node = None
-        _enqueue(db, conv, out.queue if out.queue in QUEUES else "geral", gw)
+        _enqueue(db, conv, out.queue, gw)
     else:  # end: atendimento resolvido pelo proprio fluxo (ex.: chamado aberto)
-        conv.state, conv.flow_node, conv.closed_at, conv.unread = "encerrada", None, now(), 0
+        conv.state, conv.flow_node, conv.closed_at, conv.unread, conv.closed_reason = "encerrada", None, now(), 0, "fluxo"
     conv.flow_vars = copy.deepcopy(state.vars)
 
 
 def _flow(db: Session) -> E.Flow:
     c = cfg(db)
-    return E.Flow(FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]))[0])
+    return E.Flow(FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]), list(queue_map(db)))[0])  # inclui filas inativas: o motor cai na geral
 
 
 def handle_inbound(db: Session, msg: WaMessage, gw) -> WaConversation | None:
@@ -224,6 +243,7 @@ def close_inactive(db: Session, gw) -> int:
                                                    func.coalesce(WaConversation.last_message_at, WaConversation.created_at) < limite)).all()
     for conv in rows:
         conv.state, conv.closed_at, conv.closed_by, conv.unread, conv.flow_node = "encerrada", now(), None, 0, None
+        conv.closed_reason = "inatividade"
         if c.get("inactivity_message"):
             _say(db, conv, gw, c["inactivity_message"])
     return len(rows)
@@ -237,7 +257,7 @@ def assume(db: Session, conv_id: int, user_id: int) -> bool:
 
 
 def transfer(db: Session, conv: WaConversation, user_id: int | None, queue: str | None, gw=None) -> None:
-    if queue and queue in QUEUES:
+    if queue and queue in queue_map(db):
         conv.queue = queue
     if user_id:
         conv.state, conv.assigned_to, conv.assumed_at = "atendendo", user_id, now()
@@ -248,7 +268,7 @@ def transfer(db: Session, conv: WaConversation, user_id: int | None, queue: str 
 
 
 def close(db: Session, conv: WaConversation, user_id: int, send_closing: bool, gw) -> None:
-    conv.state, conv.closed_at, conv.closed_by, conv.unread = "encerrada", now(), user_id, 0
+    conv.state, conv.closed_at, conv.closed_by, conv.unread, conv.closed_reason = "encerrada", now(), user_id, 0, "analista"
     if send_closing:
         _say(db, conv, gw, cfg(db)["closing_message"])
 
@@ -260,6 +280,8 @@ def send(db: Session, conv: WaConversation, user_id: int, text: str, gw) -> WaMe
         _record_out(db, conv, text, None, user_id, failed=True)
         raise
     conv.last_message_at = now()
+    if conv.first_response_at is None:
+        conv.first_response_at = now()
     return _record_out(db, conv, text, resp, user_id)
 
 
@@ -271,4 +293,6 @@ def send_media(db: Session, conv: WaConversation, user_id: int, data: bytes, fil
         _record_out(db, conv, caption or filename, None, user_id, failed=True, mtype=mtype)
         raise
     conv.last_message_at = now()
+    if conv.first_response_at is None:
+        conv.first_response_at = now()
     return _record_out(db, conv, caption or filename, resp, user_id, mtype=mtype)

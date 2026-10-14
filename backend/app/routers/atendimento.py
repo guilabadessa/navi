@@ -1,5 +1,7 @@
 """Atendimento por WhatsApp: monitor das filas e chat do analista. Todos os analistas veem e tratam todas as filas."""
 import json
+import re
+import unicodedata
 from datetime import datetime, timezone
 
 import httpx
@@ -10,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, settings_store as S
 from ..db import get_db
-from ..models import TICKET_OPEN_STATUSES, Client, Ticket, User, WaConversation, WaMessage
+from ..models import TICKET_OPEN_STATUSES, Client, Ticket, User, WaConversation, WaMessage, WaQueue, WaTag
 from ..security import require
 from ..services import atendimento_service as A, factory, flow_service as FS
 from ..services.wa_akg_service import WaAkgError
@@ -39,7 +41,10 @@ def _out(db: Session, rows: list[WaConversation]) -> list[dict]:
         mx = db.execute(select(func.max(WaMessage.id)).where(WaMessage.conversation_id.in_(ids)).group_by(WaMessage.conversation_id)).scalars().all()
         for m in db.execute(select(WaMessage.conversation_id, WaMessage.text, WaMessage.type).where(WaMessage.id.in_(mx or [0]))).all():
             last[m[0]] = m[1] or f"[{(m[2] or '').lower()}]"
-    return [{"id": c.id, "jid": c.jid, "number": c.jid.split("@")[0], "name": c.push_name, "queue": c.queue, "state": c.state,
+    qm = A.queue_map(db)
+    return [{"id": c.id, "jid": c.jid, "number": c.jid.split("@")[0], "name": c.contact_name or c.push_name, "queue": c.queue,
+             "queue_name": qm[c.queue].name if c.queue in qm else c.queue, "queue_color": qm[c.queue].color if c.queue in qm else "#6b7a99",
+             "tags": c.tags or [], "state": c.state,
              "assigned_to": c.assigned_to, "assigned_name": users.get(c.assigned_to), "unread": c.unread or 0,
              "client": ({"id": clients[c.client_id].id, "name": clients[c.client_id].trade_name, "cnpj": clients[c.client_id].cnpj, "tickets": open_t.get(c.client_id, [])}
                         if c.client_id in clients else None),
@@ -55,9 +60,12 @@ def _conv(db: Session, conv_id: int) -> WaConversation:
 
 @router.get("/queues")
 def queues(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    """Monitor: uma linha por fila ativa, na ordem configurada."""
     rows = db.execute(select(WaConversation.queue, WaConversation.state, func.count(), func.min(WaConversation.queued_at))
                       .where(WaConversation.state.in_(("aguardando", "atendendo"))).group_by(WaConversation.queue, WaConversation.state)).all()
-    out = {q: {"queue": q, "label": A.LABEL[q], "waiting": 0, "active": 0, "oldest_seconds": 0} for q in A.QUEUES}
+    geral = A.cfg(db)["wait_alert_min"]
+    out = {q.slug: {"queue": q.slug, "label": q.name, "color": q.color, "waiting": 0, "active": 0, "oldest_seconds": 0, "alert_min": q.wait_alert_min or geral}
+           for q in A.queue_map(db).values() if q.active}
     now = datetime.now(timezone.utc)
     for q, st, n, oldest in rows:
         if q not in out:
@@ -67,7 +75,104 @@ def queues(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))
             out[q]["oldest_seconds"] = max(0, int((now - oldest).total_seconds())) if oldest else 0
         else:
             out[q]["active"] = n
-    return {"queues": list(out.values()), "wait_alert_min": A.cfg(db)["wait_alert_min"]}
+    return {"queues": list(out.values()), "wait_alert_min": geral}
+
+
+def _slugify(name: str) -> str:
+    base = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:40] or "fila"
+
+
+class QueueIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(default="#1e73f8", pattern=r"^#[0-9a-fA-F]{6}$")
+    active: bool = True
+    alert_enabled: bool = False
+    alert_to: list[str] = Field(default_factory=list, max_length=10)
+    wait_alert_min: int | None = Field(default=None, ge=1, le=240)
+
+
+def _queue_out(q: WaQueue, open_n: int = 0) -> dict:
+    return {"id": q.id, "slug": q.slug, "name": q.name, "color": q.color, "sort": q.sort, "active": q.active, "system": q.system,
+            "alert_enabled": q.alert_enabled, "alert_to": q.alert_to or [], "wait_alert_min": q.wait_alert_min, "open": open_n}
+
+
+def _clean_dests(v: list[str]) -> list[str]:
+    return [x.strip() for x in v if x and x.strip()]
+
+
+@router.get("/queue-defs")
+def queue_defs(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    counts = dict(db.execute(select(WaConversation.queue, func.count()).where(WaConversation.state != "encerrada").group_by(WaConversation.queue)).all())
+    return [_queue_out(q, counts.get(q.slug, 0)) for q in db.scalars(select(WaQueue).order_by(WaQueue.sort, WaQueue.id)).all()]
+
+
+@router.post("/queue-defs")
+def queue_create(body: QueueIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    taken = set(db.scalars(select(WaQueue.slug)).all())
+    base = slug = _slugify(body.name)
+    n = 2
+    while slug in taken:
+        slug, n = f"{base}-{n}", n + 1
+    nxt = (db.scalar(select(func.max(WaQueue.sort))) or 0) + 1
+    q = WaQueue(slug=slug, name=body.name.strip(), color=body.color, sort=nxt, active=body.active, alert_enabled=body.alert_enabled,
+                alert_to=_clean_dests(body.alert_to), wait_alert_min=body.wait_alert_min)
+    db.add(q)
+    audit.log(db, request, "atendimento_fila_criar", "whatsapp", resource_id=slug)
+    db.commit()
+    return _queue_out(q)
+
+
+class OrderIn(BaseModel):
+    ids: list[int] = Field(max_length=100)
+
+
+@router.put("/queue-defs/order")
+def queue_order(body: OrderIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    by = {q.id: q for q in db.scalars(select(WaQueue)).all()}
+    for i, qid in enumerate(body.ids):
+        if qid in by:
+            by[qid].sort = i
+    audit.log(db, request, "atendimento_fila_ordem", "whatsapp")
+    db.commit()
+    return {"ok": True}
+
+
+def _queue(db: Session, qid: int) -> WaQueue:
+    q = db.get(WaQueue, qid)
+    if not q:
+        raise HTTPException(404, "Fila não encontrada")
+    return q
+
+
+@router.put("/queue-defs/{qid}")
+def queue_update(qid: int, body: QueueIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    q = _queue(db, qid)
+    if q.system and not body.active:
+        raise HTTPException(409, "A fila Geral é do sistema e não pode ser desativada")
+    q.name, q.color, q.active, q.alert_enabled = body.name.strip(), body.color, body.active, body.alert_enabled  # o slug nunca muda
+    q.alert_to, q.wait_alert_min = _clean_dests(body.alert_to), body.wait_alert_min
+    audit.log(db, request, "atendimento_fila_editar", "whatsapp", resource_id=q.slug)
+    db.commit()
+    return _queue_out(q)
+
+
+@router.delete("/queue-defs/{qid}")
+def queue_delete(qid: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
+    q = _queue(db, qid)
+    if q.system:
+        raise HTTPException(409, "A fila Geral é do sistema e não pode ser excluída")
+    n = db.scalar(select(func.count()).select_from(WaConversation).where(WaConversation.queue == q.slug, WaConversation.state != "encerrada")) or 0
+    if n:
+        raise HTTPException(409, f"Há {n} conversa(s) aberta(s) nesta fila. Transfira ou encerre antes de excluir.")
+    definition, _is_default = FS.load_flow(db, A.cfg(db)["greeting"], int(A.cfg(db)["menu_timeout_min"]), list(A.queue_map(db)))
+    uso = [x["id"] for x in definition.get("nodes", []) if x.get("type") == "enqueue" and (x.get("data") or {}).get("queue") == q.slug]
+    if uso:
+        raise HTTPException(409, "A fila é usada no fluxo de atendimento (passo: " + ", ".join(uso) + "). Troque a fila nesses passos antes de excluir.")
+    audit.log(db, request, "atendimento_fila_excluir", "whatsapp", resource_id=q.slug)
+    db.delete(q)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/agents")
@@ -81,7 +186,7 @@ def agents(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))
 def conversations(queue: str = "", state: str = "", mine: bool = False, db: Session = Depends(get_db), user: User = Depends(require("atendimento.view"))):
     stmt = select(WaConversation)
     stmt = stmt.where(WaConversation.state == state) if state in ("menu", "aguardando", "atendendo", "encerrada") else stmt.where(WaConversation.state != "encerrada")
-    if queue in A.QUEUES:
+    if queue:
         stmt = stmt.where(WaConversation.queue == queue)
     if mine:
         stmt = stmt.where(WaConversation.assigned_to == user.id)
@@ -133,7 +238,7 @@ def assume(conv_id: int, request: Request, db: Session = Depends(get_db), user: 
 
 class TransferIn(BaseModel):
     user_id: int | None = None
-    queue: str | None = Field(default=None, pattern="^(comercial|financeiro|suporte|geral)$")
+    queue: str | None = Field(default=None, max_length=40)
 
 
 @router.post("/conversations/{conv_id}/transfer")
@@ -147,6 +252,8 @@ def transfer(conv_id: int, body: TransferIn, request: Request, db: Session = Dep
             raise HTTPException(422, "Analista inválido")
     if not body.user_id and not body.queue:
         raise HTTPException(422, "Informe o analista ou o setor")
+    if body.queue and (body.queue not in A.queue_map(db) or not A.queue_map(db)[body.queue].active):
+        raise HTTPException(422, "Setor inválido")
     A.transfer(db, c, body.user_id, body.queue, factory.wa_akg(db))
     audit.log(db, request, "atendimento_transferir", "whatsapp", resource_id=c.jid, detail={"user_id": body.user_id, "queue": body.queue})
     db.commit()
@@ -242,8 +349,7 @@ class CfgIn(BaseModel):
     closing_message: str = Field(max_length=500)
     inactivity_hours: int = Field(default=24, ge=0, le=720)
     inactivity_message: str = Field(default="", max_length=500)
-    quick_replies: list[QuickReply] = Field(default_factory=list, max_length=20)
-    queues: dict[str, QueueCfg]
+    quick_replies: list[QuickReply] = Field(default_factory=list, max_length=50)
 
 
 @router.get("/config")
@@ -253,10 +359,7 @@ def get_config(db: Session = Depends(get_db), _=Depends(require("atendimento.vie
 
 @router.put("/config")
 def put_config(body: CfgIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
-    data = body.model_dump()
-    data["queues"] = {q: {"alert_enabled": bool(v["alert_enabled"]), "alert_to": [x.strip() for x in v["alert_to"] if x.strip()]}
-                      for q, v in data["queues"].items() if q in A.QUEUES}
-    S.put(db, "atendimento.config", json.dumps(data), user=user.email)
+    S.put(db, "atendimento.config", json.dumps(body.model_dump()), user=user.email)
     audit.log(db, request, "atendimento_config", "whatsapp")
     db.commit()
     return A.cfg(db)
@@ -272,21 +375,26 @@ class SimIn(BaseModel):
     inputs: list[str] = Field(default_factory=list, max_length=30)
 
 
+def _active_slugs(db: Session) -> list[str]:
+    return [q.slug for q in A.queue_map(db).values() if q.active]
+
+
 @router.get("/flow")
 def get_flow(db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
     c = A.cfg(db)
-    definition, is_default = FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]))
-    return {"definition": definition, "is_default": is_default, "queues": list(A.QUEUES)}
+    definition, is_default = FS.load_flow(db, c["greeting"], int(c["menu_timeout_min"]), list(A.queue_map(db)))
+    return {"definition": definition, "is_default": is_default,
+            "queues": [{"slug": q.slug, "name": q.name, "color": q.color} for q in A.queue_map(db).values() if q.active]}
 
 
 @router.post("/flow/validate")
-def validate_flow(body: FlowIn, _=Depends(require("atendimento.view"))):
-    return {"errors": FS.validate_flow(body.definition)}
+def validate_flow(body: FlowIn, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
+    return {"errors": FS.validate_flow(body.definition, _active_slugs(db))}
 
 
 @router.put("/flow")
 def put_flow(body: FlowIn, request: Request, db: Session = Depends(get_db), user: User = Depends(require("settings.edit"))):
-    errs = FS.validate_flow(body.definition)
+    errs = FS.validate_flow(body.definition, _active_slugs(db))
     if errs:
         raise HTTPException(422, "Fluxo inválido: " + "; ".join(e["msg"] for e in errs[:5]))
     FS.save_flow(db, body.definition, user.email)
@@ -307,4 +415,4 @@ def reset_flow(request: Request, db: Session = Depends(get_db), user: User = Dep
 @router.post("/flow/simulate")
 def simulate_flow(body: SimIn, db: Session = Depends(get_db), _=Depends(require("atendimento.view"))):
     """Roda o fluxo com respostas de teste. Consulta o cliente de verdade; nada e enviado e nenhum chamado e criado."""
-    return FS.simulate(db, body.definition, [x[:500] for x in body.inputs])
+    return FS.simulate(db, body.definition, [x[:500] for x in body.inputs], _active_slugs(db))

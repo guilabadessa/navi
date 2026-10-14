@@ -29,7 +29,10 @@ def test_is_individual_ignora_grupo_e_status():
 
 @pytest.fixture(autouse=True)
 def _fluxo_padrao(monkeypatch):
-    monkeypatch.setattr(A.FS, "load_flow", lambda db, g, t: (A.FS.default_flow(g, t), True))
+    monkeypatch.setattr(A.FS, "load_flow", lambda db, g, t, *a: (A.FS.default_flow(g, t), True))
+    seeds = lambda d: {s: A.SimpleNamespace(slug=s, name=n, color=c, active=True, system=s == "geral", alert_enabled=False, alert_to=[], wait_alert_min=None)  # noqa: E731
+                       for s, n, c in A.SEED_QUEUES}
+    monkeypatch.setattr(A, "queue_map", seeds)
 
 
 def _conv(state="menu", tries=0, queue="geral"):
@@ -56,11 +59,18 @@ def test_primeira_mensagem_abre_menu_e_envia_saudacao(monkeypatch):
     assert c.state == "menu" and "digite 1" in gw.send_text.call_args.args[1]
 
 
+def _filas(**avisos):
+    """Filas padrao com avisos por slug: {slug: [destinos]}."""
+    m = A.queue_map(None)
+    for slug, dest in avisos.items():
+        m[slug].alert_enabled, m[slug].alert_to = True, dest
+    return m
+
+
 def test_opcao_valida_vai_para_fila_e_avisa(monkeypatch):
-    cfg = {**A.DEFAULT_CFG, "queues": {**A.DEFAULT_CFG["queues"], "suporte": {"alert_enabled": True, "alert_to": ["120363@g.us", "14999990000"]}}}
-    monkeypatch.setattr(A, "cfg", lambda d: cfg)
+    monkeypatch.setattr(A, "cfg", lambda d: A.DEFAULT_CFG)
+    monkeypatch.setattr(A, "queue_map", lambda d, _m=_filas(comercial=["120363@g.us", "14999990000"]): _m)
     conv, gw = _conv(), MagicMock()
-    cfg["queues"]["comercial"] = cfg["queues"]["suporte"]
     A.handle_inbound(_db(conv), _msg("1"), gw)
     assert conv.state == "aguardando" and conv.queue == "comercial" and conv.queued_at is not None
     destinos = [c.args[0] for c in gw.send_text.call_args_list]
@@ -75,11 +85,10 @@ def test_aviso_desligado_nao_envia_para_destinos(monkeypatch):
 
 
 def test_falha_no_aviso_nao_quebra_o_fluxo(monkeypatch):
-    cfg = {**A.DEFAULT_CFG, "queues": {**A.DEFAULT_CFG["queues"], "suporte": {"alert_enabled": True, "alert_to": ["x@g.us"]}}}
-    monkeypatch.setattr(A, "cfg", lambda d: cfg)
+    monkeypatch.setattr(A, "cfg", lambda d: A.DEFAULT_CFG)
+    monkeypatch.setattr(A, "queue_map", lambda d, _m=_filas(comercial=["x@g.us"]): _m)
     conv, gw = _conv(), MagicMock()
     gw.send_text.side_effect = [None, RuntimeError("fora")]
-    cfg["queues"]["comercial"] = cfg["queues"]["suporte"]
     A.handle_inbound(_db(conv), _msg("1"), gw)
     assert conv.state == "aguardando"
 
@@ -259,8 +268,8 @@ def test_transferir_exige_destino_e_rejeita_cliente_como_analista():
 def test_config_so_admin_edita_e_grava_json(monkeypatch):
     saved = {}
     monkeypatch.setattr("app.routers.atendimento.S.put", lambda db, k, v, user=None: saved.setdefault(k, v))
-    body = {"greeting": "Oi", "menu_timeout_min": 3, "wait_alert_min": 5, "closing_message": "Tchau",
-            "queues": {"suporte": {"alert_enabled": True, "alert_to": [" 120@g.us ", ""]}, "xpto": {"alert_enabled": True, "alert_to": []}}}
+    body = {"greeting": "Oi", "menu_timeout_min": 3, "wait_alert_min": 5, "closing_message": "Tchau", "inactivity_hours": 12,
+            "quick_replies": [{"title": "Oi", "text": "Olá!"}]}
     c, _ = _api("ANALISTA_NOC")
     try:
         assert c.put("/cliente/api/atendimento/config", json=body).status_code == 403
@@ -268,7 +277,7 @@ def test_config_so_admin_edita_e_grava_json(monkeypatch):
         r = c.put("/cliente/api/atendimento/config", json=body)
         assert r.status_code == 200
         gravado = json.loads(saved["atendimento.config"])
-        assert gravado["queues"] == {"suporte": {"alert_enabled": True, "alert_to": ["120@g.us"]}}
+        assert gravado["inactivity_hours"] == 12 and gravado["quick_replies"] == [{"title": "Oi", "text": "Olá!"}]
         assert c.put("/cliente/api/atendimento/config", json={**body, "menu_timeout_min": 0}).status_code == 422
     finally:
         _done()
@@ -347,3 +356,66 @@ def test_inatividade_desligada_nao_faz_nada(monkeypatch):
     monkeypatch.setattr(A, "cfg", lambda d: {**A.DEFAULT_CFG, "inactivity_hours": 0})
     db = _db(None)
     assert A.close_inactive(db, MagicMock()) == 0 and not db.scalars.called
+
+
+# ---- CRUD de filas ----
+def _fila(**kw):
+    base = dict(id=3, slug="rh", name="RH", color="#112233", sort=4, active=True, system=False, alert_enabled=False, alert_to=[], wait_alert_min=None)
+    return NS(**{**base, **kw})
+
+
+def test_criar_fila_gera_slug_unico_e_limpa_destinos():
+    c, db = _api("ADMIN")
+    db.scalars.return_value.all.return_value = ["rh", "rh-2"]
+    db.scalar.return_value = 3
+    try:
+        r = c.post("/cliente/api/atendimento/queue-defs", json={"name": "RH ", "alert_enabled": True, "alert_to": [" 120@g.us ", ""]})
+        assert r.status_code == 200 and r.json()["slug"] == "rh-3" and r.json()["alert_to"] == ["120@g.us"]
+        assert c.post("/cliente/api/atendimento/queue-defs", json={"name": "X", "color": "vermelho"}).status_code == 422
+        c2, _ = _api("ANALISTA_NOC")
+        assert c2.post("/cliente/api/atendimento/queue-defs", json={"name": "X"}).status_code == 403
+    finally:
+        _done()
+
+
+def test_fila_do_sistema_nao_desativa_nem_exclui():
+    c, db = _api("ADMIN")
+    db.get.return_value = _fila(slug="geral", system=True)
+    try:
+        assert c.put("/cliente/api/atendimento/queue-defs/3", json={"name": "Geral", "active": False}).status_code == 409
+        assert c.put("/cliente/api/atendimento/queue-defs/3", json={"name": "Atendimento geral"}).status_code == 200
+        assert c.delete("/cliente/api/atendimento/queue-defs/3").status_code == 409
+    finally:
+        _done()
+
+
+def test_excluir_fila_bloqueia_com_conversas_abertas_ou_uso_no_fluxo(monkeypatch):
+    c, db = _api("ADMIN")
+    db.get.return_value = _fila()
+    try:
+        db.scalar.return_value = 2
+        r = c.delete("/cliente/api/atendimento/queue-defs/3")
+        assert r.status_code == 409 and "2 conversa" in r.json()["detail"]
+        db.scalar.return_value = 0
+        fluxo = {"nodes": [{"id": "q_rh", "type": "enqueue", "data": {"queue": "rh"}}], "edges": []}
+        monkeypatch.setattr("app.routers.atendimento.FS.load_flow", lambda *a, **k: (fluxo, False))
+        r = c.delete("/cliente/api/atendimento/queue-defs/3")
+        assert r.status_code == 409 and "q_rh" in r.json()["detail"]
+        monkeypatch.setattr("app.routers.atendimento.FS.load_flow", lambda *a, **k: ({"nodes": [], "edges": []}, False))
+        assert c.delete("/cliente/api/atendimento/queue-defs/3").status_code == 200 and db.delete.called
+    finally:
+        _done()
+
+
+def test_fluxo_com_fila_inexistente_e_recusado_ao_salvar():
+    from app.services import flow_service as FS
+    d = FS.default_flow("Menu")
+    assert FS.validate_flow(d, ["comercial", "financeiro", "suporte", "geral"]) == []
+    assert any("fila" in e["msg"].lower() for e in FS.validate_flow(d, ["comercial", "geral"]))  # financeiro/suporte apagadas
+
+
+def test_fila_pedida_inativa_ou_inexistente_cai_na_geral(monkeypatch):
+    m = A.queue_map(None)
+    m["suporte"].active = False
+    monkeypatch.setattr(A, "queue_map", lambda d: m)
+    assert A.queue_ok(None, "suporte") == "geral" and A.queue_ok(None, "nao_existe") == "geral" and A.queue_ok(None, "comercial") == "comercial"
