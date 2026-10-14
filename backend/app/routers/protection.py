@@ -346,5 +346,13 @@ def client_protection(db: Session, cid: int, admin: bool = False) -> dict:
         if t.source == P.SRC:
             services += [{**s, "tenant": titlecase(t.name)} for s in ((t.info or {}).get("services") or [])]
     eps = [{**r, "last": r["last"].isoformat() if r["last"] else None} for r in P.endpoint_rows(db, cid)]
-    return {"backups": backups, "endpoints": eps, "services": services, "actions": actions,
-            "tenants": [{"id": t.id, "source": t.source, "name": titlecase(t.name)} for t in tens]}
+    tenants = [{"id": t.id, "source": t.source, "name": titlecase(t.name)} for t in tens]
+    if not admin:  # portal do cliente: nunca revela qual fornecedor/integracao a Orca TI usa por tras
+        SRC_LABEL = {"Acronis": "Backup/Proteção", "FortiClient EMS": "Antivírus/EDR"}
+        for e in eps:
+            e["source"] = SRC_LABEL.get(e["source"], e["source"])
+            e["techs"] = [t.split(" (")[0] for t in e["techs"]]  # remove "(FortiClient)" etc da tecnologia
+        for b in backups:
+            b["techs"] = [t.split(" (")[0] for t in b["techs"]]
+        tenants = [{"id": t["id"], "name": t["name"]} for t in tenants]
+    return {"backups": backups, "endpoints": eps, "services": services, "actions": actions, "tenants": tenants}

@@ -72,7 +72,7 @@ function NewTicketForm({ clients, queues, onClose, onSaved }) {
   </Modal>
 }
 
-function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
+function TicketDetail({ id, queues, staff, canEdit, onClose, onChanged }) {
   const t = useLoad(() => get('/tickets/' + id), [id]); const toast = useToast()
   const [reply, setReply] = useState(''); const [internal, setInternal] = useState(false); const [sending, setSending] = useState(false)
   const [pendStatus, setPendStatus] = useState(null)
@@ -100,9 +100,10 @@ function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
       <Pill tone={STATUS_TONE[d.status]}>{d.status_label}</Pill><Pill tone={PRIORITY_TONE[d.priority]}>{d.priority_label}</Pill>
       <span className="sub">Cliente: <b>{d.client}</b> · Fila: {d.queue || 'sem fila'}{d.contact_phone ? ` · Tel.: ${d.contact_phone}` : ''} · Aberto {fmt(d.created_at)} por {d.created_by_name}{d.origin === 'portal' ? ' (portal)' : ''}</span></div>
-    {canEdit && <div className="row r2" style={{ marginBottom: 14 }}>
+    {canEdit && <div className="row r3" style={{ marginBottom: 14 }}>
       <Field label="PRIORIDADE"><select value={d.priority} onChange={e => setField('priority', e.target.value)}>{PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
-      <Field label="FILA"><select value={d.queue_id || ''} onChange={e => setField('queue_id', +e.target.value || null)}><option value="">Sem fila</option>{queues.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></Field></div>}
+      <Field label="FILA"><select value={d.queue_id || ''} onChange={e => setField('queue_id', +e.target.value || null)}><option value="">Sem fila</option>{queues.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></Field>
+      <Field label="RESPONSÁVEL"><select value={d.assigned_to_id || ''} onChange={e => setField('assigned_to_id', +e.target.value || null)}><option value="">Sem responsável</option>{(staff || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field></div>}
     <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 12, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {d.messages.length === 0 && <span className="sub">Sem mensagens.</span>}
       {d.messages.map(m => <div key={m.id} style={{ background: m.internal ? '#fff7e0' : m.origin === 'portal' ? '#eef4ff' : '#f3f4f6', borderRadius: 10, padding: '8px 12px' }}>
@@ -114,10 +115,10 @@ function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
       <Field label="SITUAÇÃO" hint={changingStatus ? 'Escreva o comentário abaixo explicando a mudança — a situação só muda ao enviar.' : 'Para mudar, selecione e escreva o comentário antes de enviar.'}>
         <select value={curStatus} onChange={e => setPendStatus(e.target.value)}>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
       <Field label={changingStatus ? 'COMENTÁRIO (obrigatório para mudar a situação) *' : 'RESPONDER'}>
-        <textarea style={{ minHeight: 80 }} value={reply} onChange={e => setReply(e.target.value)} placeholder="Mensagem para o cliente (ou nota interna)..." /></Field>
+        <textarea style={{ minHeight: 80, borderColor: changingStatus && !reply.trim() ? 'var(--crit)' : undefined }} value={reply} onChange={e => setReply(e.target.value)} placeholder={changingStatus ? 'Explique a mudança de situação antes de enviar...' : 'Mensagem para o cliente (ou nota interna)...'} /></Field>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={internal} disabled={changingStatus} onChange={e => setInternal(e.target.checked)} /> Nota interna (não avisa o cliente/fila)</label>
-        <button className="btn primary" onClick={send}><MessageSquareText size={15} />{changingStatus ? `Enviar e mudar para "${STATUSES.find(s => s[0] === pendStatus)?.[1]}"` : 'Enviar'}</button>
+        <button className="btn primary" disabled={changingStatus && !reply.trim()} title={changingStatus && !reply.trim() ? 'Escreva o comentário para poder enviar' : ''} onClick={send}><MessageSquareText size={15} />{changingStatus ? `Enviar e mudar para "${STATUSES.find(s => s[0] === pendStatus)?.[1]}"` : 'Enviar'}</button>
         <label className="btn sm" style={{ cursor: sending ? 'wait' : 'pointer' }}><Paperclip size={15} />{sending ? 'Enviando…' : 'Anexar arquivo'}<input type="file" style={{ display: 'none' }} disabled={sending} onChange={sendFile} /></label>
         <span className="sub">Até 15 MB · imagens, PDF, TXT, CSV, ZIP, 7z, backups (.bak)</span></div>
       <Field label="OBSERVADORES (CC) DESTE CHAMADO">
@@ -134,18 +135,25 @@ function TicketDetail({ id, queues, canEdit, onClose, onChanged }) {
 
 function TicketsTab() {
   const me = useAuth(); const edit = can(me, 'tickets.edit')
-  const [status, setStatus] = useState(''); const [openId, setOpenId] = useState(null); const [newT, setNewT] = useState(false)
-  const list = useLoad(() => get('/tickets' + (status ? `?status=${status}` : '')), [status], 15000)
+  const [status, setStatus] = useState(''); const [clientId, setClientId] = useState(''); const [queueId, setQueueId] = useState(''); const [assignee, setAssignee] = useState('')
+  const [openId, setOpenId] = useState(null); const [newT, setNewT] = useState(false)
+  const qs = [status && `status=${status}`, clientId && `client_id=${clientId}`, queueId && `queue_id=${queueId}`, assignee && `assigned_to_id=${assignee}`].filter(Boolean).join('&')
+  const list = useLoad(() => get('/tickets' + (qs ? `?${qs}` : '')), [qs], 15000)
   const clients = useLoad(() => get('/clients'), []); const queues = useLoad(() => get('/tickets/queues'), [])
+  const staff = useLoad(() => get('/tickets/staff'), [])
   return <>
-    <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', margin: '12px 0' }}>
-      <select value={status} onChange={e => setStatus(e.target.value)} style={{ width: 220 }}><option value="">Todas as situações</option>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+    <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', margin: '12px 0', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <select value={status} onChange={e => setStatus(e.target.value)} style={{ width: 180 }}><option value="">Todas as situações</option>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <select value={clientId} onChange={e => setClientId(e.target.value)} style={{ width: 200 }}><option value="">Todos os clientes</option>{(clients.data || []).map(c => <option key={c.id} value={c.id}>{c.trade_name}</option>)}</select>
+        <select value={queueId} onChange={e => setQueueId(e.target.value)} style={{ width: 160 }}><option value="">Todas as filas</option>{(queues.data || []).map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select>
+        <select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ width: 180 }}><option value="">Todos os responsáveis</option>{(staff.data || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
       {edit && <button className="btn primary" onClick={() => setNewT(true)}><Plus />Novo chamado</button>}</div>
-    <Card pad={false}>{list.data ? <Table rows={list.data} onRow={r => setOpenId(r.id)} empty="Nenhum chamado encontrado." cols={[
-      { h: '#', r: r => <b>{r.number}</b> }, { h: 'Cliente', r: r => r.client }, { h: 'Assunto', r: r => <div className="trunc" style={{ maxWidth: 280 }}>{r.subject}</div> },
-      { h: 'Fila', r: r => r.queue || '—' }, { h: 'Prioridade', r: r => <Pill tone={PRIORITY_TONE[r.priority]}>{r.priority_label}</Pill> },
+    <Card pad={false}>{list.data ? <Table rows={list.data} onRow={r => setOpenId(r.id)} empty="Nenhum chamado encontrado com esses filtros." cols={[
+      { h: '#', r: r => <b>{r.number}</b> }, { h: 'Cliente', r: r => r.client }, { h: 'Assunto', r: r => <div className="trunc" style={{ maxWidth: 260 }}>{r.subject}</div> },
+      { h: 'Fila', r: r => r.queue || '—' }, { h: 'Responsável', r: r => r.assigned_to_name || <span className="sub">—</span> }, { h: 'Prioridade', r: r => <Pill tone={PRIORITY_TONE[r.priority]}>{r.priority_label}</Pill> },
       { h: 'Situação', r: r => <Pill tone={STATUS_TONE[r.status]}>{r.status_label}</Pill> }, { h: 'Atualizado', r: r => fmt(r.updated_at) }]} /> : <Loading />}</Card>
-    {openId && <TicketDetail id={openId} queues={queues.data || []} canEdit={edit} onClose={() => setOpenId(null)} onChanged={list.reload} />}
+    {openId && <TicketDetail id={openId} queues={queues.data || []} staff={staff.data || []} canEdit={edit} onClose={() => setOpenId(null)} onChanged={list.reload} />}
     {newT && clients.data && <NewTicketForm clients={clients.data} queues={queues.data || []} onClose={() => setNewT(false)} onSaved={() => { setNewT(false); list.reload() }} />}
   </>
 }

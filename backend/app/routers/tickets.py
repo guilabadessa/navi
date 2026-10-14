@@ -18,6 +18,7 @@ from ..models import (Client, Ticket, TicketAttachment, TicketMessage, TicketQue
                       TICKET_OPEN_STATUSES, TICKET_PRIORITIES, TICKET_STATUSES, User)
 from ..security import require
 from ..services import ticket_service as TS
+from ..util import titlecase
 from .portal import _client_for
 
 router = APIRouter(tags=["tickets"])
@@ -106,11 +107,12 @@ def _msg_out(m: TicketMessage) -> dict:
             "attachment": {"id": a.id, "filename": a.filename, "size_bytes": a.size_bytes} if a else None}
 
 
-def _ticket_out(t: Ticket, portal: bool = False) -> dict:
+def _ticket_out(t: Ticket, portal: bool = False, names: dict | None = None) -> dict:
     return {"id": t.id, "number": t.number, "client_id": t.client_id, "client": t.client.trade_name if t.client else None,
             "queue_id": t.queue_id, "queue": t.queue.name if t.queue else None, "subject": t.subject, "status": t.status,
             "status_label": TS.STATUS_LABEL.get(t.status, t.status), "priority": t.priority, "priority_label": TS.PRIORITY_LABEL.get(t.priority, t.priority),
             "origin": t.origin, "created_by_name": t.created_by_name, "contact_phone": t.contact_phone,
+            "assigned_to_id": t.assigned_to_id, "assigned_to_name": (names or {}).get(t.assigned_to_id),
             "created_at": t.created_at.isoformat(), "updated_at": t.updated_at.isoformat(),
             "closed_at": t.closed_at.isoformat() if t.closed_at else None,
             "watchers": [] if portal else [{"id": w.id, "kind": w.kind, "target": w.target, "label": w.label} for w in t.watchers]}
@@ -177,7 +179,7 @@ def _create(db: Session, request: Request, client_id: int, queue_id: int | None,
     db.add(t)
     db.flush()
     for w in watchers:
-        db.add(TicketWatcher(ticket_id=t.id, kind=w.kind, target=w.target.strip(), label=w.label))
+        db.add(TicketWatcher(ticket_id=t.id, kind=w.kind, target=w.target.strip(), label=titlecase(w.label)))
     has_email_watcher = any(w.kind == "email" for w in watchers)
     if origin == "portal" and user.email and not any(w.kind == "email" and w.target.strip().lower() == user.email.lower() for w in watchers):
         db.add(TicketWatcher(ticket_id=t.id, kind="email", target=user.email, label=user.name))  # quem abriu pelo portal recebe copia por padrao
@@ -194,8 +196,8 @@ def _create(db: Session, request: Request, client_id: int, queue_id: int | None,
 
 
 @router.get("/tickets")
-def list_tickets(client_id: int | None = None, queue_id: int | None = None, status: str | None = None, open_only: bool = False,
-                 db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
+def list_tickets(client_id: int | None = None, queue_id: int | None = None, status: str | None = None, assigned_to_id: int | None = None,
+                 open_only: bool = False, db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
     q = select(Ticket)
     if client_id:
         q = q.where(Ticket.client_id == client_id)
@@ -203,10 +205,20 @@ def list_tickets(client_id: int | None = None, queue_id: int | None = None, stat
         q = q.where(Ticket.queue_id == queue_id)
     if status:
         q = q.where(Ticket.status == status)
+    if assigned_to_id:
+        q = q.where(Ticket.assigned_to_id == assigned_to_id)
     if open_only:
         q = q.where(Ticket.status.in_(TICKET_OPEN_STATUSES))
     rows = list(db.scalars(q.order_by(Ticket.created_at.desc()).limit(300)))
-    return [_ticket_out(t) for t in rows]
+    names = {u.id: u.name for u in db.scalars(select(User).where(User.role != "CLIENTE"))}
+    return [_ticket_out(t, names=names) for t in rows]
+
+
+@router.get("/tickets/staff")
+def list_staff(db: Session = Depends(get_db), _=Depends(require("tickets.view"))):
+    """Equipe que pode ser responsavel por um chamado (para o filtro e o campo Responsavel)."""
+    rows = db.scalars(select(User).where(User.role != "CLIENTE", User.active.is_(True)).order_by(User.name))
+    return [{"id": u.id, "name": u.name} for u in rows]
 
 
 @router.post("/tickets")
@@ -220,7 +232,8 @@ def get_ticket(tid: int, db: Session = Depends(get_db), _=Depends(require("ticke
     t = db.get(Ticket, tid)
     if not t:
         raise HTTPException(404)
-    out = _ticket_out(t)
+    names = {t.assigned_to_id: u.name for u in [db.get(User, t.assigned_to_id)] if u} if t.assigned_to_id else {}
+    out = _ticket_out(t, names=names)
     out["messages"] = [_msg_out(m) for m in _messages_q(db, tid, False)]
     return out
 
@@ -287,11 +300,14 @@ def update_ticket(tid: int, body: TicketFieldsIn, request: Request, db: Session 
     if body.priority:
         t.priority = body.priority
     if body.assigned_to_id is not None:
+        if body.assigned_to_id and not db.get(User, body.assigned_to_id):
+            raise HTTPException(422, "Responsável inválido")
         t.assigned_to_id = body.assigned_to_id or None
     t.updated_at = datetime.now(timezone.utc)
     audit.log(db, request, "ticket_update", "ticket", tid, detail={"numero": t.number, "fila_id": body.queue_id, "prioridade": body.priority})
     db.commit()
-    return _ticket_out(t)
+    names = {t.assigned_to_id: u.name for u in [db.get(User, t.assigned_to_id)] if u} if t.assigned_to_id else {}
+    return _ticket_out(t, names=names)
 
 
 @router.post("/tickets/{tid}/watchers")
@@ -299,7 +315,7 @@ def add_watcher(tid: int, body: WatcherIn, request: Request, db: Session = Depen
     t = db.get(Ticket, tid)
     if not t:
         raise HTTPException(404)
-    w = TicketWatcher(ticket_id=tid, kind=body.kind, target=body.target.strip(), label=body.label)
+    w = TicketWatcher(ticket_id=tid, kind=body.kind, target=body.target.strip(), label=titlecase(body.label))
     db.add(w)
     audit.log(db, request, "ticket_watcher_add", "ticket", tid, detail={"tipo": body.kind, "destino": body.target})
     db.commit()

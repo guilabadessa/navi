@@ -19,10 +19,11 @@ export function EventBalloons({ events, vulnSev }) {
 }
 
 // Servicos contratados no Acronis, agrupados por tecnologia (Backup, Seguranca/EDR, Gerenciamento/RMM, DLP...)
+// `detail`=true so na tela da equipe: pode citar o fornecedor. No portal do cliente nunca revela qual integracao usamos.
 export function ServicesCard({ services, detail = false }) {
   if (!services || !services.length) return null
   const groups = {}; services.forEach(s => { (groups[s.group] = groups[s.group] || []).push(s) })
-  return <Card title="Tecnologias habilitadas (Acronis)" style={{ marginBottom: 16 }}>
+  return <Card title={detail ? 'Tecnologias habilitadas (Acronis)' : 'Tecnologias habilitadas'} style={{ marginBottom: 16 }}>
     <div className="grid g3">{Object.entries(groups).map(([g, items]) => <div key={g}><div className="l" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--mut)', fontWeight: 600, marginBottom: 6 }}>{g}</div>
       {items.map(s => <div key={s.label} style={{ fontSize: 13.5, padding: '3px 0' }}><b>{s.label}</b>{detail && s.unit !== 'bytes' && <div className="sub">{`${s.used}${s.quota != null ? ' de ' + s.quota : ''} em uso`}</div>}</div>)}</div>)}</div></Card>
 }
@@ -35,7 +36,7 @@ export function BackupPanel({ data, reload, runPath }) {
   const rows = items.filter(i => (!st || i.status === st) && (!ty || i.type_label === ty) && (!q || i.name.toLowerCase().includes(q.toLowerCase())))
   const c = k => items.filter(i => i.status === k).length
   const run = async (r) => {
-    if (!confirm(`Executar agora o plano de backup de “${r.name}”?\n\nO Acronis iniciará o backup imediatamente.`)) return
+    if (!confirm(`Executar agora o plano de backup de “${r.name}”?\n\nO backup será iniciado imediatamente.`)) return
     setBusy(r.id)
     try { const x = await post(runPath ? runPath(r) : `/protection/assets/${r.id}/run-backup`); toast(x.detail); reload && reload() } catch (e) { toast(e.message, true) } finally { setBusy(0) }
   }
