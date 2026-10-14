@@ -84,6 +84,15 @@ class WaAkgService:
 
         return self._send_to(number, build)
 
+    def send_media(self, number: str, data: bytes, filename: str, mimetype: str, caption: str = "") -> dict:
+        kind = "image" if mimetype.startswith("image/") else "document"
+
+        def build(jid: str) -> dict:
+            return self._req("POST", self._msg_path(jid, "media"), data={"type": kind, "caption": caption},
+                             files={"file": (filename, data, mimetype)})
+
+        return self._send_to(number, build)
+
     def status(self) -> dict:
         body = self._req("GET", f"/sessions/{quote(self.session, safe='')}")
         d = body.get("data") if isinstance(body.get("data"), dict) else body  # v1.6.3 aninha em data; a doc nao

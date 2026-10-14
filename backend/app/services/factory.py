@@ -21,6 +21,11 @@ def whatsapp(db: Session) -> EvolutionService | WaAkgService:
     return EvolutionService(S.get(db, "evolution.url"), S.get(db, "evolution.instance"), S.get(db, "evolution.api_key"))
 
 
+def wa_akg(db: Session) -> WaAkgService:
+    """Sempre o WA-AKG (atendimento por WhatsApp), independente do provedor dos alertas."""
+    return WaAkgService(S.get(db, "wa_akg.url"), S.get(db, "wa_akg.session"), S.get(db, "wa_akg.api_key"))
+
+
 def evolution(db: Session) -> EvolutionService | WaAkgService:
     """Nome legado: todos os chamadores antigos recebem o provedor ativo."""
     return whatsapp(db)
