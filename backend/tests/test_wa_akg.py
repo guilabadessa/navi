@@ -91,6 +91,7 @@ def test_send_document_envia_multipart():
 def test_status_mapeia_connected_para_open():
     assert svc(lambda r: httpx.Response(200, json={"status": "Connected", "hasInstance": True})).status()["state"] == "open"
     assert svc(lambda r: httpx.Response(200, json={"status": "Disconnected"})).status()["state"] == "close"
+    assert svc(lambda r: httpx.Response(200, json={"status": True, "data": {"status": "CONNECTED"}})).status()["state"] == "open"
 
 
 def test_qr_le_codigo_da_sessao():

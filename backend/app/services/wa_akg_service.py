@@ -85,8 +85,9 @@ class WaAkgService:
         return self._send_to(number, build)
 
     def status(self) -> dict:
-        d = self._req("GET", f"/sessions/{quote(self.session, safe='')}")
-        return {"state": "open" if str(d.get("status", "")).lower() == "connected" else "close", "raw": d}
+        body = self._req("GET", f"/sessions/{quote(self.session, safe='')}")
+        d = body.get("data") if isinstance(body.get("data"), dict) else body  # v1.6.3 aninha em data; a doc nao
+        return {"state": "open" if str(d.get("status", "")).lower() == "connected" else "close", "raw": body}
 
     def qr(self) -> dict:
         try:
