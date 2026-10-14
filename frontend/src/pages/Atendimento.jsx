@@ -1,31 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Link2, Paperclip, Workflow, Send, UserCheck, X, ArrowRightLeft } from 'lucide-react'
+import { Link2, Paperclip, Send, UserCheck, X, ArrowRightLeft } from 'lucide-react'
 import { get, post, uploadForm } from '../api'
 import { Card, Field, Modal, PageHead, Pill, useLoad, useToast } from '../ui'
 import { useAuth, can } from '../App'
+import { Link } from 'react-router-dom'
+import AtNav from './AtNav'
 
-const QLABEL = { comercial: 'Comercial', financeiro: 'Financeiro', suporte: 'Suporte', geral: 'Geral' }
 const STATE = { menu: ['mut', 'No menu'], aguardando: ['warn', 'Aguardando'], atendendo: ['ok', 'Em atendimento'], encerrada: ['mut', 'Encerrada'] }
 const dur = (s) => s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}min` : `${Math.floor(s / 3600)}h${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`
 const hora = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
 
 function Monitor({ q, sel, onSel }) {
-  const lim = (q.wait_alert_min || 5) * 60
   return <div className="at-queues">{q.queues.map(x => {
-    const late = x.waiting > 0 && x.oldest_seconds >= lim
-    return <button key={x.queue} className={'at-q' + (sel === x.queue ? ' on' : '') + (late ? ' late' : '')} onClick={() => onSel(sel === x.queue ? '' : x.queue)}>
+    const late = x.waiting > 0 && x.oldest_seconds >= (x.alert_min || 5) * 60
+    return <button key={x.queue} className={'at-q' + (sel === x.queue ? ' on' : '') + (late ? ' late' : '')} style={{ borderTop: `3px solid ${x.color}` }} onClick={() => onSel(sel === x.queue ? '' : x.queue)}>
       <span>{x.label}</span><b>{x.waiting}</b><small>{x.waiting ? `maior espera ${dur(x.oldest_seconds)}` : 'sem espera'} · {x.active} em atendimento</small></button>
   })}</div>
 }
 
+const QPill = ({ name, color }) => <span className="badge" style={{ background: (color || '#6b7a99') + '26', color: color || '#6b7a99', border: `1px solid ${(color || '#6b7a99')}55` }}>{name}</span>
+
 function Transfer({ conv, onClose, onDone }) {
-  const toast = useToast(); const agents = useLoad(() => get('/atendimento/agents'), [])
+  const toast = useToast(); const agents = useLoad(() => get('/atendimento/agents'), []); const qs = useLoad(() => get('/atendimento/queue-defs'), [])
   const [u, setU] = useState(''); const [qq, setQq] = useState('')
   const go = async () => { try { await post(`/atendimento/conversations/${conv.id}/transfer`, { user_id: u ? +u : null, queue: qq || null }); toast('Conversa transferida'); onDone() } catch (e) { toast(e.message, true) } }
   return <Modal title="Transferir conversa" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={!u && !qq} onClick={go}>Transferir</button></>}>
     <Field label="PARA O ANALISTA" hint="Deixe em branco para devolver à fila do setor escolhido."><select value={u} onChange={e => setU(e.target.value)}><option value="">— fila do setor —</option>{(agents.data || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-    <Field label="SETOR"><select value={qq} onChange={e => setQq(e.target.value)}><option value="">— manter —</option>{Object.entries(QLABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+    <Field label="SETOR"><select value={qq} onChange={e => setQq(e.target.value)}><option value="">— manter —</option>{(qs.data || []).filter(x => x.active).map(x => <option key={x.slug} value={x.slug}>{x.name}</option>)}</select></Field>
   </Modal>
 }
 
@@ -82,7 +83,7 @@ function Chat({ conv, me, onChange }) {
   const [tone, label] = STATE[conv.state] || ['mut', conv.state]
   return <div className="at-chat">
     <div className="at-head"><div><b>{conv.name || conv.number}</b> <span className="sub">+{conv.number}</span>{conv.client && <> · <Pill tone="info">{conv.client.name}</Pill></>}</div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Pill tone={tone}>{label}</Pill><Pill tone="mut">{QLABEL[conv.queue]}</Pill>{conv.assigned_name && <Pill tone="info">{conv.assigned_name}</Pill>}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Pill tone={tone}>{label}</Pill><QPill name={conv.queue_name} color={conv.queue_color} />{conv.assigned_name && <Pill tone="info">{conv.assigned_name}</Pill>}
         {act && !closed && <>
           {conv.state === 'aguardando' && <button className="btn primary" onClick={() => call('assume', {}, 'Você assumiu a conversa')}><UserCheck size={16} />Assumir</button>}
           <button className="btn" onClick={() => setModal('transfer')}><ArrowRightLeft size={16} />Transferir</button>
@@ -112,7 +113,8 @@ export default function Atendimento() {
   const waiting = (q.data?.queues || []).reduce((n, x) => n + x.waiting, 0)
   useEffect(() => { document.title = (waiting ? `(${waiting}) ` : '') + 'NAVI' ; return () => { document.title = 'NAVI' } }, [waiting])
   return <>
-    <PageHead title="Atendimento" desc="Clientes de WhatsApp aguardando e em atendimento"><Link className="btn" to="/atendimento/fluxo"><Workflow size={15} />Fluxo de atendimento</Link></PageHead>
+    <PageHead title="Atendimento" desc="Clientes de WhatsApp aguardando e em atendimento" />
+    <AtNav />
     {q.data && <Monitor q={q.data} sel={queue} onSel={setQueue} />}
     <div className="at-grid">
       <Card pad={false} title={undefined}>
@@ -124,7 +126,7 @@ export default function Atendimento() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><b>{c.name || c.number}</b>{c.unread > 0 && <span className="at-unread">{c.unread}</span>}</div>
             <div className="sub">{c.client ? c.client.name : '+' + c.number}</div>
             <div className="sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.last_text}</div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}><Pill tone={tone}>{label}</Pill><Pill tone="mut">{QLABEL[c.queue]}</Pill>{c.state !== 'atendendo' && c.wait_seconds > 0 && <span className="sub">{dur(c.wait_seconds)}</span>}</div></button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}><Pill tone={tone}>{label}</Pill><QPill name={c.queue_name} color={c.queue_color} />{c.state !== 'atendendo' && c.wait_seconds > 0 && <span className="sub">{dur(c.wait_seconds)}</span>}</div></button>
         })}{!rows.length && <div className="empty">Nenhuma conversa.</div>}</div>
       </Card>
       {sel ? <Chat conv={sel} me={me} onChange={() => { list.reload(); q.reload() }} /> : <div className="at-chat"><div className="empty">Selecione uma conversa.</div></div>}

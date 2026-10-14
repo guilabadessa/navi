@@ -56,34 +56,8 @@ function WaAkgTab({ edit }) {
       <button className="btn" style={{ marginTop: 8 }} onClick={async () => { try { setQr(await get('/wa/qr')) } catch (e) { toast(e.message, true) } }}>Mostrar QR code para parear</button></>}</Card>
 }
 
-const AT_Q = [['comercial', 'Comercial'], ['financeiro', 'Financeiro'], ['suporte', 'Suporte'], ['geral', 'Geral']]
-function AtendimentoTab({ edit }) {
-  const toast = useToast(); const { data, reload } = useLoad(() => get('/atendimento/config'), []); const [f, setF] = useState(null)
-  useEffect(() => { if (data) setF({ ...data, quick_replies: (data.quick_replies || []).map(r => r.title + ' | ' + r.text).join('\n'), queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: data.queues[q].alert_enabled, alert_to: (data.queues[q].alert_to || []).join('\n') }])) }) }, [data])
-  if (!f) return <Loading />
-  const setQ = (q, k, v) => setF({ ...f, queues: { ...f.queues, [q]: { ...f.queues[q], [k]: v } } })
-  const save = async () => {
-    try {
-      await put('/atendimento/config', { greeting: f.greeting, menu_timeout_min: +f.menu_timeout_min, wait_alert_min: +f.wait_alert_min, closing_message: f.closing_message, inactivity_hours: +f.inactivity_hours, inactivity_message: f.inactivity_message,
-        quick_replies: f.quick_replies.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf('|'); return i < 0 ? { title: l.slice(0, 40), text: l } : { title: l.slice(0, i).trim(), text: l.slice(i + 1).trim() } }).filter(r => r.title && r.text),
-        queues: Object.fromEntries(AT_Q.map(([q]) => [q, { alert_enabled: f.queues[q].alert_enabled, alert_to: f.queues[q].alert_to.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean) }])) })
-      toast('Salvo'); reload()
-    } catch (e) { toast(e.message, true) }
-  }
-  return <Card title="Atendimento por WhatsApp (menu e filas)">
-    <p className="sub" style={{ marginBottom: 12 }}>O menu, as perguntas (CNPJ), a abertura de chamado e o destino de cada opção ficam no <Link to="/atendimento/fluxo">fluxo de atendimento</Link> (diagrama editável).</p>
-    <div className="row r2"><Field label="TEMPO PADRÃO SEM RESPOSTA (min)" hint="Vale para os passos do fluxo que não definem o próprio tempo."><input type="number" min="1" max="60" value={f.menu_timeout_min} onChange={e => setF({ ...f, menu_timeout_min: e.target.value })} disabled={!edit} /></Field>
-      <Field label="ESPERA EM ALERTA (min)" hint="A fila fica vermelha no monitor acima deste tempo."><input type="number" min="1" max="240" value={f.wait_alert_min} onChange={e => setF({ ...f, wait_alert_min: e.target.value })} disabled={!edit} /></Field></div>
-    <Field label="MENSAGEM DE ENCERRAMENTO (quando o analista encerra)"><input value={f.closing_message} onChange={e => setF({ ...f, closing_message: e.target.value })} disabled={!edit} /></Field>
-    <div className="row r2"><Field label="ENCERRAR POR INATIVIDADE (horas)" hint="Sem mensagem de ninguém por esse tempo, o atendimento é encerrado. 0 desliga."><input type="number" min="0" max="720" value={f.inactivity_hours} onChange={e => setF({ ...f, inactivity_hours: e.target.value })} disabled={!edit} /></Field>
-      <Field label="MENSAGEM DE INATIVIDADE"><input value={f.inactivity_message} onChange={e => setF({ ...f, inactivity_message: e.target.value })} disabled={!edit} /></Field></div>
-    <Field label="RESPOSTAS PRONTAS DO ANALISTA" hint="Uma por linha, no formato: título | texto. Aparecem no chat para inserir com um clique."><textarea style={{ minHeight: 110 }} value={f.quick_replies} onChange={e => setF({ ...f, quick_replies: e.target.value })} disabled={!edit} /></Field>
-    <h3 style={{ margin: '18px 0 8px' }}>Aviso quando alguém entra na fila</h3>
-    <p className="sub" style={{ marginBottom: 10 }}>Um número ou ID de grupo por linha. Todos os analistas veem todas as filas; isto define apenas quem é avisado.</p>
-    <div className="row r2">{AT_Q.map(([q, l]) => <div key={q} className="card" style={{ padding: 14 }}>
-      <Check label={`Avisar — ${l}`} checked={f.queues[q].alert_enabled} onChange={v => setQ(q, 'alert_enabled', v)} />
-      <textarea style={{ minHeight: 70, marginTop: 8 }} value={f.queues[q].alert_to} onChange={e => setQ(q, 'alert_to', e.target.value)} placeholder={'120363...@g.us\n(14) 99999-9999'} disabled={!edit} /></div>)}</div>
-    {edit && <button className="btn primary" style={{ marginTop: 14 }} onClick={save}>Salvar</button>}</Card>
+function AtendimentoTab() {
+  return <Card title="Atendimento por WhatsApp"><p className="sub">Filas, respostas prontas, regras gerais e o fluxo ficam em <Link to="/atendimento/configuracoes">Atendimento &gt; Configurações</Link> e <Link to="/atendimento/fluxo">Atendimento &gt; Fluxo</Link>.</p></Card>
 }
 
 function SmtpTab({ edit }) {
@@ -154,5 +128,5 @@ export default function Settings() {
   return <>
     <PageHead title="Configurações" desc="Integrações (Zabbix, WhatsApp, e-mail, Acronis, EMS, Conta Azul), papel timbrado e webhook" />
     <Tabs value={tab} onChange={setTab} tabs={[['zbx', 'Zabbix'], ['evo', 'Evolution API'], ['wa', 'WhatsApp (WA-AKG)'], ['at', 'Atendimento'], ['smtp', 'E-mail (SMTP)'], ['acr', 'Acronis (backup)'], ['ems', 'FortiClient EMS'], ['ca', 'Conta Azul (financeiro)'], ['lh', 'Papel timbrado'], ['wh', 'Webhook']]} />
-    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'at' && <AtendimentoTab edit={edit} />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
+    {tab === 'zbx' && <ZabbixTab edit={edit} />}{tab === 'evo' && <EvoTab edit={edit} />}{tab === 'wa' && <WaAkgTab edit={edit} />}{tab === 'at' && <AtendimentoTab />}{tab === 'smtp' && <SmtpTab edit={edit} />}{tab === 'acr' && <ProtectionConfig section="acronis" />}{tab === 'ems' && <ProtectionConfig section="ems" />}{tab === 'ca' && <ContaAzulTab edit={edit} />}{tab === 'lh' && <LetterTab edit={edit} />}{tab === 'wh' && <WebhookTab edit={edit} />}</>
 }

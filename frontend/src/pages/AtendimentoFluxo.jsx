@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, addEdge, useEdgesState, useNodesState, useUpdateNodeInternals } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, Play, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
+import AtNav from './AtNav'
+import { Play, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { get, post, put } from '../api'
 import { Card, Field, Loading, PageHead, Pill, useToast } from '../ui'
 import { useAuth, can } from '../App'
 import { getTheme } from '../theme'
 
-const QUEUES = [['comercial', 'Comercial'], ['financeiro', 'Financeiro'], ['suporte', 'Suporte'], ['geral', 'Geral']]
+const QueuesCtx = React.createContext([])
 const META = {
   start: ['Início', 'event', '#2e7d32'], message: ['Mensagem', 'task', '#1e73f8'], menu: ['Menu (opções)', 'gateway', '#7b3fe4'], ask: ['Pergunta', 'task', '#0f8b8d'],
   lookup_client: ['Consultar cliente (CNPJ)', 'task', '#0f8b8d'], condition: ['Condição', 'gateway', '#7b3fe4'], create_ticket: ['Abrir chamado', 'task', '#d97706'],
@@ -24,7 +24,7 @@ const outs = (t, c) => ({ start: ['next'], message: ['next'], notify: ['next'], 
   create_ticket: ['next', 'error'], enqueue: [], end: [], menu: [...(c.options || []).map(o => 'opt:' + o.key), 'invalid', 'timeout'] }[t] || [])
 const HL = { next: '', ok: 'ok', invalid: 'inválido', timeout: 'tempo esgotado', back: 'voltar (0)', found: 'achou', retry: 'tentar de novo', not_found: 'não achou', true: 'sim', false: 'não', error: 'erro' }
 const hlabel = (h, c) => h.startsWith('opt:') ? `${h.slice(4)} · ${((c.options || []).find(o => 'opt:' + o.key === h) || {}).label || ''}` : (HL[h] ?? h)
-const summary = (t, c) => ({ message: c.text, menu: c.text, ask: c.text, notify: c.text, end: c.text, enqueue: 'Fila: ' + (QUEUES.find(q => q[0] === c.queue) || ['', '?'])[1],
+const summary = (t, c) => ({ message: c.text, menu: c.text, ask: c.text, notify: c.text, end: c.text, enqueue: 'Fila: ' + (c.queue || '?'),
   lookup_client: 'CNPJ em {' + (c.var || '') + '}', condition: `{${c.var || ''}} ${c.op === 'equals' ? '= ' + c.value : c.op === 'empty' ? 'vazio?' : 'preenchido?'}`, create_ticket: c.subject, start: 'Primeira mensagem do cliente' }[t] || '')
 
 function FlowNode({ id, data, selected }) {
@@ -49,6 +49,7 @@ const fromRF = (nodes, edges) => ({
 })
 
 function Inspector({ node, onChange, onDelete, edit }) {
+  const QUEUES = React.useContext(QueuesCtx)
   if (!node) return <div className="sub">Selecione um passo para editar. Arraste da bolinha de saída até outro passo para ligar.</div>
   const { kind, cfg } = node.data; const set = (k, v) => onChange({ ...cfg, [k]: v }); const dis = !edit
   const txt = (k, label, rows = 3, hint) => <Field label={label} hint={hint}><textarea rows={rows} value={cfg[k] || ''} onChange={e => set(k, e.target.value)} disabled={dis} /></Field>
@@ -72,7 +73,7 @@ function Inspector({ node, onChange, onDelete, edit }) {
     {kind === 'create_ticket' && <>{inp('subject', 'ASSUNTO')}{txt('body', 'DESCRIÇÃO', 4, 'Aceita variáveis, ex.: {descricao}')}
       <Field label="PRIORIDADE"><select value={cfg.priority || 'media'} onChange={e => set('priority', e.target.value)} disabled={dis}>{[['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta'], ['critica', 'Crítica']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field></>}
     {kind === 'notify' && <>{txt('to_text', 'NÚMEROS / IDs DE GRUPO (um por linha)', 3)}{txt('text', 'MENSAGEM', 3)}</>}
-    {kind === 'enqueue' && <Field label="FILA"><select value={cfg.queue || 'geral'} onChange={e => set('queue', e.target.value)} disabled={dis}>{QUEUES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>}
+    {kind === 'enqueue' && <Field label="FILA"><select value={cfg.queue || 'geral'} onChange={e => set('queue', e.target.value)} disabled={dis}>{QUEUES.map(q => <option key={q.slug} value={q.slug}>{q.name}</option>)}</select></Field>}
     {kind !== 'start' && edit && <button className="btn" style={{ marginTop: 10 }} onClick={onDelete}><Trash2 size={14} />Excluir passo</button>}
   </div>
 }
@@ -92,7 +93,7 @@ function Simulator({ getDef }) {
   </div>
 }
 
-function Editor({ initial, edit }) {
+function Editor({ initial, edit, queues }) {
   const toast = useToast(); const rf = useMemo(() => toRF(initial), [initial])
   const [nodes, setNodes, onNodesChange] = useNodesState(rf.nodes); const [edges, setEdges, onEdgesChange] = useEdgesState(rf.edges)
   const [sel, setSel] = useState(null); const [errs, setErrs] = useState([]); const seq = useRef(1)
@@ -122,7 +123,7 @@ function Editor({ initial, edit }) {
   useEffect(() => { // a lista de destinos do aviso e editada como texto
     setNodes(ns => ns.map(n => n.data.kind === 'notify' && n.data.cfg.to_text === undefined ? { ...n, data: { ...n.data, cfg: { ...n.data.cfg, to_text: (n.data.cfg.to || []).join('\n') } } } : n))
   }, [])
-  return <div className="fl-grid">
+  return <QueuesCtx.Provider value={queues}><div className="fl-grid">
     <div className="fl-canvas">
       <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
         onNodeClick={(_, n) => setSel(n.id)} onPaneClick={() => setSel(null)} nodesDraggable={edit} nodesConnectable={edit} elementsSelectable fitView minZoom={0.2} colorMode={getTheme() === 'dark' ? 'dark' : 'light'}
@@ -135,14 +136,15 @@ function Editor({ initial, edit }) {
       <Card title="Testar o fluxo"><Simulator getDef={def} /></Card>
       {edit && <div style={{ display: 'flex', gap: 8 }}><button className="btn primary" disabled={errs.length > 0} onClick={save}><Save size={15} />Salvar fluxo</button><button className="btn" onClick={reset}><RotateCcw size={15} />Restaurar padrão</button></div>}
     </div>
-  </div>
+  </div></QueuesCtx.Provider>
 }
 
 export default function AtendimentoFluxo() {
-  const me = useAuth(); const edit = can(me, 'settings.edit'); const [d, setD] = useState(null); const [err, setErr] = useState('')
-  useEffect(() => { get('/atendimento/flow').then(r => setD(r.definition)).catch(e => setErr(e.message)) }, [])
+  const me = useAuth(); const edit = can(me, 'settings.edit'); const [d, setD] = useState(null); const [queues, setQueues] = useState([]); const [err, setErr] = useState('')
+  useEffect(() => { get('/atendimento/flow').then(r => { setD(r.definition); setQueues(r.queues) }).catch(e => setErr(e.message)) }, [])
   return <>
-    <PageHead title="Fluxo de atendimento" desc="Diagrama do atendimento por WhatsApp: o que o cliente recebe, o que é perguntado e para onde ele vai"><Link className="btn" to="/atendimento"><ArrowLeft size={15} />Voltar ao atendimento</Link></PageHead>
-    {!d ? <Loading err={err} /> : <ReactFlowProvider><Editor initial={d} edit={edit} /></ReactFlowProvider>}
+    <PageHead title="Fluxo de atendimento" desc="Diagrama do atendimento por WhatsApp: o que o cliente recebe, o que é perguntado e para onde ele vai" />
+    <AtNav />
+    {!d ? <Loading err={err} /> : <ReactFlowProvider><Editor initial={d} edit={edit} queues={queues} /></ReactFlowProvider>}
   </>
 }

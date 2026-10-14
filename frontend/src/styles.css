@@ -336,3 +336,13 @@ select{max-width:100%}
 @media(max-width:1100px){.fl-grid{grid-template-columns:1fr}}
 .at-tk{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:6px 14px;border-bottom:1px solid var(--line);font-size:13px}
 .at-tk a{color:var(--blue);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:1px 10px}
+.at-nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-6px 0 16px;overflow-x:auto}
+.at-nav a{padding:9px 16px;color:var(--navy);text-decoration:none;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+.at-nav a:hover{color:var(--blue)}.at-nav a.on{color:var(--blue);border-bottom-color:var(--blue)}
+.cfg-grid{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start}
+.cfg-side{display:flex;flex-direction:column;gap:2px;position:sticky;top:12px}
+.cfg-side button{text-align:left;border:0;background:transparent;color:var(--navy);padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+.cfg-side button:hover{background:rgba(30,115,248,.08)}.cfg-side button.on{background:rgba(30,115,248,.14);color:var(--blue)}
+.cfg-row{display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.cfg-row .grow{flex:1;min-width:0}.cfg-dot{width:14px;height:14px;border-radius:50%;flex:none}
+@media(max-width:860px){.cfg-grid{grid-template-columns:1fr}.cfg-side{flex-direction:row;overflow-x:auto;position:static}}
