@@ -688,4 +688,15 @@ class WaConversation(Base):
     closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     unread: Mapped[int] = mapped_column(Integer, default=0)
+    flow_node: Mapped[str | None] = mapped_column(String(64))  # no do fluxo em que a conversa espera a resposta do cliente
+    flow_vars: Mapped[dict | None] = mapped_column(JSON)  # variaveis e contadores do fluxo
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WaFlow(Base):
+    """Fluxo de atendimento do WhatsApp (diagrama BPMN em JSON). Uma unica linha ativa; sem linha, vale o fluxo padrao."""
+    __tablename__ = "wa_flows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    definition: Mapped[dict] = mapped_column(JSON)
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
